@@ -637,6 +637,8 @@ from .model_orchestrator import (
 )
 from .packet_items import (
     MAX_JSON_POINTER_CHARS,
+    MAX_JSON_PACKET_ITEM_DEPTH,
+    MAX_JSON_PACKET_ITEM_NODES,
     MAX_OPAQUE_PACKET_ITEM_CHARS,
     MAX_PACKET_ITEM_CHARS,
 )
@@ -7101,13 +7103,19 @@ def _agent_map_step_schema() -> Dict:
                 "type": "array",
                 "minItems": 1,
                 "maxItems": MAX_AGENT_ITEMS,
-                "items": _opaque_packet_item(),
+                "items": {
+                    "anyOf": [
+                        _opaque_packet_item(),
+                        _json_packet_item(),
+                    ]
+                },
             },
             "item_semantics": {
-                "enum": ["workspace_path", "opaque"],
+                "enum": ["workspace_path", "opaque", "json"],
                 "description": (
-                    "Treat items as workspace-relative paths (default) or bounded opaque text. "
-                    "Opaque semantics require inline items."
+                    "Treat items as workspace-relative paths (default), bounded opaque text, "
+                    "or bounded canonical JSON objects. Opaque semantics require inline items; "
+                    "JSON semantics support inline objects or a strict JSON artifact pointer."
                 ),
             },
             "items_file": _relative_path(),
@@ -7124,8 +7132,11 @@ def _agent_map_step_schema() -> Dict:
             },
             "prompt_template": {
                 "type": "string",
-                "pattern": r"\{item\}",
-                "description": "Must contain the literal {item}; Python validation also checks unsupported format fields.",
+                "pattern": r"\{item(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*\}",
+                "description": (
+                    "Must contain {item} or, for JSON semantics, a dotted {item.property}; "
+                    "Python validation rejects unsupported format fields."
+                ),
             },
             "agent_profile": _safe_id(),
             "model": _non_empty_string(),
@@ -7153,10 +7164,15 @@ def _agent_map_step_schema() -> Dict:
         },
         {
             "if": {
-                "not": {
-                    "properties": {"item_semantics": {"const": "opaque"}},
-                    "required": ["item_semantics"],
-                }
+                "anyOf": [
+                    {"not": {"required": ["item_semantics"]}},
+                    {
+                        "properties": {
+                            "item_semantics": {"const": "workspace_path"}
+                        },
+                        "required": ["item_semantics"],
+                    },
+                ]
             },
             "then": {"properties": {"items": {"items": _packet_item()}}},
         },
@@ -7165,7 +7181,31 @@ def _agent_map_step_schema() -> Dict:
                 "properties": {"item_semantics": {"const": "opaque"}},
                 "required": ["item_semantics"],
             },
-            "then": {"required": ["items"]},
+            "then": {
+                "required": ["items"],
+                "properties": {"items": {"items": _opaque_packet_item()}},
+            },
+        },
+        {
+            "if": {
+                "properties": {"item_semantics": {"const": "json"}},
+                "required": ["item_semantics"],
+            },
+            "then": {
+                "properties": {"items": {"items": _json_packet_item()}},
+                "not": {
+                    "anyOf": [
+                        {"required": ["items_file"]},
+                        {"required": ["max_packets"]},
+                    ]
+                },
+                "allOf": [
+                    {
+                        "if": {"required": ["items_artifact"]},
+                        "then": {"required": ["items_pointer"]},
+                    }
+                ],
+            },
         },
     ]
     return schema
@@ -8353,6 +8393,18 @@ def _opaque_packet_item() -> Dict:
         "description": (
             "Bounded opaque packet text. Python validation also rejects blank values, "
             "NUL characters, task-boundary markers, and secret-like values."
+        ),
+    }
+
+
+def _json_packet_item() -> Dict:
+    return {
+        "type": "object",
+        "minProperties": 1,
+        "description": (
+            "Bounded structured packet item. Python validation canonicalizes strict JSON, "
+            "rejects secrets and task-boundary markers, and enforces at most %d levels and %d nodes."
+            % (MAX_JSON_PACKET_ITEM_DEPTH, MAX_JSON_PACKET_ITEM_NODES)
         ),
     }
 

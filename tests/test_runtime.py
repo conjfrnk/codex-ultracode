@@ -1977,7 +1977,10 @@ class RuntimeWorkflowTests(unittest.TestCase):
         self.assertEqual(workflow_schema["properties"]["max_workers"]["maximum"], MAX_AGENT_WORKERS)
         step_schemas = workflow_schema["properties"]["steps"]["items"]["oneOf"]
         agent_map_schema = next(schema for schema in step_schemas if schema["properties"]["kind"]["const"] == "agent_map")
-        self.assertEqual(agent_map_schema["properties"]["prompt_template"]["pattern"], r"\{item\}")
+        self.assertEqual(
+            agent_map_schema["properties"]["prompt_template"]["pattern"],
+            r"\{item(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*\}",
+        )
 
         stdout = StringIO()
         with redirect_stdout(stdout):
@@ -2145,8 +2148,25 @@ class RuntimeWorkflowTests(unittest.TestCase):
         self.assertNotIn("type", shell_schema["properties"]["description"])
 
         agent_map_schema = next(schema for schema in step_schemas if schema["properties"]["kind"]["const"] == "agent_map")
-        opaque_item_schema = agent_map_schema["properties"]["items"]["items"]
+        item_variants = agent_map_schema["properties"]["items"]["items"]["anyOf"]
+        opaque_item_schema = next(
+            schema for schema in item_variants if schema.get("type") == "string"
+        )
+        json_item_schema = next(
+            schema for schema in item_variants if schema.get("type") == "object"
+        )
         self.assertEqual(opaque_item_schema["maxLength"], MAX_OPAQUE_PACKET_ITEM_CHARS)
+        self.assertEqual(json_item_schema["minProperties"], 1)
+        opaque_semantics = next(
+            condition
+            for condition in agent_map_schema["allOf"]
+            if condition.get("if", {}).get("properties", {}).get("item_semantics")
+            == {"const": "opaque"}
+        )
+        self.assertEqual(
+            opaque_semantics["then"]["properties"]["items"]["items"]["type"],
+            "string",
+        )
         item_schema = agent_map_schema["allOf"][1]["then"]["properties"]["items"]["items"]
         item_pattern = re.compile(item_schema["pattern"])
         self.assertEqual(item_schema["maxLength"], MAX_PACKET_ITEM_CHARS)
@@ -28867,6 +28887,17 @@ def dedupe_subscriptions(names: list) -> list:
                 "--include-personal",
             ]
         )
+        dry_run_assessment = assess_command(
+            [
+                "python3",
+                "-B",
+                "-m",
+                "conductor_runtime",
+                "run-saved-workflow",
+                "saved-smoke",
+                "--dry-run",
+            ]
+        )
         self.assertFalse(validate_assessment.writes)
         self.assertFalse(list_assessment.writes)
         self.assertFalse(list_runs_assessment.writes)
@@ -28880,6 +28911,9 @@ def dedupe_subscriptions(names: list) -> list:
         self.assertTrue(personal_export_assessment.external_path)
         self.assertFalse(personal_export_assessment.destructive)
         self.assertFalse(personal_export_assessment.network)
+        self.assertTrue(dry_run_assessment.writes)
+        self.assertFalse(dry_run_assessment.destructive)
+        self.assertFalse(dry_run_assessment.network)
 
     def test_saved_workflow_args_render_then_revalidate(self):
         workflow = workflow_with_steps(

@@ -473,7 +473,11 @@ def _parse_arg_value(raw_value: str) -> Any:
     stripped = raw_value.strip()
     if stripped:
         try:
-            return json.loads(stripped, parse_constant=_reject_json_constant)
+            return json.loads(
+                stripped,
+                object_pairs_hook=_object_without_duplicate_keys,
+                parse_constant=_reject_json_constant,
+            )
         except json.JSONDecodeError:
             pass
         except ValueError as exc:
@@ -483,6 +487,15 @@ def _parse_arg_value(raw_value: str) -> Any:
 
 def _reject_json_constant(value: str) -> None:
     raise ValueError("non-standard JSON constants are not supported: %s" % value)
+
+
+def _object_without_duplicate_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key %s" % key)
+        value[key] = item
+    return value
 
 
 def _reject_secret_like_arg_value(key: str, value: Any) -> None:
@@ -570,7 +583,13 @@ def _template_value(value: Any, context_key: str) -> Tuple[Any, set, set]:
         rendered = {}
         used = set()
         for key, item in value.items():
-            item_rendered, _missing, item_used = _template_value(item, context_key=str(key))
+            context_key = str(key)
+            if key == "items" and value.get("item_semantics") == "json":
+                context_key = "json_items"
+            item_rendered, _missing, item_used = _template_value(
+                item,
+                context_key=context_key,
+            )
             rendered[key] = item_rendered
             used.update(item_used)
         return rendered, set(), used
@@ -591,6 +610,8 @@ def _placeholder_validation_value(context_key: str) -> Any:
         return False
     if context_key == "items":
         return ["placeholder"]
+    if context_key == "json_items":
+        return [{"placeholder": "placeholder"}]
     if context_key == "command":
         return ["true"]
     if context_key == "depends_on":

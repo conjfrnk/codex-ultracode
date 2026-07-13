@@ -77,7 +77,11 @@ from .codex_checkpoint import (
 )
 from .codex_step_terminal import codex_step_terminal_path, load_codex_step_terminal
 from .errors import ValidationError
-from .packet_items import clean_packet_items, read_packet_items_file
+from .packet_items import (
+    clean_packet_items,
+    read_packet_items_file,
+    read_packet_items_json_file,
+)
 from .redaction import redact_public_workflow_value, contains_secret_like, redact_text
 from .run_ownership import run_execution_lock
 from .security import (
@@ -2636,12 +2640,37 @@ def _packet_trace_item_sha256(context: Dict, step: Dict, packet_index: int) -> s
 
 def _packet_item_sha256_from_available_source(context: Dict, step: Dict, packet_index: int) -> Optional[str]:
     max_items = step.get("max_items", context["workflow"].get("max_items", MAX_AGENT_ITEMS))
+    preserve_duplicates = step.get("preserve_duplicate_items", False)
+    item_semantics = step.get("item_semantics", "workspace_path")
     if isinstance(step.get("items"), list):
-        items = clean_packet_items(step["items"], "retry-packet items", max_items)
+        items = clean_packet_items(
+            step["items"],
+            "retry-packet items",
+            max_items,
+            preserve_duplicates=preserve_duplicates,
+            item_semantics=item_semantics,
+        )
     elif isinstance(step.get("items_artifact"), str):
         require_no_path_escape(step["items_artifact"])
         path = context["run"].resolve_artifact_path(step["items_artifact"])
-        items = read_packet_items_file(path, "retry-packet items artifact", max_items)
+        label = "retry-packet items artifact"
+        if isinstance(step.get("items_pointer"), str):
+            items = read_packet_items_json_file(
+                path,
+                label,
+                max_items,
+                step["items_pointer"],
+                preserve_duplicates=preserve_duplicates,
+                item_semantics=item_semantics,
+            )
+        else:
+            items = read_packet_items_file(
+                path,
+                label,
+                max_items,
+                preserve_duplicates=preserve_duplicates,
+                item_semantics=item_semantics,
+            )
     else:
         return None
     packets = packetize_agent_items(items, step.get("max_packets"))

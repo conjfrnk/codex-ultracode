@@ -87,7 +87,11 @@ from .model_verdict import (
     MAX_MODEL_VERDICT_BYTES,
     load_model_verdict_record,
 )
-from .packet_items import clean_packet_items, read_packet_items_file
+from .packet_items import (
+    clean_packet_items,
+    read_packet_items_file,
+    read_packet_items_json_file,
+)
 from .redaction import APPROVAL_ID_PLACEHOLDER, redact_text
 from .routines import iter_routine_manifest_paths, load_routine_manifest, routine_list_record
 from .routine_supervisor import load_routine_controls, load_supervisor_state, routine_control_record
@@ -3484,8 +3488,10 @@ def _agent_map_details(
             group["error"] = item_error
         group["truncated"] = item_truncated or bool(trace_meta.get("trace_truncated"))
         cache_by_output = _cache_entries_by_output(cache_entries or {})
+        item_semantics = workflow_step.get("item_semantics", "workspace_path")
         for index, packet in enumerate(items, start=1):
-            output_relative = _agent_output_relative(capture_dir, packet.label, index)
+            packet_label = _dashboard_agent_packet_label(packet, item_semantics)
+            output_relative = _agent_output_relative(capture_dir, packet_label, index)
             cache_entry = cache_by_output.get(output_relative, {})
             stdout_name = "%s.%03d.stdout.log" % (step_id, index)
             stderr_name = "%s.%03d.stderr.log" % (step_id, index)
@@ -3495,7 +3501,7 @@ def _agent_map_details(
             group["packets"].append(
                 {
                     "index": index,
-                    "item": redact_text(packet.label),
+                    "item": redact_text(packet_label),
                     "item_count": len(packet.items),
                     "status": _agent_packet_status(
                         output,
@@ -3678,14 +3684,43 @@ def _trace_string(value) -> str:
 
 def _agent_map_items(run_dir: Path, step: Dict, max_packets: int) -> Tuple[List[AgentPacket], Optional[str], bool]:
     display_limit = max(1, min(max_packets, DETAIL_AGENT_PACKET_LIMIT))
-    source_limit = MAX_AGENT_PACKETS if step.get("max_packets") is not None else display_limit + 1
+    preserve_duplicates = step.get("preserve_duplicate_items", False)
+    item_semantics = step.get("item_semantics", "workspace_path")
+    source_limit = (
+        MAX_AGENT_PACKETS
+        if step.get("max_packets") is not None or item_semantics == "json"
+        else display_limit + 1
+    )
     try:
         if isinstance(step.get("items"), list):
-            items = clean_packet_items(step["items"], "dashboard agent_map items", source_limit)
+            items = clean_packet_items(
+                step["items"],
+                "dashboard agent_map items",
+                source_limit,
+                preserve_duplicates=preserve_duplicates,
+                item_semantics=item_semantics,
+            )
         elif isinstance(step.get("items_artifact"), str):
             require_no_path_escape(step["items_artifact"])
             path = run_dir / "artifacts" / step["items_artifact"]
-            items = read_packet_items_file(path, "dashboard agent_map items_artifact", source_limit)
+            label = "dashboard agent_map items_artifact"
+            if isinstance(step.get("items_pointer"), str):
+                items = read_packet_items_json_file(
+                    path,
+                    label,
+                    source_limit,
+                    step["items_pointer"],
+                    preserve_duplicates=preserve_duplicates,
+                    item_semantics=item_semantics,
+                )
+            else:
+                items = read_packet_items_file(
+                    path,
+                    label,
+                    source_limit,
+                    preserve_duplicates=preserve_duplicates,
+                    item_semantics=item_semantics,
+                )
         elif isinstance(step.get("items_file"), str):
             return [], "workspace item source is unavailable in run detail", False
         else:
@@ -3747,6 +3782,13 @@ def _agent_packet_status(
 def _agent_output_relative(capture_dir: str, item: str, index: int) -> str:
     capture_name = "%03d-%s.md" % (index, _safe_capture_name(item))
     return "%s/%s" % (capture_dir, capture_name)
+
+
+def _dashboard_agent_packet_label(packet: AgentPacket, item_semantics: str) -> str:
+    if item_semantics != "json":
+        return packet.label
+    digest = hashlib.sha256(packet.value.encode("utf-8")).hexdigest()
+    return "json-%s" % digest[:12]
 
 
 def _safe_capture_name(value: str) -> str:

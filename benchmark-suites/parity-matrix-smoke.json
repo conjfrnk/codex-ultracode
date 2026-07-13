@@ -1534,6 +1534,27 @@
       "success_contains": "when to use: Use for a bounded parallel review smoke test"
     },
     {
+      "id": "claude-structured-map-validate",
+      "description": "A Claude-shaped guarded-argument object map validates through the inert compiler without evaluating JavaScript or launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-saved-workflows", "benchmark-suites/claude-structured-map-smoke.js", "--workspace", "."],
+      "success_contains": "(claude-structured-map-smoke, project)"
+    },
+    {
+      "id": "claude-structured-map-inspect",
+      "description": "Inspection exposes the bounded JSON fan-out, dotted prompt fields, normalized ultra effort, and terminal collector without evaluating JavaScript.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-structured-map-smoke.js", "--workspace", ".", "--arg", "system=billing", "--arg", "services=[{\"name\":\"ledger\",\"responsibilities\":\"settlement\"}]"],
+      "success_contains": "reviews [agent_map, risk=low, workers=16, effort=ultra, items=json]"
+    },
+    {
+      "id": "claude-structured-map-dry-run",
+      "description": "Rendered object-array arguments preflight every dotted prompt field and plan the fan-out without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-saved-workflow", "benchmark-suites/claude-structured-map-smoke.js", "--workspace", ".", "--dry-run", "--allow-agent", "--allow-parallel", "--arg", "system=billing", "--arg", "services=[{\"name\":\"ledger\",\"responsibilities\":\"settlement\"},{\"name\":\"invoice\",\"responsibilities\":\"invoicing\"}]"],
+      "success_contains": "Status: planned"
+    },
+    {
       "id": "structured-agent-map-validate",
       "description": "A workflow with schema-bound output and RFC 6901 agent-map input validates without launching a provider.",
       "risk": "low",

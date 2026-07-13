@@ -12,7 +12,11 @@ from conductor_runtime.cli import main as cli_main
 from conductor_runtime.errors import ValidationError
 from conductor_runtime.packet_items import read_packet_items_json_file
 from conductor_runtime.runner import WorkflowRunner, _agent_output_relative, _agent_packet_label
-from conductor_runtime.saved_workflows import apply_saved_workflow_args, load_saved_workflow
+from conductor_runtime.saved_workflows import (
+    apply_saved_workflow_args,
+    load_saved_workflow,
+    parse_saved_workflow_args,
+)
 from conductor_runtime.schemas import get_schema
 from conductor_runtime.security import RuntimePolicy
 from conductor_runtime.workflow import validate_workflow
@@ -63,7 +67,10 @@ class ResultFixtureRunner(WorkflowRunner):
         for index, (packet, output) in enumerate(zip(packets, outputs), start=1):
             relative = _agent_output_relative(
                 capture_dir,
-                _agent_packet_label(packet.items),
+                _agent_packet_label(
+                    packet.items,
+                    step.get("item_semantics", "workspace_path"),
+                ),
                 index,
             )
             self.run.write_artifact(relative, output)
@@ -249,6 +256,95 @@ return reviews
         self.assertEqual(prior_step["items_pointer"], "/files")
         self.assertNotIn("item_semantics", prior_step)
 
+    def test_guarded_arg_aliases_compile_structured_parallel_map(self):
+        source = """\
+export const meta = { name: 'service-review' }
+const system = args && args.system
+const services = args && args.services
+const reviews = await parallel(services.map(service => () => agent(
+  'Review ' + service.name + ' in ' + system + ': ' + service.responsibilities,
+  { label: 'review:' + service.name, effort: 'max' },
+)))
+return reviews.filter(Boolean)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            path = workspace / "service-review.js"
+            path.write_text(source, encoding="utf-8")
+            saved = load_saved_workflow(path, workspace=workspace)
+            rendered = apply_saved_workflow_args(
+                saved,
+                {
+                    "system": "billing",
+                    "services": [
+                        {
+                            "name": "ledger",
+                            "responsibilities": "balance settlement",
+                        },
+                        {
+                            "name": "invoice",
+                            "responsibilities": "issue invoices",
+                        },
+                    ],
+                },
+            )
+
+        step = rendered.workflow["steps"][0]
+        self.assertEqual(step["item_semantics"], "json")
+        self.assertEqual(
+            step["prompt_template"],
+            "Review {item.name} in billing: {item.responsibilities}",
+        )
+        self.assertEqual(step["items"][0]["name"], "ledger")
+        self.assertEqual(step["effort"], "ultra")
+        self.assertTrue(rendered.workflow["steps"][1]["filter_falsey"])
+
+    def test_structured_pipeline_accepts_prior_object_array_schema(self):
+        source = """\
+export const meta = { name: 'discover-services' }
+const SERVICES_SCHEMA = {
+  type: 'object',
+  required: ['services'],
+  properties: {
+    services: {
+      type: 'array',
+      items: { type: 'object', properties: { name: { type: 'string' } } },
+    },
+  },
+}
+const found = await agent('Find services', { schema: SERVICES_SCHEMA })
+const reviews = await pipeline(found.services, service => agent(`Review ${service.name}`))
+return reviews
+"""
+        _, workflow = self.compile(source)
+        validate_workflow(workflow)
+
+        step = workflow["steps"][1]
+        self.assertEqual(step["item_semantics"], "json")
+        self.assertEqual(step["items_artifact"], "claude-workflow/found.json")
+        self.assertEqual(step["items_pointer"], "/services")
+        self.assertEqual(step["prompt_template"], "Review {item.name}")
+
+    def test_guarded_aliases_and_json_args_fail_closed(self):
+        invalid_aliases = [
+            "const services = args && input.services",
+            "const services = args && args.services.extra",
+        ]
+        for declaration in invalid_aliases:
+            source = """\
+export const meta = { name: 'invalid-alias' }
+%s
+const report = await agent('Review')
+return report
+""" % declaration
+            with self.subTest(declaration=declaration):
+                self.assert_rejected(source, "exact `args && args.NAME` syntax")
+
+        with self.assertRaisesRegex(ValidationError, "duplicate JSON key name"):
+            parse_saved_workflow_args(
+                ['services=[{"name":"ledger","name":"invoice"}]']
+            )
+
     def test_parallel_phase_and_static_subset_rejections_are_explicit(self):
         cases = [
             (
@@ -373,7 +469,7 @@ return reviews
         )
         self.assertEqual(
             agent_map["properties"]["item_semantics"]["enum"],
-            ["workspace_path", "opaque"],
+            ["workspace_path", "opaque", "json"],
         )
 
     def test_agent_prompt_accepts_args_reference_and_template(self):

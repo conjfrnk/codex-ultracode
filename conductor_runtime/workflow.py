@@ -43,7 +43,7 @@ from .codex_config import (
 )
 from .errors import ValidationError
 from .model_verdict import COMPLETION_VERDICT_CONTRACT
-from .packet_items import clean_packet_items, validate_json_pointer
+from .packet_items import JSON_ITEM_FIELD, clean_packet_items, validate_json_pointer
 from .redaction import redact_text
 from .security import (
     RISK_LEVELS,
@@ -350,15 +350,31 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
         items_file = step.get("items_file")
         items_artifact = step.get("items_artifact")
         item_semantics = step.get("item_semantics", "workspace_path")
-        if item_semantics not in {"workspace_path", "opaque"}:
+        if item_semantics not in {"workspace_path", "opaque", "json"}:
             raise ValidationError(
-                "agent_map step %s item_semantics must be workspace_path or opaque"
+                "agent_map step %s item_semantics must be workspace_path, opaque, or json"
                 % step_id
             )
         if item_semantics == "opaque" and items is None:
             raise ValidationError(
                 "agent_map step %s opaque item semantics require inline items" % step_id
             )
+        if item_semantics == "json":
+            if items_file is not None:
+                raise ValidationError(
+                    "agent_map step %s JSON item semantics do not support line-oriented items_file"
+                    % step_id
+                )
+            if items_artifact is not None and step.get("items_pointer") is None:
+                raise ValidationError(
+                    "agent_map step %s JSON artifact items require items_pointer"
+                    % step_id
+                )
+            if step.get("max_packets") is not None:
+                raise ValidationError(
+                    "agent_map step %s JSON item semantics preserve one object per packet and do not support max_packets"
+                    % step_id
+                )
         preserve_duplicates = step.get("preserve_duplicate_items", False)
         if not isinstance(preserve_duplicates, bool):
             raise ValidationError("agent_map step %s preserve_duplicate_items must be boolean" % step_id)
@@ -366,8 +382,8 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
         if item_sources != 1:
             raise ValidationError("agent_map step %s must set exactly one of items, items_file, or items_artifact" % step_id)
         if items is not None:
-            if not isinstance(items, list) or not items or not all(isinstance(item, str) for item in items):
-                raise ValidationError("agent_map step %s items must be a non-empty string array" % step_id)
+            if not isinstance(items, list) or not items:
+                raise ValidationError("agent_map step %s items must be a non-empty array" % step_id)
             cleaned_items = clean_packet_items(
                 items,
                 "agent_map step %s items" % step_id,
@@ -390,7 +406,11 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
                 raise ValidationError("agent_map step %s items_pointer requires items_artifact" % step_id)
             validate_json_pointer(items_pointer, "agent_map step %s items_pointer" % step_id)
         prompt_template = step.get("prompt_template")
-        _validate_agent_map_prompt_template(step_id, prompt_template)
+        _validate_agent_map_prompt_template(
+            step_id,
+            prompt_template,
+            item_semantics=item_semantics,
+        )
         capture_dir = step.get("capture_dir", step_id)
         if not isinstance(capture_dir, str) or not capture_dir:
             raise ValidationError("agent_map step %s capture_dir must be a relative path" % step_id)
@@ -501,18 +521,41 @@ def _is_strict_int(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _validate_agent_map_prompt_template(step_id: str, prompt_template) -> None:
+def _validate_agent_map_prompt_template(
+    step_id: str,
+    prompt_template,
+    item_semantics: str = "workspace_path",
+) -> None:
     if not isinstance(prompt_template, str):
         raise ValidationError("agent_map step %s prompt_template must be a string" % step_id)
     try:
         fields = _format_fields(prompt_template)
     except ValueError as exc:
         raise ValidationError("agent_map step %s prompt_template is invalid: %s" % (step_id, exc.__class__.__name__))
-    if "item" not in fields:
-        raise ValidationError("agent_map step %s prompt_template must contain {item}" % step_id)
-    unsupported = sorted(set(fields) - {"item", "index"})
+    item_fields = [
+        field
+        for field in fields
+        if field == "item"
+        or (item_semantics == "json" and JSON_ITEM_FIELD.fullmatch(field))
+    ]
+    if not item_fields:
+        required = "{item} or a dotted {item.property}" if item_semantics == "json" else "{item}"
+        raise ValidationError(
+            "agent_map step %s prompt_template must contain %s"
+            % (step_id, required)
+        )
+    supported = {"index", *item_fields}
+    unsupported = sorted(set(fields) - supported)
     if unsupported:
-        raise ValidationError("agent_map step %s prompt_template may only use {item} and {index}" % step_id)
+        detail = (
+            "{item}, dotted {item.property}, and {index}"
+            if item_semantics == "json"
+            else "{item} and {index}"
+        )
+        raise ValidationError(
+            "agent_map step %s prompt_template may only use %s"
+            % (step_id, detail)
+        )
 
 
 def _format_fields(template: str) -> List[str]:
@@ -657,15 +700,28 @@ def _validate_codex_context_sources(steps: List[Dict]) -> None:
                         source["items"],
                         "agent_map step %s items" % source_id,
                         MAX_AGENT_ITEMS,
+                        preserve_duplicates=source.get(
+                            "preserve_duplicate_items",
+                            False,
+                        ),
+                        item_semantics=source.get(
+                            "item_semantics",
+                            "workspace_path",
+                        ),
                     )
                     artifact_upper_bound += len(
                         packetize_agent_items(cleaned, source.get("max_packets"))
                     )
+                elif (
+                    source.get("item_semantics") == "json"
+                    and source.get("max_items") is not None
+                ):
+                    artifact_upper_bound += source["max_items"]
                 elif source.get("max_packets") is not None:
                     artifact_upper_bound += source["max_packets"]
                 else:
                     raise ValidationError(
-                        "codex_exec step %s context_from agent_map source %s must set max_packets"
+                        "codex_exec step %s context_from agent_map source %s must set max_packets or JSON max_items"
                         % (step["id"], source_id)
                     )
             else:
@@ -1203,8 +1259,8 @@ def workflow_summary(workflow: Dict) -> str:
             profile += ", phase=%s" % redact_text(step["phase"])
         if effective.get("effort") is not None:
             profile += ", effort=%s" % redact_text(effective["effort"])
-        if step.get("kind") == "agent_map" and step.get("item_semantics") == "opaque":
-            profile += ", items=opaque"
+        if step.get("kind") == "agent_map" and step.get("item_semantics") in {"opaque", "json"}:
+            profile += ", items=%s" % step["item_semantics"]
         if step.get("native_agents"):
             max_tokens = effective.get("max_tokens", workflow.get("agent_max_tokens"))
             profile += ", native-agents=max-%s/depth-1" % step["native_agents"]["max_threads"]

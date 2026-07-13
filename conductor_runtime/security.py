@@ -480,6 +480,11 @@ def _is_safe_python_local_write(argv: List[str]) -> bool:
     if "-c" in args:
         return False
     rest = _python_args_after_interpreter_flags(args)
+    if (
+        rest[:3] == ["-m", "conductor_runtime", "run-saved-workflow"]
+        and "--dry-run" in rest[3:]
+    ):
+        return True
     return rest[:3] in [
         ["-m", "conductor_runtime", "export-saved-workflow"],
         ["-m", "conductor_runtime", "bind-agent-profile"],

@@ -304,7 +304,12 @@ from .model_verdict import (
     parse_model_verdict,
     read_model_verdict_record,
 )
-from .packet_items import clean_packet_items, read_packet_items_file, read_packet_items_json_file
+from .packet_items import (
+    clean_packet_items,
+    read_packet_items_file,
+    read_packet_items_json_file,
+    render_agent_map_prompt,
+)
 from .provider_telemetry import (
     MAX_PROVIDER_EVENT_LINE_BYTES,
     MAX_PROVIDER_EVENTS,
@@ -770,6 +775,7 @@ class WorkflowRunner:
             configured_workers = min(int(effective.get("max_workers", self.max_workers)), self.max_workers)
             if items is not None:
                 packets = packetize_agent_items(items, effective.get("max_packets"))
+                self._validate_agent_map_packet_prompts(effective, packets)
                 workers = min(configured_workers, len(packets))
                 packet_count = len(packets)
             else:
@@ -971,7 +977,10 @@ class WorkflowRunner:
             for index, packet in enumerate(packets, start=1):
                 relative = _agent_output_relative(
                     capture_dir,
-                    _agent_packet_label(packet.items),
+                    _agent_packet_label(
+                        packet.items,
+                        effective.get("item_semantics", "workspace_path"),
+                    ),
                     index,
                 )
                 consume(relative)
@@ -1638,6 +1647,7 @@ class WorkflowRunner:
         require_no_path_escape(capture_dir)
         items = self._agent_items(step)
         packets = packetize_agent_items(items, step.get("max_packets"))
+        self._validate_agent_map_packet_prompts(step, packets)
         workers = min(int(step.get("max_workers", self.max_workers)), self.max_workers, len(packets))
         enforce_agent_policy(step, self.policy, workers=workers)
         enforce_agent_policy(self._step_with_packet_item_risk(step, items), self.policy, workers=workers)
@@ -1765,7 +1775,19 @@ class WorkflowRunner:
                             else:
                                 telemetry_values.append(item_result.telemetry)
                         except Exception as exc:  # noqa: BLE001 - collect all failed packets.
-                            failures.append("%s: %s" % (packet.label, exc))
+                            failures.append(
+                                "%s: %s"
+                                % (
+                                    _agent_packet_label(
+                                        packet.items,
+                                        step.get(
+                                            "item_semantics",
+                                            "workspace_path",
+                                        ),
+                                    ),
+                                    exc,
+                                )
+                            )
                             failed_items += len(packet.items)
                         try:
                             index, next_packet = next(packet_iter)
@@ -7541,7 +7563,12 @@ class WorkflowRunner:
         item_source = self._agent_packet_source_fingerprint(step, source_items)
         base_prompt = self._agent_prompt(
             step,
-            step["prompt_template"].format(item=item, index=index),
+            render_agent_map_prompt(
+                step["prompt_template"],
+                item,
+                index,
+                step.get("item_semantics", "workspace_path"),
+            ),
         )
         # Preserve the packet-reset item binding before any output/cache short circuit.
         self._agent_cache_fingerprint(
@@ -7574,7 +7601,10 @@ class WorkflowRunner:
             prompt=prompt,
             output_relative=_agent_output_relative(
                 capture_dir,
-                _agent_packet_label(source_items),
+                _agent_packet_label(
+                    source_items,
+                    step.get("item_semantics", "workspace_path"),
+                ),
                 index,
             ),
             launch_pending_count=terminal["launch_pending_count"],
@@ -7664,7 +7694,10 @@ class WorkflowRunner:
         started = utc_now()
         launch_pending_count = int(step.get("_agent_map_launch_pending_count", 1))
         source_items = self._agent_packet_source_items(step, item)
-        packet_label = _agent_packet_label(source_items)
+        packet_label = _agent_packet_label(
+            source_items,
+            step.get("item_semantics", "workspace_path"),
+        )
         output_relative = _agent_output_relative(capture_dir, packet_label, index)
         result = None
         progress = None
@@ -7676,7 +7709,12 @@ class WorkflowRunner:
             if launch_budget["max_tokens"] != invocation_token_cap:
                 raise ValidationError("agent_map packet launch token authorization changed")
             item_source = self._agent_packet_source_fingerprint(step, source_items)
-            rendered_prompt = step["prompt_template"].format(item=item, index=index)
+            rendered_prompt = render_agent_map_prompt(
+                step["prompt_template"],
+                item,
+                index,
+                step.get("item_semantics", "workspace_path"),
+            )
             base_prompt = self._agent_prompt(step, rendered_prompt)
             command_step = {
                 key: value
@@ -8380,6 +8418,16 @@ class WorkflowRunner:
             raise ValidationError("agent_map step %s resolved no items" % step["id"])
         return items
 
+    def _validate_agent_map_packet_prompts(self, step: Dict, packets) -> None:
+        item_semantics = step.get("item_semantics", "workspace_path")
+        for index, packet in enumerate(packets, start=1):
+            render_agent_map_prompt(
+                step["prompt_template"],
+                packet.value,
+                index,
+                item_semantics,
+            )
+
     def _step_with_packet_item_risk(self, step: Dict, items) -> Dict:
         if not items:
             return step
@@ -8569,7 +8617,12 @@ class WorkflowRunner:
             return None
         base_prompt = self._agent_prompt(
             step,
-            step["prompt_template"].format(item=item, index=index),
+            render_agent_map_prompt(
+                step["prompt_template"],
+                item,
+                index,
+                step.get("item_semantics", "workspace_path"),
+            ),
         )
         # Validate packet retry identity before output/cache short circuits.
         self._agent_cache_fingerprint(
@@ -8590,7 +8643,14 @@ class WorkflowRunner:
             packet_index=index,
             packet_generation=packet_generation,
         )
-        output_relative = _agent_output_relative(capture_dir, _agent_packet_label(source_items), index)
+        output_relative = _agent_output_relative(
+            capture_dir,
+            _agent_packet_label(
+                source_items,
+                step.get("item_semantics", "workspace_path"),
+            ),
+            index,
+        )
         if not prompt_candidates and any(
             isinstance(entry, dict)
             and entry.get("item_hash") == _sha256_text(item)
@@ -8679,7 +8739,12 @@ class WorkflowRunner:
             "prompt_hash": fingerprint["prompt_hash"],
             "output": output_relative,
             "output_sha256": output_sha256,
-            "item_label": redact_text(_agent_packet_label(source_items))[:120],
+            "item_label": redact_text(
+                _agent_packet_label(
+                    source_items,
+                    step.get("item_semantics", "workspace_path"),
+                )
+            )[:120],
             "updated_at_utc": utc_now_datetime().isoformat(timespec="seconds") + "Z",
         }
 
@@ -8815,7 +8880,12 @@ class WorkflowRunner:
             "schema": AGENT_MAP_TRACE_SCHEMA,
             "step_id": redact_text(str(step["id"])),
             "index": index,
-            "item_label": redact_text(_agent_packet_label(source_items))[:120],
+            "item_label": redact_text(
+                _agent_packet_label(
+                    source_items,
+                    step.get("item_semantics", "workspace_path"),
+                )
+            )[:120],
             "item_sha256": _sha256_text(item),
             "item_count": len(source_items),
             "output": redact_text(output_relative),
@@ -8919,7 +8989,15 @@ class WorkflowRunner:
         cache_context: Optional[Dict] = None,
     ) -> Dict:
         if prompt is None:
-            prompt = self._agent_prompt(step, step["prompt_template"].format(item=item, index=index))
+            prompt = self._agent_prompt(
+                step,
+                render_agent_map_prompt(
+                    step["prompt_template"],
+                    item,
+                    index,
+                    step.get("item_semantics", "workspace_path"),
+                ),
+            )
         if item_source is None:
             item_source = self._agent_packet_source_fingerprint(
                 step,
@@ -9079,7 +9157,8 @@ class WorkflowRunner:
 
     def _agent_packet_source_fingerprint(self, step: Dict, source_items) -> Dict:
         source_items = tuple(source_items)
-        if step.get("item_semantics", "workspace_path") != "opaque":
+        item_semantics = step.get("item_semantics", "workspace_path")
+        if item_semantics == "workspace_path":
             return self._workspace_agent_packet_fingerprint(source_items)
 
         records = [
@@ -13782,8 +13861,14 @@ def _agent_output_relative(capture_dir: str, item: str, index: int) -> str:
     return "%s/%s" % (capture_dir, capture_name)
 
 
-def _agent_packet_label(source_items) -> str:
-    return AgentPacket(tuple(source_items)).label
+def _agent_packet_label(
+    source_items,
+    item_semantics: str = "workspace_path",
+) -> str:
+    packet = AgentPacket(tuple(source_items))
+    if item_semantics != "json":
+        return packet.label
+    return "json-%s" % _sha256_text(packet.value)[:12]
 
 
 def _parse_strict_result_json(text: str):

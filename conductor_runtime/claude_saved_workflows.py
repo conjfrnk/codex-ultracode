@@ -45,6 +45,11 @@ class Reference:
 
 
 @dataclass(frozen=True)
+class ArgAlias:
+    name: str
+
+
+@dataclass(frozen=True)
 class Template:
     parts: Tuple[Union[str, Reference], ...]
 
@@ -134,6 +139,9 @@ class _Scanner:
                 self.tokens.append(Token("identifier", self._scan_identifier(), offset))
             elif char.isdigit() or (char == "-" and self._peek(1).isdigit()):
                 self.tokens.append(Token("number", self._scan_number(), offset))
+            elif self.text.startswith("&&", self.index):
+                self.tokens.append(Token("symbol", "&&", offset))
+                self.index += 2
             elif self.text.startswith("=>", self.index):
                 self.tokens.append(Token("symbol", "=>", offset))
                 self.index += 2
@@ -394,8 +402,10 @@ class _Parser:
             self._expect_symbol("(")
             wrapped = True
         if not self._at_identifier("await"):
-            value = self._parse_value()
+            value = self._parse_constant_value()
             self._accept_symbol(";")
+            if isinstance(value, ArgAlias):
+                return ConstantBinding(name, value)
             try:
                 return ConstantBinding(name, _normalize_static_literal(value))
             except ValidationError:
@@ -415,6 +425,25 @@ class _Parser:
         filters_falsey = self._parse_optional_boolean_filter()
         self._accept_symbol(";")
         return Binding(name, expression, active_phase, filters_falsey)
+
+    def _parse_constant_value(self) -> Any:
+        if self._at_identifier("args") and self._peek_token().value == "&&":
+            self._expect_identifier("args")
+            self._expect_symbol("&&")
+            reference = self._parse_reference()
+            if len(reference.parts) != 2 or reference.parts[0] != "args":
+                self._fail(
+                    "guarded argument aliases must use exact `args && args.NAME` syntax"
+                )
+            return ArgAlias(reference.parts[1])
+        value = self._parse_value()
+        if (
+            isinstance(value, Reference)
+            and len(value.parts) == 2
+            and value.parts[0] == "args"
+        ):
+            return ArgAlias(value.parts[1])
+        return value
 
     def _parse_phase_statement(self) -> str:
         self._expect_identifier("phase")
@@ -661,7 +690,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
     constants = {binding.name: binding.value for binding in program.constants}
     phase_ids, phases_declared = _declared_phase_ids(program.meta.get("phases"), source)
     bindings = {binding.name: binding for binding in program.bindings}
-    consumed_properties: Dict[str, str] = {}
+    consumed_properties: Dict[str, Tuple[str, bool]] = {}
     direct_agents = sum(isinstance(binding.expression, AgentCall) for binding in program.bindings)
     map_calls = sum(
         isinstance(binding.expression, (PipelineCall, ParallelCall))
@@ -701,12 +730,19 @@ def _compile_program(program: Program, source: Path) -> Dict:
                     "%s mapped binding %s source must reference args, a static constant, or a prior agent result"
                     % (source, binding.name)
                 )
+            _, structured_items = _pipeline_prompt(
+                expression.agent.prompt,
+                expression.item_name,
+                source,
+                binding.name,
+                constants=constants,
+            )
             previous = consumed_properties.get(owner)
-            if previous is not None and previous != property_name:
+            if previous is not None and previous != (property_name, structured_items):
                 raise ValidationError(
                     "%s agent result %s cannot feed multiple schema properties" % (source, owner)
                 )
-            consumed_properties[owner] = property_name
+            consumed_properties[owner] = (property_name, structured_items)
 
     steps = []
     prior_step = None
@@ -727,9 +763,16 @@ def _compile_program(program: Program, source: Path) -> Dict:
                 binding.name,
                 constants=constants,
             )
-            property_name = consumed_properties.get(binding.name)
-            if property_name is not None:
-                _validate_string_array_schema(options.get("schema"), property_name, source, binding.name)
+            consumed_property = consumed_properties.get(binding.name)
+            if consumed_property is not None:
+                property_name, structured_items = consumed_property
+                _validate_array_schema(
+                    options.get("schema"),
+                    property_name,
+                    source,
+                    binding.name,
+                    structured_items=structured_items,
+                )
             step = {
                 "id": binding.name,
                 "kind": "codex_exec",
@@ -753,7 +796,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
                 constants=constants,
             )
             if isinstance(expression, PipelineCall):
-                prompt_template = _pipeline_prompt(
+                prompt_template, structured_items = _pipeline_prompt(
                     expression.agent.prompt,
                     expression.item_name,
                     source,
@@ -768,7 +811,10 @@ def _compile_program(program: Program, source: Path) -> Dict:
                     per_map_items,
                     source,
                     constants=constants,
+                    structured_items=structured_items,
                 )
+                if structured_items:
+                    item_source["item_semantics"] = "json"
             else:
                 prompt_template, item_source, source_dependency = _parallel_map(
                     expression,
@@ -962,7 +1008,7 @@ def _pipeline_prompt(
     source: Path,
     binding_name: str,
     constants: Optional[Dict[str, Any]] = None,
-) -> str:
+) -> Tuple[str, bool]:
     constants = constants or {}
     if not isinstance(value, (Template, Concat)):
         raise ValidationError(
@@ -971,12 +1017,17 @@ def _pipeline_prompt(
         )
     output = []
     item_references = 0
+    structured_items = False
     for part in _text_expression_parts(value):
         if isinstance(part, str):
             output.append(part.replace("{", "{{").replace("}", "}}"))
         elif isinstance(part, Reference) and part.parts == (item_name,):
             output.append("{item}")
             item_references += 1
+        elif isinstance(part, Reference) and part.parts[0] == item_name:
+            output.append("{item.%s}" % ".".join(part.parts[1:]))
+            item_references += 1
+            structured_items = True
         elif (
             isinstance(part, Reference)
             and len(part.parts) == 2
@@ -984,12 +1035,18 @@ def _pipeline_prompt(
         ):
             output.append("{{args.%s}}" % part.parts[1])
         elif isinstance(part, Reference) and part.parts[0] in constants:
-            text = _static_js_text(
-                _resolve_static_reference(part, constants, source, binding_name),
+            resolved = _resolve_static_reference(
+                part,
+                constants,
                 source,
                 binding_name,
             )
-            output.append(_escape_format_text(text))
+            text = _static_js_text(
+                resolved,
+                source,
+                binding_name,
+            )
+            output.append(text if isinstance(resolved, ArgAlias) else _escape_format_text(text))
         else:
             raise ValidationError(
                 "%s %s pipeline prompt may interpolate only its %s callback parameter, args.NAME, or static constants"
@@ -1000,7 +1057,7 @@ def _pipeline_prompt(
             "%s %s pipeline prompt must interpolate its %s callback parameter"
             % (source, binding_name, item_name)
         )
-    return "".join(output)
+    return "".join(output), structured_items
 
 
 def _parallel_map(
@@ -1020,7 +1077,9 @@ def _parallel_map(
         and len(expression.source.parts) == 1
         and expression.source.parts[0] in constants
     ):
-        static_items = constants[expression.source.parts[0]]
+        candidate = constants[expression.source.parts[0]]
+        if not isinstance(candidate, ArgAlias):
+            static_items = candidate
 
     if static_items is not None:
         if not isinstance(static_items, list) or not static_items:
@@ -1050,7 +1109,7 @@ def _parallel_map(
             None,
         )
 
-    prompt_template = _pipeline_prompt(
+    prompt_template, structured_items = _pipeline_prompt(
         expression.agent.prompt,
         expression.item_name,
         source,
@@ -1065,8 +1124,11 @@ def _parallel_map(
         max_items,
         source,
         constants=constants,
+        structured_items=structured_items,
     )
-    if "items" in item_source:
+    if structured_items:
+        item_source["item_semantics"] = "json"
+    elif "items" in item_source:
         item_source["item_semantics"] = "opaque"
     return prompt_template, item_source, dependency
 
@@ -1169,13 +1231,28 @@ def _pipeline_source(
     max_items: int,
     source: Path,
     constants: Optional[Dict[str, Any]] = None,
+    structured_items: bool = False,
 ) -> Tuple[Dict[str, Any], Optional[str]]:
     constants = constants or {}
     if isinstance(value, Reference) and len(value.parts) == 1 and value.parts[0] in constants:
-        value = constants[value.parts[0]]
+        resolved = constants[value.parts[0]]
+        value = (
+            Reference(("args", resolved.name))
+            if isinstance(resolved, ArgAlias)
+            else resolved
+        )
     if isinstance(value, list):
-        if not value or not all(isinstance(item, str) and item for item in value):
-            raise ValidationError("%s %s pipeline literal source must be a non-empty string array" % (source, binding_name))
+        valid_items = (
+            all(isinstance(item, dict) and item for item in value)
+            if structured_items
+            else all(isinstance(item, str) and item for item in value)
+        )
+        if not value or not valid_items:
+            item_type = "object" if structured_items else "string"
+            raise ValidationError(
+                "%s %s pipeline literal source must be a non-empty %s array"
+                % (source, binding_name, item_type)
+            )
         if len(value) > max_items:
             raise ValidationError("%s %s pipeline literal source exceeds its agent budget" % (source, binding_name))
         return {"items": value}, None
@@ -1195,7 +1272,13 @@ def _pipeline_source(
     schema = owner_binding.expression.options.get("schema")
     if isinstance(schema, Reference):
         schema = _resolve_static_reference(schema, constants, source, owner)
-    _validate_string_array_schema(schema, property_name, source, owner)
+    _validate_array_schema(
+        schema,
+        property_name,
+        source,
+        owner,
+        structured_items=structured_items,
+    )
     pointer = "/" + property_name.replace("~", "~0").replace("/", "~1")
     return {
         "items_artifact": _agent_capture(owner, structured=True),
@@ -1204,6 +1287,23 @@ def _pipeline_source(
 
 
 def _validate_string_array_schema(schema: Any, property_name: str, source: Path, binding_name: str) -> None:
+    _validate_array_schema(
+        schema,
+        property_name,
+        source,
+        binding_name,
+        structured_items=False,
+    )
+
+
+def _validate_array_schema(
+    schema: Any,
+    property_name: str,
+    source: Path,
+    binding_name: str,
+    *,
+    structured_items: bool,
+) -> None:
     valid = isinstance(schema, dict) and schema.get("type") == "object"
     properties = schema.get("properties") if valid else None
     property_schema = properties.get(property_name) if isinstance(properties, dict) else None
@@ -1212,14 +1312,16 @@ def _validate_string_array_schema(schema: Any, property_name: str, source: Path,
         and isinstance(property_schema, dict)
         and property_schema.get("type") == "array"
         and isinstance(property_schema.get("items"), dict)
-        and property_schema["items"].get("type") == "string"
+        and property_schema["items"].get("type")
+        == ("object" if structured_items else "string")
     )
     required = schema.get("required") if isinstance(schema, dict) else None
     valid = valid and isinstance(required, list) and property_name in required
     if not valid:
+        item_type = "objects" if structured_items else "strings"
         raise ValidationError(
-            "%s agent %s must declare %s as an array-of-strings schema property"
-            % (source, binding_name, property_name)
+            "%s agent %s must declare %s as an array-of-%s schema property"
+            % (source, binding_name, property_name, item_type)
         )
 
 
@@ -1309,6 +1411,8 @@ def _phase_identifier(title: str, source: Path) -> str:
 
 
 def _normalize_static_literal(value: Any) -> Any:
+    if isinstance(value, ArgAlias):
+        raise ValidationError("literal contains an argument alias")
     if isinstance(value, Concat):
         normalized = [_normalize_static_literal(part) for part in value.parts]
         if not normalized or not all(isinstance(part, str) for part in normalized):
@@ -1341,6 +1445,11 @@ def _resolve_static_reference(
             % (source, binding_name, reference.parts[0] if reference.parts else "")
         )
     current = constants[reference.parts[0]]
+    if isinstance(current, ArgAlias) and len(reference.parts) > 1:
+        raise ValidationError(
+            "%s %s argument alias %s cannot be dereferenced as a static object"
+            % (source, binding_name, reference.parts[0])
+        )
     for part in reference.parts[1:]:
         if not isinstance(current, dict) or part not in current:
             raise ValidationError(
@@ -1352,6 +1461,8 @@ def _resolve_static_reference(
 
 
 def _static_js_text(value: Any, source: Path, binding_name: str) -> str:
+    if isinstance(value, ArgAlias):
+        return "{{args.%s}}" % value.name
     if isinstance(value, str):
         return value
     if value is None:
