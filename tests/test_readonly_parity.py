@@ -13,7 +13,7 @@ from conductor_runtime.benchmark import (
     parity_prompt_environment,
     render_parity_task_contract,
 )
-from conductor_runtime.cli import main as cli_main
+from conductor_runtime.legacy_cli import main as cli_main
 from conductor_runtime.claude_live import analyze_claude_output
 from conductor_runtime.build_identity import current_runtime_build_sha256
 from conductor_runtime.errors import ValidationError

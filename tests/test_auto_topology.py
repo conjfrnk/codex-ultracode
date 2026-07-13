@@ -32,7 +32,7 @@ from conductor_runtime.auto_topology_run import (
 )
 from conductor_runtime.benchmark import load_parity_tasks
 from conductor_runtime.build_identity import current_runtime_build_sha256
-from conductor_runtime.cli import main as cli_main
+from conductor_runtime.legacy_cli import main as cli_main
 from conductor_runtime.errors import PolicyError, ValidationError
 from conductor_runtime.model_orchestrator import MODEL_WORKFLOW_EXECUTE_APPROVAL
 from conductor_runtime.model_planner import MODEL_WORKFLOW_WRITE_APPROVAL

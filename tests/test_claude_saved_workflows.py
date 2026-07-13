@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from conductor_runtime.agent_packets import packetize_agent_items
 from conductor_runtime.claude_saved_workflows import compile_claude_saved_workflow
-from conductor_runtime.cli import main as cli_main
+from conductor_runtime.legacy_cli import main as cli_main
 from conductor_runtime.errors import ValidationError
 from conductor_runtime.packet_items import read_packet_items_json_file
 from conductor_runtime.runner import WorkflowRunner, _agent_output_relative, _agent_packet_label
@@ -1409,7 +1409,7 @@ return report
             workflow_dir.mkdir(parents=True)
             (workflow_dir / "report.js").write_text(source, encoding="utf-8")
             stdout = StringIO()
-            with patch("conductor_runtime.cli.WorkflowRunner", ResultFixtureRunner):
+            with patch("conductor_runtime.legacy_cli.WorkflowRunner", ResultFixtureRunner):
                 with redirect_stdout(stdout):
                     code = cli_main(
                         [

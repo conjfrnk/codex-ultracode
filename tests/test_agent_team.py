@@ -114,7 +114,7 @@ from conductor_runtime.agent_team_plan_approval import (
     verify_agent_team_plan_approval_outputs,
 )
 from conductor_runtime.errors import PolicyError, StepExecutionError, ValidationError
-from conductor_runtime.cli import main as cli_main
+from conductor_runtime.legacy_cli import main as cli_main
 from conductor_runtime.dashboard import (
     collect_run_detail,
     run_handle,

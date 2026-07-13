@@ -28,7 +28,7 @@ from conductor_runtime.agent_profiles import (
     agent_profile_prompt_section,
     effective_agent_step,
 )
-from conductor_runtime.cli import main as cli_main
+from conductor_runtime.legacy_cli import main as cli_main
 from conductor_runtime.dashboard import collect_run_detail
 from conductor_runtime.errors import PolicyError, ValidationError
 from conductor_runtime.goal_loop import run_goal_loop

@@ -122,7 +122,7 @@ from conductor_runtime.background_supervisor import (
     validate_background_routine_supervisor,
     wait_for_background_routine_supervisor,
 )
-from conductor_runtime.cli import (
+from conductor_runtime.legacy_cli import (
     MAX_STATUS_JSON_BYTES,
     _effective_staged_exit_contract,
     _staged_cli_exit_code,
@@ -8095,7 +8095,7 @@ class RuntimeWorkflowTests(unittest.TestCase):
             template.write_text(" " * (MAX_WORKFLOW_JSON_BYTES + 1), encoding="utf-8")
 
             stderr = StringIO()
-            with patch("conductor_runtime.cli.load_workflow", return_value=workflow):
+            with patch("conductor_runtime.legacy_cli.load_workflow", return_value=workflow):
                 with redirect_stderr(stderr):
                     code = cli_main(["init", str(template), str(destination)])
 
@@ -12670,9 +12670,9 @@ class RuntimeWorkflowTests(unittest.TestCase):
         completed["steps"][0]["codex_progress"]["last_event"] = "turn-completed"
         output = StringIO()
         with patch(
-            "conductor_runtime.cli.collect_run_detail",
+            "conductor_runtime.legacy_cli.collect_run_detail",
             side_effect=[active, active, completed],
-        ), patch("conductor_runtime.cli.time.sleep"), redirect_stdout(output):
+        ), patch("conductor_runtime.legacy_cli.time.sleep"), redirect_stdout(output):
             self.assertEqual(
                 cli_main(
                     [
@@ -24455,7 +24455,7 @@ def normalize_slug(value: str) -> str:
             ), patch("conductor_runtime.codex_staged.run_process", side_effect=fake_run), patch(
                 "conductor_runtime.claude_staged.run_process",
                 side_effect=fake_run,
-            ), patch("conductor_runtime.cli._verified_repair_stage_delivery") as exit_recheck, redirect_stdout(stdout):
+            ), patch("conductor_runtime.legacy_cli._verified_repair_stage_delivery") as exit_recheck, redirect_stdout(stdout):
                 self.assertEqual(cli_main(argv), 0)
                 exit_recheck.assert_not_called()
 
@@ -25116,7 +25116,7 @@ def normalize_slug(value: str) -> str:
             ), patch("conductor_runtime.codex_staged.run_process", side_effect=fake_run), patch(
                 "conductor_runtime.claude_staged.run_process",
                 side_effect=fake_run,
-            ), patch("conductor_runtime.cli._verified_stage_delivery") as exit_recheck, redirect_stdout(stdout):
+            ), patch("conductor_runtime.legacy_cli._verified_stage_delivery") as exit_recheck, redirect_stdout(stdout):
                 self.assertEqual(cli_main(argv), 0)
                 exit_recheck.assert_not_called()
 
@@ -25289,10 +25289,10 @@ def normalize_slug(value: str) -> str:
                 "conductor_runtime.claude_staged.run_process",
                 side_effect=fake_run,
             ), patch(
-                "conductor_runtime.cli.write_new_text_file_no_follow",
+                "conductor_runtime.legacy_cli.write_new_text_file_no_follow",
                 side_effect=ValidationError("simulated durable report failure"),
             ) as report_write, patch(
-                "conductor_runtime.cli.apply_verified_stage"
+                "conductor_runtime.legacy_cli.apply_verified_stage"
             ) as apply_call, redirect_stderr(StringIO()):
                 self.assertEqual(cli_main(argv), 2)
                 apply_call.assert_not_called()

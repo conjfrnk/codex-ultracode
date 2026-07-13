@@ -7,7 +7,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.cli import main as cli_main
+from conductor_runtime.legacy_cli import main as cli_main
 from conductor_runtime.errors import PolicyError, ValidationError
 from conductor_runtime.security import assess_command
 from conductor_runtime.system_doctor import (
