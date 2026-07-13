@@ -1507,10 +1507,10 @@
     },
     {
       "id": "claude-saved-workflow-inspect",
-      "description": "Inspection exposes the compiled structured-output and JSON-item handoff without evaluating JavaScript or launching a provider.",
+      "description": "Inspection exposes the compiled structured-output handoff and terminal result collector without evaluating JavaScript or launching a provider.",
       "risk": "low",
       "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-saved-workflow-smoke.js", "--workspace", "."],
-      "success_contains": "reviews [agent_map, risk=low, json-items]"
+      "success_contains": "claude-result [collect_results"
     },
     {
       "id": "structured-agent-map-validate",
@@ -1518,6 +1518,20 @@
       "risk": "low",
       "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "benchmark-suites/structured-agent-map-template.json"],
       "success_contains": "OK: benchmark-suites/structured-agent-map-template.json"
+    },
+    {
+      "id": "workflow-result-contract-schema",
+      "description": "The public workflow schema exposes the terminal deterministic result collector contract.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "workflow"],
+      "success_contains": "collect_results"
+    },
+    {
+      "id": "saved-workflow-result-interface",
+      "description": "Saved workflow execution exposes explicit result rendering while retaining path-only output by default.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-saved-workflow", "--help"],
+      "success_contains": "--print-result"
     }
   ]
 }

@@ -7963,10 +7963,15 @@ class AgentTeamTests(unittest.TestCase):
             get_schema("agent-team-merge-recovery")["properties"]["schema"]["const"],
             AGENT_TEAM_MERGE_RECOVERY_SCHEMA,
         )
-        self.assertIn("max_dynamic_tasks", workflow_schema["properties"]["steps"]["items"]["oneOf"][5]["properties"])
-        self.assertIn("max_operator_tasks", workflow_schema["properties"]["steps"]["items"]["oneOf"][5]["properties"])
-        self.assertIn("active_messaging", workflow_schema["properties"]["steps"]["items"]["oneOf"][5]["properties"])
-        self.assertIn("operator_chat", workflow_schema["properties"]["steps"]["items"]["oneOf"][5]["properties"])
+        team_schema = next(
+            item
+            for item in workflow_schema["properties"]["steps"]["items"]["oneOf"]
+            if item["properties"]["kind"]["const"] == "agent_team"
+        )
+        self.assertIn("max_dynamic_tasks", team_schema["properties"])
+        self.assertIn("max_operator_tasks", team_schema["properties"])
+        self.assertIn("active_messaging", team_schema["properties"])
+        self.assertIn("operator_chat", team_schema["properties"])
 
         two_leads = coordinated_workflow()
         two_leads["steps"][0]["members"][1]["lead"] = True

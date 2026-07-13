@@ -1,17 +1,21 @@
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
+from conductor_runtime.agent_packets import packetize_agent_items
 from conductor_runtime.claude_saved_workflows import compile_claude_saved_workflow
 from conductor_runtime.cli import main as cli_main
 from conductor_runtime.errors import ValidationError
 from conductor_runtime.packet_items import read_packet_items_json_file
-from conductor_runtime.runner import WorkflowRunner
+from conductor_runtime.runner import WorkflowRunner, _agent_output_relative, _agent_packet_label
 from conductor_runtime.saved_workflows import apply_saved_workflow_args, load_saved_workflow
+from conductor_runtime.schemas import get_schema
 from conductor_runtime.security import RuntimePolicy
+from conductor_runtime.workflow import validate_workflow
 
 
 OFFICIAL_EXAMPLE = """\
@@ -32,6 +36,66 @@ return audits.filter(Boolean)
 """
 
 
+class ResultFixtureRunner(WorkflowRunner):
+    def _codex_exec(self, step):
+        output = step.get("fixture_output", step["prompt"])
+        path = self.run.write_artifact(
+            step.get("capture", "%s.md" % step["id"]),
+            output,
+        )
+        self.run.mark_step(
+            step["id"],
+            "completed",
+            "fixture codex output",
+            kind=step["kind"],
+            metrics={
+                "fixture_output_bytes": path.stat().st_size,
+            },
+        )
+
+    def _agent_map(self, step):
+        items = self._agent_items(step)
+        packets = packetize_agent_items(items, step.get("max_packets"))
+        outputs = step["fixture_outputs"]
+        if len(outputs) != len(packets):
+            raise AssertionError("fixture output count must match packet count")
+        capture_dir = step.get("capture_dir", step["id"])
+        for index, (packet, output) in enumerate(zip(packets, outputs), start=1):
+            relative = _agent_output_relative(
+                capture_dir,
+                _agent_packet_label(packet.items),
+                index,
+            )
+            self.run.write_artifact(relative, output)
+        self.run.mark_step(
+            step["id"],
+            "completed",
+            "fixture map output",
+            kind=step["kind"],
+        )
+
+
+def result_workflow(source, *, filter_falsey=False, output_limit_bytes=None):
+    collector = {
+        "id": "result",
+        "kind": "collect_results",
+        "source_step": source["id"],
+        "output": "result.json",
+        "depends_on": [source["id"]],
+    }
+    if filter_falsey:
+        collector["filter_falsey"] = True
+    if output_limit_bytes is not None:
+        collector["output_limit_bytes"] = output_limit_bytes
+    return {
+        "schema": "conductor.workflow.v1",
+        "name": "result-fixture",
+        "mode": "read_only",
+        "result_artifact": "result.json",
+        "steps": [source, collector],
+    }
+
+
 class ClaudeSavedWorkflowCompilerTests(unittest.TestCase):
     def compile(self, source):
         return compile_claude_saved_workflow(source, Path("audit.js"))
@@ -48,9 +112,10 @@ class ClaudeSavedWorkflowCompilerTests(unittest.TestCase):
         self.assertEqual(workflow["mode"], "read_only")
         self.assertEqual(workflow["max_workers"], 16)
         self.assertEqual(workflow["max_items"], 999)
-        self.assertEqual(len(workflow["steps"]), 2)
+        self.assertEqual(workflow["result_artifact"], "claude-workflow/result.json")
+        self.assertEqual(len(workflow["steps"]), 3)
 
-        discovery, audits = workflow["steps"]
+        discovery, audits, result = workflow["steps"]
         self.assertEqual(discovery["kind"], "codex_exec")
         self.assertEqual(discovery["sandbox"], "read-only")
         self.assertEqual(discovery["capture"], "claude-workflow/found.json")
@@ -63,6 +128,11 @@ class ClaudeSavedWorkflowCompilerTests(unittest.TestCase):
         self.assertEqual(audits["depends_on"], ["found"])
         self.assertEqual(audits["max_workers"], 16)
         self.assertTrue(audits["preserve_duplicate_items"])
+        self.assertEqual(result["kind"], "collect_results")
+        self.assertEqual(result["source_step"], "audits")
+        self.assertEqual(result["depends_on"], ["audits"])
+        self.assertEqual(result["output"], workflow["result_artifact"])
+        self.assertTrue(result["filter_falsey"])
 
     def test_loader_compiles_dynamic_script_and_applies_structured_args(self):
         source = """\
@@ -297,6 +367,273 @@ export const workflow = {
             self.assertTrue(schema_path.is_file())
             self.assertEqual(json.loads(schema_path.read_text(encoding="utf-8")), schema)
 
+    def test_result_contract_validates_cross_step_invariants(self):
+        source = {
+            "id": "report",
+            "kind": "codex_exec",
+            "prompt": "Report",
+            "capture": "report.md",
+        }
+        workflow = result_workflow(source)
+        validate_workflow(workflow)
+
+        cases = []
+        missing_contract = json.loads(json.dumps(workflow))
+        del missing_contract["result_artifact"]
+        cases.append((missing_contract, "requires a workflow result_artifact"))
+
+        missing_dependency = json.loads(json.dumps(workflow))
+        missing_dependency["steps"][1]["depends_on"] = []
+        cases.append((missing_dependency, "must be a direct dependency"))
+
+        direct_filter = json.loads(json.dumps(workflow))
+        direct_filter["steps"][1]["filter_falsey"] = True
+        cases.append((direct_filter, "requires an agent_map source"))
+
+        overwrite = json.loads(json.dumps(workflow))
+        overwrite["result_artifact"] = "report.md"
+        overwrite["steps"][1]["output"] = "report.md"
+        cases.append((overwrite, "must not overwrite"))
+
+        for candidate, detail in cases:
+            with self.subTest(detail=detail):
+                with self.assertRaisesRegex(ValidationError, detail):
+                    validate_workflow(candidate)
+
+    def test_workflow_schema_exports_result_contract(self):
+        schema = get_schema("workflow")
+        self.assertIn("result_artifact", schema["properties"])
+        step_schemas = schema["properties"]["steps"]["items"]["oneOf"]
+        collector = next(
+            item
+            for item in step_schemas
+            if item["properties"]["kind"]["const"] == "collect_results"
+        )
+        self.assertEqual(collector["required"], ["id", "kind", "source_step", "output"])
+        self.assertEqual(collector["properties"]["filter_falsey"]["type"], "boolean")
+
+    def test_collects_canonical_structured_direct_result(self):
+        source = {
+            "id": "report",
+            "kind": "codex_exec",
+            "prompt": "unused",
+            "capture": "report.json",
+            "output_schema": {},
+            "fixture_output": '{"z":2,"a":1}',
+        }
+        workflow = result_workflow(source)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = ResultFixtureRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(),
+                run_id="structured-result",
+            ).execute()
+
+            self.assertEqual(
+                (run.artifacts_dir / "result.json").read_text(encoding="utf-8"),
+                '{"a":1,"z":2}\n',
+            )
+            state = run.read_state()["steps"]["result"]
+            self.assertEqual(state["result_item_count"], 1)
+            self.assertEqual(state["result_source_count"], 1)
+            self.assertEqual(len(state["result_source_sha256"]), 64)
+            self.assertEqual(len(state["result_output_sha256"]), 64)
+
+    def test_collects_map_results_in_order_with_javascript_falsey_filter(self):
+        source = {
+            "id": "reviews",
+            "kind": "agent_map",
+            "items": ["a", "b", "a", "d", "e", "f"],
+            "preserve_duplicate_items": True,
+            "prompt_template": "Review {item}",
+            "capture_dir": "reviews",
+            "output_schema": {},
+            "fixture_outputs": ['"first"', '""', '"second"', "{}", "[]", "false"],
+        }
+        workflow = result_workflow(source, filter_falsey=True)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = ResultFixtureRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(),
+                run_id="map-result",
+            ).execute()
+
+            self.assertEqual(
+                (run.artifacts_dir / "result.json").read_text(encoding="utf-8"),
+                '["first","second",{},[]]\n',
+            )
+            state = run.read_state()["steps"]["result"]
+            self.assertEqual(state["result_source_count"], 6)
+            self.assertEqual(state["result_item_count"], 4)
+            self.assertTrue(state["result_filter_falsey"])
+
+    def test_collect_results_rejects_non_strict_and_oversized_outputs(self):
+        invalid_values = [
+            '{"a":1,"a":2}',
+            "NaN",
+            "1e999",
+        ]
+        for index, invalid in enumerate(invalid_values):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = {
+                    "id": "report",
+                    "kind": "codex_exec",
+                    "prompt": "unused",
+                    "output_schema": {},
+                    "fixture_output": invalid,
+                }
+                runner = ResultFixtureRunner(
+                    result_workflow(source),
+                    root,
+                    root / "runs",
+                    RuntimePolicy(),
+                    run_id="invalid-%d" % index,
+                )
+                with self.assertRaisesRegex(ValidationError, "strict JSON|finite JSON"):
+                    runner.execute()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = {
+                "id": "report",
+                "kind": "codex_exec",
+                "prompt": "unused",
+                "fixture_output": "abcd",
+            }
+            runner = ResultFixtureRunner(
+                result_workflow(source, output_limit_bytes=6),
+                root,
+                root / "runs",
+                RuntimePolicy(),
+                run_id="oversized",
+            )
+            with self.assertRaisesRegex(ValidationError, "exceeds output_limit_bytes 6"):
+                runner.execute()
+
+    def test_collect_results_rejects_symlinked_source_output(self):
+        class SymlinkSourceRunner(ResultFixtureRunner):
+            def _codex_exec(self, step):
+                super()._codex_exec(step)
+                path = self.run.resolve_artifact_path(step.get("capture", "%s.md" % step["id"]))
+                outside = self.workspace / "outside.txt"
+                outside.write_text("outside", encoding="utf-8")
+                path.unlink()
+                path.symlink_to(outside)
+
+        source = {
+            "id": "report",
+            "kind": "codex_exec",
+            "prompt": "unused",
+            "fixture_output": "report",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = SymlinkSourceRunner(
+                result_workflow(source),
+                root,
+                root / "runs",
+                RuntimePolicy(),
+                run_id="symlinked-source",
+            )
+            try:
+                with self.assertRaisesRegex(ValidationError, "must not be a symlink"):
+                    runner.execute()
+            except OSError:
+                self.skipTest("symlinks are not supported on this filesystem")
+
+    def test_collect_results_rejects_skipped_source_step(self):
+        source = {
+            "id": "report",
+            "kind": "codex_exec",
+            "prompt": "unused",
+            "capture": "report.md",
+        }
+        workflow = result_workflow(source)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = ResultFixtureRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(),
+                run_id="skipped-source",
+            )
+            runner.run.write_artifact("report.md", "stale")
+            runner.run.mark_step("report", "skipped", "fixture skip", kind="codex_exec")
+            with self.assertRaisesRegex(ValidationError, "source step report must be completed"):
+                runner.execute()
+
+    def test_collect_results_resume_rejects_source_and_result_drift(self):
+        for target in ("source", "result"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = {
+                    "id": "report",
+                    "kind": "codex_exec",
+                    "prompt": "unused",
+                    "capture": "report.md",
+                    "fixture_output": "original",
+                }
+                workflow = result_workflow(source)
+                run = ResultFixtureRunner(
+                    workflow,
+                    root,
+                    root / "runs",
+                    RuntimePolicy(),
+                    run_id="drift-%s" % target,
+                ).execute()
+                relative = "report.md" if target == "source" else "result.json"
+                (run.artifacts_dir / relative).write_text("changed\n", encoding="utf-8")
+
+                resumed = WorkflowRunner(
+                    workflow,
+                    root,
+                    root / "runs",
+                    RuntimePolicy(),
+                    resume_dir=run.run_dir,
+                )
+                detail = "source outputs changed" if target == "source" else "output changed"
+                with self.assertRaisesRegex(ValidationError, detail):
+                    resumed.execute()
+
+    def test_cli_prints_saved_workflow_result_only_when_requested(self):
+        source = """\
+export const meta = { name: 'report' }
+const report = await agent('CLI result')
+return report
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow_dir = root / ".claude" / "workflows"
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "report.js").write_text(source, encoding="utf-8")
+            stdout = StringIO()
+            with patch("conductor_runtime.cli.WorkflowRunner", ResultFixtureRunner):
+                with redirect_stdout(stdout):
+                    code = cli_main(
+                        [
+                            "run-saved-workflow",
+                            "report",
+                            "--workspace",
+                            str(root),
+                            "--runs-dir",
+                            str(root / "runs"),
+                            "--run-id",
+                            "printed-result",
+                            "--print-result",
+                        ]
+                    )
+            self.assertEqual(code, 0)
+            self.assertIn("Result artifact:", stdout.getvalue())
+            self.assertIn("Result:\nCLI result\n", stdout.getvalue())
+
     def test_cli_validates_inspects_and_dry_runs_documented_script(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -316,6 +653,7 @@ export const workflow = {
             self.assertEqual(code, 0)
             self.assertIn("found [codex_exec", stdout.getvalue())
             self.assertIn("audits [agent_map", stdout.getvalue())
+            self.assertIn("claude-result [collect_results", stdout.getvalue())
 
             stdout = StringIO()
             with redirect_stdout(stdout):
@@ -336,10 +674,27 @@ export const workflow = {
                 )
             self.assertEqual(code, 0)
             self.assertIn("Status: planned", stdout.getvalue())
+            self.assertIn("Result artifact (planned):", stdout.getvalue())
             persisted = json.loads(
                 (root / "runs" / "dynamic-dry-run" / "workflow.json").read_text(encoding="utf-8")
             )
             self.assertEqual(persisted["steps"][1]["items_pointer"], "/files")
+            self.assertEqual(persisted["steps"][2]["kind"], "collect_results")
+
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                code = cli_main(
+                    [
+                        "run-saved-workflow",
+                        "audit-routes",
+                        "--workspace",
+                        str(root),
+                        "--dry-run",
+                        "--print-result",
+                    ]
+                )
+            self.assertEqual(code, 2)
+            self.assertIn("--print-result requires real workflow execution", stderr.getvalue())
 
 
 if __name__ == "__main__":

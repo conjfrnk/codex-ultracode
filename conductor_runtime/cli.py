@@ -996,6 +996,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--resume", type=Path)
     run.add_argument("--dry-run", action="store_true")
     run.add_argument(
+        "--print-result",
+        action="store_true",
+        help="Print the terminal result value after a completed result-contract workflow.",
+    )
+    run.add_argument(
         "--desktop-notify",
         action="store_true",
         help="Send one content-free desktop notification when this execution finishes.",
@@ -1169,6 +1174,11 @@ def build_parser() -> argparse.ArgumentParser:
     saved_run.add_argument("--run-id")
     saved_run.add_argument("--resume", type=Path)
     saved_run.add_argument("--dry-run", action="store_true")
+    saved_run.add_argument(
+        "--print-result",
+        action="store_true",
+        help="Print the consolidated saved-workflow result after completion.",
+    )
     saved_run.add_argument(
         "--desktop-notify",
         action="store_true",
@@ -4397,6 +4407,7 @@ def _run(args) -> int:
     if args.dry_run and args.desktop_notify:
         raise ValidationError("--desktop-notify requires real workflow execution, not --dry-run")
     workflow = load_workflow(args.workflow)
+    _validate_print_result_request(workflow, args)
     approvals = validate_approval_tokens(args.approve)
     policy = RuntimePolicy(
         allow_writes=args.allow_writes,
@@ -4424,8 +4435,45 @@ def _run(args) -> int:
     print("Run directory: %s" % run.run_dir)
     status = str(run.read_state().get("status") or "failed")
     print("Status: %s" % status)
+    _print_workflow_result(run, workflow, status, args.print_result)
     _notify_run_fail_open(run, args.desktop_notify, status=status)
     return 0
+
+
+def _validate_print_result_request(workflow: Dict, args) -> None:
+    if not args.print_result:
+        return
+    if args.dry_run:
+        raise ValidationError("--print-result requires real workflow execution, not --dry-run")
+    if not workflow.get("result_artifact"):
+        raise ValidationError("--print-result requires a workflow result_artifact contract")
+
+
+def _print_workflow_result(run, workflow: Dict, status: str, print_result: bool) -> None:
+    relative = workflow.get("result_artifact")
+    if not isinstance(relative, str) or not relative:
+        return
+    path = run.resolve_artifact_path(relative)
+    if status == "completed":
+        print("Result artifact: %s" % redact_text(str(path)))
+    elif status == "planned":
+        print("Result artifact (planned): %s" % redact_text(str(path)))
+    else:
+        print("Result artifact (pending): %s" % redact_text(str(path)))
+    if not print_result:
+        return
+    if status != "completed":
+        raise ValidationError("--print-result requires a completed workflow")
+    text = run.read_artifact(relative)
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValidationError("workflow result artifact is not valid JSON") from exc
+    print("Result:")
+    rendered = redact_terminal_text(value) if isinstance(value, str) else text
+    sys.stdout.write(rendered)
+    if not rendered.endswith("\n"):
+        sys.stdout.write("\n")
 
 
 def _run_goal(args) -> int:
@@ -5174,6 +5222,7 @@ def _run_saved_workflow(args) -> int:
     if args.dry_run and args.desktop_notify:
         raise ValidationError("--desktop-notify requires real workflow execution, not --dry-run")
     saved = _render_saved_workflow_for_cli(_resolve_saved_workflow_for_cli(args.saved_workflow, args), args)
+    _validate_print_result_request(saved.workflow, args)
     approvals = validate_approval_tokens(args.approve)
     policy = RuntimePolicy(
         allow_writes=args.allow_writes,
@@ -5202,6 +5251,7 @@ def _run_saved_workflow(args) -> int:
     print("Run directory: %s" % redact_text(str(run.run_dir)))
     status = str(run.read_state().get("status") or "failed")
     print("Status: %s" % status)
+    _print_workflow_result(run, saved.workflow, status, args.print_result)
     _notify_run_fail_open(run, args.desktop_notify, status=status)
     return 0
 

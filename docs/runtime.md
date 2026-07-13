@@ -743,6 +743,7 @@ python3 -m conductor_runtime start-background-run conductor-workflows/background
 python3 -m conductor_runtime status-background-run <run-dir>
 python3 -m conductor_runtime wait-background-run <run-dir> --timeout-seconds 60
 python3 -m conductor_runtime run-saved-workflow conductor-verification-sweep --dry-run --allow-writes
+python3 -m conductor_runtime run-saved-workflow audit-routes --allow-agent --allow-parallel --print-result
 python3 -m conductor_runtime validate-desktop-notification <run-dir>/desktop-notification-completed.json
 python3 -m conductor_runtime list-saved-workflows --project-root . --include-personal
 ```
@@ -776,7 +777,7 @@ export const workflow = {
 
 Both native exported objects must be JSON-compatible object literals: quoted keys, valid JSON values, and no computed JavaScript expressions.
 
-Release 0.166 also accepts the common Claude saved-workflow shape through a static compiler:
+Release 0.166 introduced the common Claude saved-workflow shape through a static compiler:
 
 ```js
 export const meta = {
@@ -795,9 +796,9 @@ const audits = await pipeline(found.files, file =>
 return audits.filter(Boolean)
 ```
 
-This compatibility path accepts static literals, top-level awaited `agent()` and `pipeline()` bindings, literal or `args.NAME` item arrays, prior-agent array-of-strings schema properties, callback template interpolation, static `schema`/`label` options, and a direct return or `.filter(Boolean)` pipeline return. It preserves statement order and duplicate list elements, emits one `agent_map` packet per array element, caps concurrency at 16 and the script's total possible agents at 1,000, and compiles every provider step read-only. A consumed agent schema is normalized for strict output, materialized under the external run, passed to `codex exec --output-schema`, and read back through a strict bounded JSON pointer. Imports, loops, branches, mutation, arbitrary calls, computed interpolation, unsupported options, and every other script construct fail closed.
+This compatibility path accepts static literals, top-level awaited `agent()` and `pipeline()` bindings, literal or `args.NAME` item arrays, prior-agent array-of-strings schema properties, callback template interpolation, static `schema`/`label` options, and a direct return or `.filter(Boolean)` pipeline return. It preserves statement order and duplicate list elements, emits one `agent_map` packet per array element, caps concurrency at 16 and the script's total possible agents at 1,000, and compiles every provider step read-only. A consumed agent schema is normalized for strict output, materialized under the external run, passed to `codex exec --output-schema`, and read back through a strict bounded JSON pointer. The terminal return compiles to a deterministic `collect_results` step and `claude-workflow/result.json`, with a 10 MiB aggregate ceiling, JavaScript-compatible falsey filtering, byte-level source/output receipts, and no additional model call. The CLI reports the result artifact path by default to avoid context expansion; `--print-result` explicitly renders the completed value. Imports, loops, branches, mutation, arbitrary calls, computed interpolation, unsupported options, and every other script construct fail closed.
 
-Neither format evaluates JavaScript or requires Node. The loader rejects symlinked or workspace-escaping paths, uses component-wise no-follow reads and exports, rejects same-precedence duplicate names, validates the compiled workflow with the normal schema, and runs it through the same `WorkflowRunner` and `RuntimePolicy` gates as JSON workflows. `agent()` is a compile-time syntax form, not a JavaScript call performed by the loader. Capability flags such as `--allow-agent`, `--allow-parallel`, `--allow-writes`, `--allow-network`, and `--approve` remain mandatory when the resulting workflow needs them. Arbitrary JavaScript, write-capable Claude script compilation, general control flow, result-object transforms, and automatic background launch are not claimed by this subset.
+Neither format evaluates JavaScript or requires Node. The loader rejects symlinked or workspace-escaping paths, uses component-wise no-follow reads and exports, rejects same-precedence duplicate names, validates the compiled workflow with the normal schema, and runs it through the same `WorkflowRunner` and `RuntimePolicy` gates as JSON workflows. `agent()` is a compile-time syntax form, not a JavaScript call performed by the loader. Capability flags such as `--allow-agent`, `--allow-parallel`, `--allow-writes`, `--allow-network`, and `--approve` remain mandatory when the resulting workflow needs them. Arbitrary JavaScript, write-capable Claude script compilation, `parallel()`/`phase()`, general control flow, arbitrary result transforms, and automatic background launch are not claimed by this subset.
 
 Saved workflow placeholders can receive bounded operator input:
 
@@ -1305,12 +1306,15 @@ Workflow files use JSON:
 Supported step kinds:
 
 - `write_artifact`: writes content under the run's `artifacts/` directory.
+- `collect_results`: terminally consolidates one completed direct `codex_exec` or `agent_map` dependency into the workflow's declared `result_artifact` without a provider call.
 - `manual_gate`: blocks unless `--approve <approval_id>` is supplied.
 - `shell`: runs an argv-array command and captures redacted logs.
 - `codex_exec`: runs `codex exec --json` with stdin prompt, captures the last message, and records normalized event and terminal measured usage metadata. Optional `effort` and `max_tokens` override workflow agent defaults.
 - `agent_map`: runs bounded parallel `codex exec` packets over exactly one source: `items`, `items_file`, or `items_artifact`; successful packet outputs are cached inside the run artifacts for compatible retries. Optional `max_packets` groups multiple validated items into one canonical JSON-array scope; `effort`, `max_tokens`, and `max_total_tokens` control provider work.
 - `agent_team`: runs a bounded coordinated team with profile-backed persistent sessions, a dependency task graph, deterministic parent-owned claims, next-turn messages, strict current/legacy turn/state envelopes, aggregate token authorization, explicit lead synthesis, optional bounded lead-authored task proposals, bounded operator-to-member tasks, and a private redacted operator console. Read-only is default; opt-in workspace-write uses external member copies and a strict ordered merge ledger.
 - `agent_memory`: appends one bounded artifact to approved external profile memory for future runs only.
+
+A result-contract workflow sets top-level `result_artifact` and ends with exactly one `collect_results` step whose `output` matches it. The source must be a direct dependency and must have completed rather than been skipped. Unstructured direct output becomes one JSON string; schema-backed direct output becomes its strict JSON value; map output becomes an ordered JSON array. Optional `filter_falsey` on a map drops only `false`, `null`, numeric zero, and the empty string, while empty arrays and objects remain truthy as in JavaScript. Collection uses no-follow bounded reads, rejects duplicate keys and non-finite values, enforces `output_limit_bytes` incrementally, writes canonical JSON, records source/output hashes and sizes, and rechecks source bytes plus result bytes on resume.
 
 Shell captures default to combined stdout/stderr with labels. Set `capture_mode` to `stdout` or `stderr` when a later step needs clean line-oriented data.
 

@@ -6,8 +6,8 @@
   },
   "runtime": {
     "path": "conductor-runtime.pyz",
-    "sha256": "0f08744ac027936aab8571c874192abd9cef1b95600d00100ba4933acab13c3a",
-    "size_bytes": 882113
+    "sha256": "9eb0624b7ef6db628116152dbfadb56a13eafc2369fddeab2f94eb143aee5cae",
+    "size_bytes": 885161
   },
   "schema": "conductor.release_bundle.v1",
   "skill": {
@@ -44,8 +44,8 @@
       },
       {
         "path": "references/runtime.md",
-        "sha256": "a372e52d50fd3ac626390698a44f21199551b522f83e6c2c27bc7361025bf517",
-        "size_bytes": 58360
+        "sha256": "cb401f028d523a640a545c1e271635a56b76b57c3d062fdbc921a404440c06b5",
+        "size_bytes": 59196
       },
       {
         "path": "references/security-gates.md",
@@ -64,7 +64,7 @@
       }
     ],
     "path": "codex-conductor",
-    "tree_sha256": "3e4f6ab00f915a2eda4e2018a5ab2a4e81173c8c89f448253b26ed65b9436ad0"
+    "tree_sha256": "9f623bbe6e16b4cc4b5080da13d8922c52b24053f40123989a6aeba815de94b7"
   },
-  "version": "0.166.0"
+  "version": "0.167.0"
 }

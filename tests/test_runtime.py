@@ -1555,6 +1555,50 @@ class RuntimeWorkflowTests(unittest.TestCase):
             self.assertEqual(packaged_report["passed_tasks"], 1)
             self.assertEqual(packaged_report["failed_tasks"], 0)
 
+            saved_dir = Path(tmp) / ".claude" / "workflows"
+            saved_dir.mkdir(parents=True)
+            (saved_dir / "packaged-result.js").write_text(
+                "export const meta = { name: 'packaged-result' }\n"
+                "const report = await agent('Return a report')\n"
+                "return report\n",
+                encoding="utf-8",
+            )
+            packaged_saved = subprocess.run(
+                [
+                    str(runtime),
+                    "run-saved-workflow",
+                    "packaged-result",
+                    "--workspace",
+                    str(tmp),
+                    "--runs-dir",
+                    str(Path(tmp) / "saved-runs"),
+                    "--run-id",
+                    "packaged-result-dry-run",
+                    "--dry-run",
+                    "--allow-agent",
+                ],
+                cwd=str(tmp),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(packaged_saved.returncode, 0, packaged_saved.stderr)
+            self.assertIn("Result artifact (planned):", packaged_saved.stdout)
+            packaged_workflow = json.loads(
+                (
+                    Path(tmp)
+                    / "saved-runs"
+                    / "packaged-result-dry-run"
+                    / "workflow.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(packaged_workflow["steps"][-1]["kind"], "collect_results")
+            self.assertEqual(
+                packaged_workflow["result_artifact"],
+                "claude-workflow/result.json",
+            )
+
     def test_default_storage_paths_are_workspace_scoped_and_outside_repository(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

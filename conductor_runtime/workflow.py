@@ -59,6 +59,7 @@ from .security import (
 SCHEMA = "conductor.workflow.v1"
 STEP_KINDS = {
     "write_artifact",
+    "collect_results",
     "manual_gate",
     "shell",
     "codex_exec",
@@ -157,6 +158,7 @@ def validate_workflow(workflow: Dict, source: str = "<memory>") -> None:
     for step in steps:
         validate_step(step, seen, workflow=workflow)
     _validate_dependencies(steps)
+    _validate_result_contract(workflow, steps)
     _validate_codex_context_sources(steps)
     _validate_agent_memory_steps(steps)
     _validate_hooks(workflow.get("hooks"), steps, source)
@@ -240,6 +242,20 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
         require_no_path_escape(output)
         if not isinstance(content, str):
             raise ValidationError("write_artifact step %s must set string content" % step_id)
+    elif kind == "collect_results":
+        source_step = step.get("source_step")
+        if not isinstance(source_step, str) or not SAFE_ID.fullmatch(source_step):
+            raise ValidationError(
+                "collect_results step %s must set a safe source_step" % step_id
+            )
+        output = step.get("output")
+        if not isinstance(output, str) or not output:
+            raise ValidationError("collect_results step %s must set output" % step_id)
+        require_no_path_escape(output)
+        if not isinstance(step.get("filter_falsey", False), bool):
+            raise ValidationError(
+                "collect_results step %s filter_falsey must be boolean" % step_id
+            )
     elif kind == "manual_gate":
         approval_id = step.get("approval_id", step_id)
         if not isinstance(approval_id, str) or not approval_id:
@@ -511,6 +527,69 @@ def _validate_dependencies(steps: List[Dict]) -> None:
                     "step %s depends on %s, but dependencies must appear earlier in the workflow"
                     % (step["id"], dependency)
                 )
+
+
+def _validate_result_contract(workflow: Dict, steps: List[Dict]) -> None:
+    result_artifact = workflow.get("result_artifact")
+    collectors = [step for step in steps if step["kind"] == "collect_results"]
+    if result_artifact is None:
+        if collectors:
+            raise ValidationError(
+                "collect_results requires a workflow result_artifact contract"
+            )
+        return
+    if not isinstance(result_artifact, str) or not result_artifact:
+        raise ValidationError("workflow result_artifact must be a relative path")
+    require_no_path_escape(result_artifact)
+    if len(collectors) != 1:
+        raise ValidationError(
+            "workflow result_artifact requires exactly one collect_results step"
+        )
+    collector = collectors[0]
+    if collector is not steps[-1]:
+        raise ValidationError("collect_results must be the final workflow step")
+    if collector["output"] != result_artifact:
+        raise ValidationError(
+            "collect_results output must equal workflow result_artifact"
+        )
+
+    source_id = collector["source_step"]
+    step_map = {step["id"]: step for step in steps}
+    source = step_map.get(source_id)
+    if source is None:
+        raise ValidationError(
+            "collect_results step %s references unknown source_step %s"
+            % (collector["id"], source_id)
+        )
+    if source_id not in collector.get("depends_on", []):
+        raise ValidationError(
+            "collect_results step %s source_step must be a direct dependency"
+            % collector["id"]
+        )
+    if source["kind"] not in {"codex_exec", "agent_map"}:
+        raise ValidationError(
+            "collect_results step %s source_step must be codex_exec or agent_map"
+            % collector["id"]
+        )
+    if collector.get("filter_falsey", False) and source["kind"] != "agent_map":
+        raise ValidationError(
+            "collect_results step %s filter_falsey requires an agent_map source"
+            % collector["id"]
+        )
+
+    output_path = Path(collector["output"])
+    if source["kind"] == "codex_exec":
+        source_path = Path(source.get("capture", "%s.md" % source_id))
+        if output_path == source_path:
+            raise ValidationError(
+                "collect_results output must not overwrite its codex_exec source"
+            )
+    else:
+        source_dir = Path(source.get("capture_dir", source_id))
+        if output_path == source_dir or source_dir in output_path.parents:
+            raise ValidationError(
+                "collect_results output must be outside its agent_map capture_dir"
+            )
 
 
 def _validate_codex_context_from(step: Dict) -> None:

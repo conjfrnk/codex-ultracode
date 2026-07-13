@@ -16,6 +16,8 @@ MAX_CLAUDE_WORKFLOW_DEPTH = 32
 MAX_CLAUDE_WORKFLOW_TOKENS = 100000
 MAX_CLAUDE_WORKFLOW_AGENTS = 1000
 MAX_CLAUDE_WORKFLOW_WORKERS = 16
+MAX_CLAUDE_WORKFLOW_RESULT_BYTES = 10 * 1024 * 1024
+CLAUDE_WORKFLOW_RESULT_ARTIFACT = "claude-workflow/result.json"
 _JS_IDENTIFIER = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
 _JS_REFERENCE = re.compile(
     r"^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$"
@@ -607,11 +609,24 @@ def _compile_program(program: Program, source: Path) -> Dict:
     returned = bindings[program.return_name].expression
     if program.filters_falsey and not isinstance(returned, PipelineCall):
         raise ValidationError("%s filter(Boolean) may be used only on a pipeline result" % source)
+    result_step = {
+        "id": "claude-result",
+        "kind": "collect_results",
+        "risk": "low",
+        "source_step": program.return_name,
+        "output": CLAUDE_WORKFLOW_RESULT_ARTIFACT,
+        "output_limit_bytes": MAX_CLAUDE_WORKFLOW_RESULT_BYTES,
+        "depends_on": [program.return_name],
+    }
+    if program.filters_falsey:
+        result_step["filter_falsey"] = True
+    steps.append(result_step)
     return {
         "schema": SCHEMA,
         "name": command_name,
         "description": description,
         "mode": "read_only",
+        "result_artifact": CLAUDE_WORKFLOW_RESULT_ARTIFACT,
         "max_workers": MAX_CLAUDE_WORKFLOW_WORKERS if pipelines else 1,
         "max_items": per_pipeline_items if pipelines else MAX_CLAUDE_WORKFLOW_AGENTS,
         "steps": steps,

@@ -675,6 +675,8 @@ class WorkflowRunner:
             self._verify_completed_write_team(step)
         if status == "completed" and step.get("kind") == "codex_exec":
             self._reconcile_completed_codex_step_terminal(step)
+        if status == "completed" and step.get("kind") == "collect_results":
+            self._verify_completed_collect_results(step)
         return status == "completed"
 
     def _dependencies_met(self, step: Dict) -> bool:
@@ -714,6 +716,8 @@ class WorkflowRunner:
             self._dry_run_step(step)
         elif kind == "write_artifact":
             self._write_artifact(step)
+        elif kind == "collect_results":
+            self._collect_results(step)
         elif kind == "manual_gate":
             self._manual_gate(step)
         elif kind == "shell":
@@ -805,6 +809,8 @@ class WorkflowRunner:
                 step["agent_profile"],
                 binding["store_revision"],
             )
+        elif step["kind"] == "collect_results":
+            detail = "planned result collection from %s" % step["source_step"]
         if step["kind"] in {"codex_exec", "agent_map", "agent_team"}:
             self._plan_agent_lifecycle_hooks(step)
         self.run.mark_step(step_id, "planned", detail, kind=step["kind"])
@@ -822,6 +828,189 @@ class WorkflowRunner:
                 "write_artifact output",
             ),
         )
+
+    def _collect_results(self, step: Dict) -> None:
+        result = self._collect_results_material(step)
+        output_path = self.run.write_artifact(step["output"], result["payload"])
+        observed = read_regular_text_file_no_follow(
+            output_path,
+            "collect_results output",
+            self._output_limit(step),
+        )
+        if observed != result["payload"]:
+            raise ValidationError("collect_results output changed while it was written")
+        output_record = _file_hash_record(
+            output_path,
+            "collect_results output",
+            max_bytes=self._output_limit(step),
+        )
+        self.run.mark_step(
+            step["id"],
+            "completed",
+            "collected %d result item(s) from %d source output(s)"
+            % (result["item_count"], result["source_count"]),
+            kind=step["kind"],
+            metrics={
+                "result_artifact": step["output"],
+                "result_item_count": result["item_count"],
+                "result_source_count": result["source_count"],
+                "result_source_sha256": result["source_sha256"],
+                "result_output_sha256": output_record["sha256"],
+                "result_output_bytes": output_record["size"],
+                "result_filter_falsey": bool(step.get("filter_falsey", False)),
+            },
+        )
+
+    def _verify_completed_collect_results(self, step: Dict) -> None:
+        result = self._collect_results_material(step)
+        state = self.run.read_state().get("steps", {}).get(step["id"], {})
+        if not isinstance(state, dict):
+            raise ValidationError("completed collect_results state is invalid")
+        if state.get("result_source_sha256") != result["source_sha256"]:
+            raise ValidationError("collect_results source outputs changed after completion")
+        if state.get("result_source_count") != result["source_count"]:
+            raise ValidationError("collect_results source output count changed after completion")
+        if state.get("result_item_count") != result["item_count"]:
+            raise ValidationError("collect_results item count changed after completion")
+
+        output_path = self.run.resolve_artifact_path(step["output"])
+        observed = read_regular_text_file_no_follow(
+            output_path,
+            "completed collect_results output",
+            self._output_limit(step),
+        )
+        if observed != result["payload"]:
+            raise ValidationError("collect_results output changed after completion")
+        output_record = _file_hash_record(
+            output_path,
+            "completed collect_results output",
+            max_bytes=self._output_limit(step),
+        )
+        if (
+            state.get("result_output_sha256") != output_record["sha256"]
+            or state.get("result_output_bytes") != output_record["size"]
+        ):
+            raise ValidationError("collect_results output receipt changed after completion")
+
+    def _collect_results_material(self, step: Dict) -> Dict:
+        source = next(
+            (
+                candidate
+                for candidate in self.workflow["steps"]
+                if candidate["id"] == step["source_step"]
+            ),
+            None,
+        )
+        if source is None or source.get("kind") not in {"codex_exec", "agent_map"}:
+            raise ValidationError("collect_results source contract is invalid")
+        source_state = self.run.read_state().get("steps", {}).get(source["id"], {})
+        if not isinstance(source_state, dict) or source_state.get("status") != "completed":
+            raise ValidationError(
+                "collect_results source step %s must be completed" % source["id"]
+            )
+
+        structured = source.get("output_schema") is not None
+        source_limit = self._output_limit(source)
+        is_map = source["kind"] == "agent_map"
+        filter_falsey = bool(step.get("filter_falsey", False))
+        output_limit = self._output_limit(step)
+        source_digest = hashlib.sha256(b"conductor.collect_results.sources.v1\0")
+        source_count = 0
+        encoded_values = []
+        payload_bytes = 3 if is_map else 0
+        direct_payload = None
+
+        def consume(relative: str) -> None:
+            nonlocal source_count, payload_bytes, direct_payload
+            value, record = self._read_result_source(
+                relative,
+                structured=structured,
+                max_bytes=source_limit,
+            )
+            record_bytes = json.dumps(
+                record,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+                allow_nan=False,
+            ).encode("utf-8")
+            source_digest.update(len(record_bytes).to_bytes(8, "big"))
+            source_digest.update(record_bytes)
+            source_count += 1
+
+            if is_map and filter_falsey and not _json_value_is_truthy(value):
+                return
+            encoded = _canonical_result_value(value)
+            if not is_map:
+                direct_payload = encoded + "\n"
+                if len(direct_payload.encode("utf-8")) > output_limit:
+                    raise ValidationError(
+                        "collect_results step %s output exceeds output_limit_bytes %d"
+                        % (step["id"], output_limit)
+                    )
+                return
+            next_size = payload_bytes + len(encoded.encode("utf-8")) + (
+                1 if encoded_values else 0
+            )
+            if next_size > output_limit:
+                raise ValidationError(
+                    "collect_results step %s output exceeds output_limit_bytes %d"
+                    % (step["id"], output_limit)
+                )
+            encoded_values.append(encoded)
+            payload_bytes = next_size
+
+        if source["kind"] == "codex_exec":
+            relative = source.get("capture", "%s.md" % source["id"])
+            consume(relative)
+        else:
+            effective = effective_agent_step(self.workflow, source)
+            capture_dir = effective.get("capture_dir", source["id"])
+            items = self._agent_items(effective)
+            packets = packetize_agent_items(items, effective.get("max_packets"))
+            for index, packet in enumerate(packets, start=1):
+                relative = _agent_output_relative(
+                    capture_dir,
+                    _agent_packet_label(packet.items),
+                    index,
+                )
+                consume(relative)
+
+        payload = (
+            "[" + ",".join(encoded_values) + "]\n"
+            if is_map
+            else direct_payload
+        )
+        if not isinstance(payload, str):
+            raise ValidationError("collect_results direct source produced no output")
+        return {
+            "payload": payload,
+            "item_count": len(encoded_values) if is_map else 1,
+            "source_count": source_count,
+            "source_sha256": source_digest.hexdigest(),
+        }
+
+    def _read_result_source(
+        self,
+        relative: str,
+        *,
+        structured: bool,
+        max_bytes: int,
+    ):
+        require_no_path_escape(relative)
+        path = self.run.resolve_artifact_path(relative)
+        text = read_regular_text_file_no_follow(
+            path,
+            "collect_results source output",
+            max_bytes,
+        )
+        raw = text.encode("utf-8")
+        value = _parse_strict_result_json(text) if structured else text
+        return value, {
+            "path": relative,
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "size": len(raw),
+        }
 
     def _manual_gate(self, step: Dict) -> None:
         approval_id = step.get("approval_id", step["id"])
@@ -13569,6 +13758,62 @@ def _agent_output_relative(capture_dir: str, item: str, index: int) -> str:
 
 def _agent_packet_label(source_items) -> str:
     return AgentPacket(tuple(source_items)).label
+
+
+def _parse_strict_result_json(text: str):
+    try:
+        return json.loads(
+            text,
+            object_pairs_hook=_result_object_without_duplicates,
+            parse_constant=_reject_result_json_constant,
+        )
+    except json.JSONDecodeError as exc:
+        raise ValidationError(
+            "structured collect_results source output must be valid JSON"
+        ) from exc
+    except ValueError as exc:
+        raise ValidationError(
+            "structured collect_results source output must be strict JSON"
+        ) from exc
+
+
+def _result_object_without_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _reject_result_json_constant(value):
+    del value
+    raise ValueError("non-finite JSON constant")
+
+
+def _canonical_result_value(value) -> str:
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValidationError(
+            "structured collect_results source output must contain finite JSON values"
+        ) from exc
+
+
+def _json_value_is_truthy(value) -> bool:
+    if value is None or value is False:
+        return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0:
+        return False
+    if isinstance(value, str) and value == "":
+        return False
+    return True
 
 
 def _sha256_json(data: Dict) -> str:

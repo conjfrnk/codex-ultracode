@@ -776,6 +776,7 @@ def _workflow_schema() -> Dict:
                 "name": _non_empty_string(),
                 "description": _unchecked_metadata("Workflow description is display metadata; prefer a string."),
                 "mode": {"enum": ["read_only", "workspace_write", "review", "custom"]},
+                "result_artifact": _relative_path(),
                 "max_workers": _int_range(1, MAX_AGENT_WORKERS),
                 "output_limit_bytes": _int_range(1, MAX_WORKFLOW_OUTPUT_LIMIT_BYTES),
                 "max_items": _int_range(1, MAX_AGENT_ITEMS),
@@ -805,6 +806,7 @@ def _workflow_schema() -> Dict:
                     "items": {
                         "oneOf": [
                             _write_artifact_step_schema(),
+                            _collect_results_step_schema(),
                             _manual_gate_step_schema(),
                             _shell_step_schema(),
                             _codex_exec_step_schema(),
@@ -6988,6 +6990,24 @@ def _write_artifact_step_schema() -> Dict:
         {
             "output": _relative_path(),
             "content": {"type": "string"},
+        },
+    )
+
+
+def _collect_results_step_schema() -> Dict:
+    return _step_schema(
+        "collect_results",
+        ["source_step", "output"],
+        {
+            "source_step": _safe_id(),
+            "output": _relative_path(),
+            "filter_falsey": {
+                "type": "boolean",
+                "description": (
+                    "Drop JSON false, null, zero, and empty-string map results; "
+                    "empty arrays and objects remain truthy, matching JavaScript Boolean semantics."
+                ),
+            },
         },
     )
 
