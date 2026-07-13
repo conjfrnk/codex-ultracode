@@ -1,0 +1,55 @@
+{
+  "schema": "conductor.run_manifest.v1",
+  "run_id": "conductor-parity-template",
+  "system": "conductor",
+  "suite": "conductor-ultracode-parity-tasks",
+  "generated_at_utc": "2026-07-08T00:00:00Z",
+  "live_run": false,
+  "repository": {
+    "state": "template",
+    "commit": null,
+    "dirty": "unknown"
+  },
+  "model": {
+    "provider": "openai",
+    "name": "codex",
+    "effort": "unspecified",
+    "version": "template"
+  },
+  "budget": {
+    "max_minutes": 600,
+    "max_agents": 16,
+    "max_live_tool_cost": "high",
+    "max_cost_usd": 0,
+    "max_tokens": 0
+  },
+  "permissions": {
+    "allow_writes": true,
+    "allow_destructive": false,
+    "allow_network": false,
+    "allow_agent": true,
+    "allow_parallel": true,
+    "approved_tokens": []
+  },
+  "scoring": {
+    "tasks": [
+      {"id": "repo-security-audit", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "runtime-bugfix", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "dynamic-workflow-design", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "multi-file-refactor", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "parallel-review-scale", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "interruption-recovery", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "permissioned-runtime-ops", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "prompt-injection-secrets", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "cache-performance-optimization", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "dashboard-evidence-ui", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "saved-workflow-compatibility", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "comparative-reporting", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "live-provenance-claim-gate", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."},
+      {"id": "docs-migration-guidance", "score": 0, "max_score": 10, "notes": "Template placeholder. Replace after a real Conductor parity run."}
+    ]
+  },
+  "safety": {
+    "incidents": []
+  }
+}

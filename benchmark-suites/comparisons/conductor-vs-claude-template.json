@@ -1,0 +1,24 @@
+{
+  "schema": "conductor.comparison.v1",
+  "name": "conductor-vs-claude-template",
+  "description": "Template for comparing equivalent Conductor/Codex and Claude Code Ultracode benchmark reports. Fill both report paths after running the same benchmark suite under equivalent budgets.",
+  "systems": [
+    {
+      "name": "conductor",
+      "report": "conductor-smoke-report.json",
+      "manifest": "benchmark-suites/run-manifests/conductor-smoke-template.json"
+    },
+    {
+      "name": "claude",
+      "report": "claude-smoke-report.json",
+      "manifest": "benchmark-suites/run-manifests/claude-smoke-template.json"
+    }
+  ],
+  "requirements": [
+    "Reports must use the same suite name and task ids.",
+    "Reports must be produced on equivalent hardware and repository state.",
+    "Run manifests must record model, effort, tool permissions, agent caps, timeouts, cost budgets, scoring, and safety incidents.",
+    "Template manifests with live_run=false must be replaced by real manifests before making parity claims.",
+    "Do not interpret duration as meaningful unless hardware, model, and network conditions are comparable."
+  ]
+}

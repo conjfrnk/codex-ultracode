@@ -1,0 +1,11 @@
+{
+  "backend": "unavailable",
+  "content_policy": "fixed-status-only-v1",
+  "error_class": "",
+  "finished_at_utc": "2026-07-11T12:00:01.000Z",
+  "requested_at_utc": "2026-07-11T12:00:00.000Z",
+  "returncode": null,
+  "run_status": "completed",
+  "schema": "conductor.desktop_notification.v1",
+  "status": "unavailable"
+}

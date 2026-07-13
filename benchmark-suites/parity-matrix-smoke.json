@@ -1,0 +1,1523 @@
+{
+  "schema": "conductor.benchmark.v1",
+  "name": "conductor-parity-matrix-smoke",
+  "description": "Read-only local benchmark suite for parity fixture coverage, workflow templates, saved workflow commands, and benchmark provenance templates. This validates evidence machinery; it is not a live Conductor-vs-Ultracode result.",
+  "default_timeout_seconds": 120,
+  "tasks": [
+    {
+      "id": "system-doctor-interface",
+      "description": "The local doctor exposes explicit companion-host diagnostics and approval-gated repair without mutating the installation during smoke validation.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "doctor", "--help"],
+      "success_contains": "--repair-codex-host"
+    },
+    {
+      "id": "staged-verified-exit-contract-interface",
+      "description": "The staged implementation CLI exposes explicit verified-stage process exit semantics while retaining strict behavior by default.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-codex-staged-task", "--help"],
+      "success_contains": "--exit-contract {strict,verified-stage}"
+    },
+    {
+      "id": "staged-repair-verified-exit-contract-interface",
+      "description": "The staged repair CLI exposes the same explicit verified-stage process exit semantics for a retained cumulative patch.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-codex-staged-repair", "--help"],
+      "success_contains": "--exit-contract {strict,verified-stage}"
+    },
+    {
+      "id": "claude-staged-inline-apply-interface",
+      "description": "The pinned Claude Sonnet staged adapter exposes the explicit one-command verified apply transaction.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-claude-staged-task", "--help"],
+      "success_contains": "--apply-verified-stage"
+    },
+    {
+      "id": "codex-staged-inline-apply-interface",
+      "description": "The direct Codex staged adapter exposes the explicit one-command verified apply transaction.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-codex-staged-task", "--help"],
+      "success_contains": "--apply-verified-stage"
+    },
+    {
+      "id": "codex-repair-inline-apply-interface",
+      "description": "The Codex staged repair adapter exposes the explicit one-command verified apply transaction.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-codex-staged-repair", "--help"],
+      "success_contains": "--apply-verified-stage"
+    },
+    {
+      "id": "auto-native-funded-default-interface",
+      "description": "The installed auto interface advertises the funded one-child native default used by deterministic-v5 routing.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "auto", "--help"],
+      "success_contains": "default: 1, range:"
+    },
+    {
+      "id": "dependency-context-schema",
+      "description": "The public workflow schema exposes the bounded explicit dependency-evidence handoff field.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "workflow"],
+      "success_contains": "context_from"
+    },
+    {
+      "id": "completion-verdict-schema",
+      "description": "The public workflow schema exposes the fail-closed strict completion-verdict contract.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "workflow"],
+      "success_contains": "completion_verdict"
+    },
+    {
+      "id": "completion-verdict-feedback-schema",
+      "description": "The public schema exposes the content-free receipt used for bounded private completion repair.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "completion-verdict-feedback"],
+      "success_contains": "conductor.completion_verdict_feedback.v1"
+    },
+    {
+      "id": "agent-lifecycle-hook-input-schema",
+      "description": "The installed runtime exports strict content-free provider-process lifecycle hook input evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-lifecycle-hook-input"],
+      "success_contains": "conductor.agent_lifecycle_hook_input.v1"
+    },
+    {
+      "id": "agent-lifecycle-stop-gate-schema",
+      "description": "The installed runtime exports the strict private crash-safe blocking provider stop acceptance journal.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-lifecycle-stop-gate"],
+      "success_contains": "conductor.agent_lifecycle_stop_gate.v1"
+    },
+    {
+      "id": "direct-workspace-transaction-schema",
+      "description": "The installed runtime exports the strict private crash-safe transaction that keeps blocking-stop direct writes isolated until acceptance.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "direct-workspace-transaction"],
+      "success_contains": "conductor.direct_workspace_transaction.v1"
+    },
+    {
+      "id": "agent-native-tool-hook-input-schema",
+      "description": "The installed runtime exports the strict bounded provider-native pre-tool verifier input contract.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-native-tool-hook-input"],
+      "success_contains": "conductor.agent_native_tool_hook_input.v1"
+    },
+    {
+      "id": "agent-native-tool-gate-schema",
+      "description": "The installed runtime exports the crash-safe invocation gate binding native hook configuration, immutable verifier programs, and terminal receipts.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-native-tool-gate"],
+      "success_contains": "conductor.agent_native_tool_gate.v1"
+    },
+    {
+      "id": "agent-native-tool-receipt-schema",
+      "description": "The installed runtime exports hash-only exactly-once native tool decision receipts without persisted proposed tool input.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-native-tool-receipt"],
+      "success_contains": "conductor.agent_native_tool_receipt.v1"
+    },
+    {
+      "id": "agent-native-tool-workflow-validates",
+      "description": "The bundled native Bash/apply_patch denial workflow validates without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "conductor-workflows/native-pre-tool-gate.json"],
+      "success_contains": "OK: conductor-workflows/native-pre-tool-gate.json"
+    },
+    {
+      "id": "agent-lifecycle-context-schema",
+      "description": "The installed runtime exports the strict private receipt that binds bounded fresh/resume direct, map, and team hook context to complete invocation identity and base/effective prompts.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-lifecycle-context"],
+      "success_contains": "conductor.agent_lifecycle_context.v2"
+    },
+    {
+      "id": "agent-lifecycle-context-v1-schema",
+      "description": "The legacy fresh direct/map lifecycle-context receipt remains explicitly available for immutable evidence and resumable runs.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-lifecycle-context-v1"],
+      "success_contains": "conductor.agent_lifecycle_context.v1"
+    },
+    {
+      "id": "workflow-completion-goal-interface",
+      "description": "The goal CLI exposes the explicit zero-provider workflow-owned completion verifier.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-goal", "--help"],
+      "success_contains": "--workflow-completion"
+    },
+    {
+      "id": "dependency-context-workflow-validates",
+      "description": "A receipt-bound direct dependency workflow validates without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "conductor-workflows/dependency-context-smoke.json"],
+      "success_contains": "OK: conductor-workflows/dependency-context-smoke.json"
+    },
+    {
+      "id": "parity-fixtures-validate",
+      "description": "Parity task matrix validates and covers required dimensions.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-parity-tasks", "benchmark-suites/parity-tasks.json"],
+      "success_contains": "OK: benchmark-suites/parity-tasks.json"
+    },
+    {
+      "id": "implementation-canary-fixtures-validate",
+      "description": "Seeded implementation, migration, refactoring, test-authoring, and repository canary contracts validate before any provider launch.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-parity-tasks", "benchmark-suites/implementation-canary-tasks.json"],
+      "success_contains": "OK: benchmark-suites/implementation-canary-tasks.json"
+    },
+    {
+      "id": "implementation-canary-completion-reserve-validate",
+      "description": "The versioned implementation canary with the ordinary 24,000-token direct-write completion reserve validates without changing historical campaign fixtures.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-parity-tasks", "benchmark-suites/implementation-canary-completion-reserve-tasks.json"],
+      "success_contains": "OK: benchmark-suites/implementation-canary-completion-reserve-tasks.json"
+    },
+    {
+      "id": "implementation-campaign-plan",
+      "description": "A seed-randomized three-repetition implementation campaign preregisters automatic per-task Codex effort, balances provider-first order, and pins Claude to Sonnet Ultracode without launching tools.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "plan-parity-campaign",
+        "benchmark-suites/implementation-canary-completion-reserve-tasks.json",
+        "--run-id",
+        "implementation-canary-smoke",
+        "--seed",
+        "20260709",
+        "--repetitions",
+        "3",
+        "--codex-model",
+        "gpt-5.6-sol"
+      ],
+      "success_contains": "\"effort\": \"auto\""
+    },
+    {
+      "id": "parity-campaign-v3-schema",
+      "description": "The legacy v3 public campaign schema remains available with its original automatic-effort policy for immutable evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "parity-campaign-v3"],
+      "success_contains": "conductor.parity_campaign.v3"
+    },
+    {
+      "id": "parity-campaign-v2-schema",
+      "description": "The legacy v2 public campaign schema remains available for immutable fixed-effort evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "parity-campaign-v2"],
+      "success_contains": "conductor.parity_campaign.v2"
+    },
+    {
+      "id": "parity-campaign-v1-schema",
+      "description": "The legacy public campaign schema remains available and keeps its Codex lane fixed to ultra for immutable v1 evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "parity-campaign-v1"],
+      "success_contains": "conductor.parity_campaign.v1"
+    },
+    {
+      "id": "implementation-campaign-status",
+      "description": "Read-only campaign status validates the preregistered template and reports all rows pending without inferring evidence from planned paths.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "status-parity-campaign",
+        "benchmark-suites/parity-campaign-template.json"
+      ],
+      "success_contains": "Coverage: 0/5 (0.0%)"
+    },
+    {
+      "id": "implementation-campaign-universal-gate",
+      "description": "Read-only campaign status keeps universal superiority false when quality, execution, latency, safety, resources, cap cohorts, or coverage are insufficient.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "status-parity-campaign",
+        "benchmark-suites/parity-campaign-template.json"
+      ],
+      "success_contains": "Universal superiority supported: no"
+    },
+    {
+      "id": "live-parity-runbook-plan",
+      "description": "Live parity runbook planning emits instruction-only non-evidence JSON without launching external tools.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "plan-live-parity-runbook", "benchmark-suites/parity-tasks.json"],
+      "success_contains": "\"evidence_status\": \"planned-not-evidence\""
+    },
+    {
+      "id": "run-manifest-templates-validate",
+      "description": "Conductor and Claude/Ultracode smoke and parity run manifest templates remain valid non-live provenance examples.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-run-manifest", "benchmark-suites/run-manifests/conductor-smoke-template.json", "benchmark-suites/run-manifests/claude-smoke-template.json", "benchmark-suites/run-manifests/conductor-parity-template.json", "benchmark-suites/run-manifests/claude-parity-template.json"],
+      "success_contains": "OK: benchmark-suites/run-manifests/claude-parity-template.json"
+    },
+    {
+      "id": "workflow-templates-validate",
+      "description": "Bundled workflow templates validate under the runtime schema.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "conductor-workflows"],
+      "success_contains": "OK: conductor-workflows/verification-sweep.json"
+    },
+    {
+      "id": "agent-profile-template-validate",
+      "description": "Reusable agent profile contracts validate model, effort, budget, permission, risk, worker, timeout, and context bounds without launching Codex.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-profile", "benchmark-suites/agent-profile-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-profile-template.json"
+    },
+    {
+      "id": "agent-profile-schema",
+      "description": "The public agent-profile schema exposes strict CI/editor structure while Python validation retains cross-field ceiling authority.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-profile"],
+      "success_contains": "conductor.agent_profile.v1"
+    },
+    {
+      "id": "agent-profile-isolation-inspect",
+      "description": "The reusable profile fixture visibly selects the opt-in isolated Codex tool policy without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/agent-profile-template.json"],
+      "success_contains": "Tool policy: isolated"
+    },
+    {
+      "id": "agent-profile-memory-selection-inspect",
+      "description": "The reusable profile fixture visibly selects bounded deterministic lexical memory relevance without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/agent-profile-template.json"],
+      "success_contains": "Memory: read-only, relevant selection"
+    },
+    {
+      "id": "agent-profile-skill-entrypoint-inspect",
+      "description": "The reusable profile fixture visibly selects one bounded workspace Skill entrypoint without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/agent-profile-template.json"],
+      "success_contains": "Skill entrypoints: 1"
+    },
+    {
+      "id": "agent-profile-skill-resources-inspect",
+      "description": "The reusable profile fixture binds its optional reference, script, asset, and Codex metadata as an on-demand hash-only resource tree without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/agent-profile-template.json", "--workspace", "."],
+      "success_contains": "Skill resources: 4 files"
+    },
+    {
+      "id": "restricted-agent-profile-validate",
+      "description": "The restricted profile fixture validates structured exact/prefix Bash rules and optional patch authority without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-profile", "benchmark-suites/restricted-agent-profile-template.json"],
+      "success_contains": "OK: benchmark-suites/restricted-agent-profile-template.json"
+    },
+    {
+      "id": "restricted-agent-profile-inspect",
+      "description": "Restricted profile inspection exposes its verified Codex range, command-rule count, and policy identity without exposing hook commands or launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/restricted-agent-profile-template.json"],
+      "success_contains": "Codex CLI range: >=0.143.0,<0.145.0"
+    },
+    {
+      "id": "restricted-agent-profile-skill-script-inspect",
+      "description": "Restricted profile inspection exposes one operator-authorized selected Skill script route without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/restricted-agent-profile-template.json", "--workspace", "."],
+      "success_contains": "Skill script routes: 1"
+    },
+    {
+      "id": "restricted-agent-profile-skill-mcp-inspect",
+      "description": "Restricted profile inspection asks Codex to parse one selected Skill MCP declaration, matches its pinned HTTPS identity, and reports only the operator-authorized exact tool count without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/restricted-agent-profile-template.json", "--workspace", "."],
+      "success_contains": "Skill MCP tools: 2"
+    },
+    {
+      "id": "authenticated-restricted-agent-profile-skill-mcp-inspect",
+      "description": "Authenticated restricted profile inspection validates an environment-only bearer/header declaration and reports only credential-source counts without reading values or launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/authenticated-restricted-agent-profile-template.json", "--workspace", "."],
+      "success_contains": "Authenticated Skill MCP dependencies: 1"
+    },
+    {
+      "id": "stdio-restricted-agent-profile-skill-mcp-inspect",
+      "description": "Stdio restricted profile inspection asks Codex to parse one exact selected-Skill local command and reports only its sandboxed transport count without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/stdio-restricted-agent-profile-template.json", "--workspace", "."],
+      "success_contains": "Skill MCP stdio dependencies: 1"
+    },
+    {
+      "id": "restricted-agent-workflow-inspect",
+      "description": "The bundled restricted review visibly binds command-bounded policy to fan-out without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect", "conductor-workflows/restricted-review.json"],
+      "success_contains": "tools=restricted"
+    },
+    {
+      "id": "agent-memory-template-validate",
+      "description": "Revisioned external specialist memory validates hashes, provenance, redaction-safe content, and bounded entries without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-memory", "benchmark-suites/agent-memory-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-memory-template.json"
+    },
+    {
+      "id": "agent-memory-schema",
+      "description": "The public agent-memory schema exposes strict CI/editor structure while Python validation retains hash and revision authority.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-memory"],
+      "success_contains": "conductor.agent_memory.v1"
+    },
+    {
+      "id": "agent-memory-workflow-inspect",
+      "description": "The bundled memory workflow visibly binds an approval-gated append to a read-write specialist profile without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect", "conductor-workflows/profile-memory.json"],
+      "success_contains": "memory=append"
+    },
+    {
+      "id": "agent-team-workflow-inspect",
+      "description": "The bundled coordinated review visibly binds three profiled members, one lead, shared tasks, bounded rounds, and no provider launch during inspection.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect", "conductor-workflows/coordinated-team-review.json"],
+      "success_contains": "team=3"
+    },
+    {
+      "id": "adaptive-agent-team-workflow-inspect",
+      "description": "The adaptive review exposes one fixed lead, two specialists, ultra effort, and bounded dynamic-task authority without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect", "conductor-workflows/adaptive-team-review.json"],
+      "success_contains": "team=3"
+    },
+    {
+      "id": "isolated-write-agent-team-workflow-inspect",
+      "description": "The write-team workflow visibly binds three write-capable profiles, an approval gate, and isolated team sandbox without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect", "conductor-workflows/isolated-implementation-team.json"],
+      "success_contains": "sandbox=workspace-write"
+    },
+    {
+      "id": "active-messaging-team-workflow-inspect",
+      "description": "The shipped ultra peer-review team validates bounded automatic teammate response tasks without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect", "conductor-workflows/adversarial-peer-review.json"],
+      "success_contains": "active-messages=4"
+    },
+    {
+      "id": "operator-chat-team-workflow-inspect",
+      "description": "The shipped ultra peer-review team visibly binds bounded teammate-to-operator questions without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect", "conductor-workflows/adversarial-peer-review.json"],
+      "success_contains": "operator-questions=2"
+    },
+    {
+      "id": "agent-team-state-validate",
+      "description": "Resumable shared task, mailbox, member-session, turn, and token-authority state validates without exposing a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-state", "benchmark-suites/agent-team-state-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-state-template.json"
+    },
+    {
+      "id": "agent-team-state-v4-validate",
+      "description": "Legacy v4 interruption-capable checkpoints remain strictly loadable after operator chat adds v6.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-state", "benchmark-suites/agent-team-state-v4-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-state-v4-template.json"
+    },
+    {
+      "id": "agent-team-state-v5-validate",
+      "description": "Legacy v5 active-messaging checkpoints remain strictly loadable after operator chat adds v6.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-state", "benchmark-suites/agent-team-state-v5-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-state-v5-template.json"
+    },
+    {
+      "id": "agent-team-state-v2-validate",
+      "description": "Legacy v2 dynamic-team checkpoints remain strictly loadable for resumable compatibility.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-state", "benchmark-suites/agent-team-state-v2-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-state-v2-template.json"
+    },
+    {
+      "id": "agent-team-state-v1-validate",
+      "description": "Legacy v1 coordinated-team checkpoints remain strictly loadable for resumable compatibility.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-state", "benchmark-suites/agent-team-state-v1-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-state-v1-template.json"
+    },
+    {
+      "id": "agent-team-state-inspect",
+      "description": "Read-only team inspection exposes bounded progress while omitting message bodies and resumable session ids.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-team-state", "benchmark-suites/agent-team-state-template.json"],
+      "success_contains": "Lead: lead"
+    },
+    {
+      "id": "agent-team-state-schema",
+      "description": "The public team-state schema exposes strict editor and CI structure while Python validation retains cross-field authority.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-state"],
+      "success_contains": "conductor.agent_team_state.v6"
+    },
+    {
+      "id": "agent-team-state-v5-schema",
+      "description": "The v5 active-messaging team state remains explicitly exported for retained checkpoints.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-state-v5"],
+      "success_contains": "conductor.agent_team_state.v5"
+    },
+    {
+      "id": "agent-team-state-v4-schema",
+      "description": "The v4 interruption-capable team state remains explicitly exported for retained checkpoints.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-state-v4"],
+      "success_contains": "conductor.agent_team_state.v4"
+    },
+    {
+      "id": "agent-team-state-v3-schema",
+      "description": "The v3 operator-task team state remains explicitly exported for retained checkpoints.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-state-v3"],
+      "success_contains": "conductor.agent_team_state.v3"
+    },
+    {
+      "id": "agent-team-state-v2-schema",
+      "description": "The v2 dynamic-team state schema remains explicitly exported for retained checkpoints.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-state-v2"],
+      "success_contains": "conductor.agent_team_state.v2"
+    },
+    {
+      "id": "agent-team-state-v1-schema",
+      "description": "The legacy team-state schema remains explicitly exported for integrations and retained checkpoints.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-state-v1"],
+      "success_contains": "conductor.agent_team_state.v1"
+    },
+    {
+      "id": "agent-team-operator-inbox-validate",
+      "description": "The strict operator inbox template validates bounded next-turn teammate guidance and hash-only inspection evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-operator-inbox", "benchmark-suites/agent-team-operator-inbox-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-operator-inbox-template.json"
+    },
+    {
+      "id": "agent-team-operator-inbox-inspect",
+      "description": "Operator inbox inspection exposes status and hashes without instruction text.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-team-operator-inbox", "benchmark-suites/agent-team-operator-inbox-template.json"],
+      "success_contains": "Pending: 1"
+    },
+    {
+      "id": "agent-team-operator-chat-validate",
+      "description": "The strict operator-chat template validates bounded private teammate questions and deterministic response-task routing.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-operator-chat", "benchmark-suites/agent-team-operator-chat-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-operator-chat-template.json"
+    },
+    {
+      "id": "agent-team-operator-chat-inspect",
+      "description": "Operator-chat inspection exposes lifecycle counts without question or reply text.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-team-operator-chat", "benchmark-suites/agent-team-operator-chat-template.json"],
+      "success_contains": "Pending: 1"
+    },
+    {
+      "id": "agent-team-transcript-validate",
+      "description": "The strict private transcript template validates bounded redacted teammate progress without raw provider tool payloads.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-transcript", "benchmark-suites/agent-team-transcript-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-transcript-template.json"
+    },
+    {
+      "id": "agent-team-transcript-inspect",
+      "description": "Transcript inspection exposes identity, lifecycle, bounds, and hashes without assistant message text.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-team-transcript", "benchmark-suites/agent-team-transcript-template.json"],
+      "success_contains": "Events: 4 (1 assistant messages)"
+    },
+    {
+      "id": "team-console-interface",
+      "description": "The dependency-free private multi-member terminal display exposes bounded layout and follow controls without reading a run or launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "team-console", "--help"],
+      "success_contains": "--layout {auto,columns,stack}"
+    },
+    {
+      "id": "agent-team-interruption-validate",
+      "description": "The hash-only teammate interruption template validates without provider output or raw session text.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-interruption", "benchmark-suites/agent-team-interruption-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-interruption-template.json"
+    },
+    {
+      "id": "agent-team-interruption-inspect",
+      "description": "Interruption inspection exposes task and hashes without operator instruction or session text.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-team-interruption", "benchmark-suites/agent-team-interruption-template.json"],
+      "success_contains": "Status: interrupted"
+    },
+    {
+      "id": "agent-team-operator-inbox-schema",
+      "description": "The public operator inbox schema exposes strict editor and CI structure for direct teammate follow-ups.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-operator-inbox"],
+      "success_contains": "conductor.agent_team_operator_inbox.v2"
+    },
+    {
+      "id": "agent-team-operator-chat-schema",
+      "description": "The public operator-chat schema exposes strict editor and CI structure while raw text remains private.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-operator-chat"],
+      "success_contains": "conductor.agent_team_operator_chat.v1"
+    },
+    {
+      "id": "agent-team-transcript-schema",
+      "description": "The transcript schema publishes strict bounded private-console structure without making transcript content public by default.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-transcript"],
+      "success_contains": "conductor.agent_team_transcript.v1"
+    },
+    {
+      "id": "agent-team-operator-inbox-v1-schema",
+      "description": "The v1 next-turn-only operator inbox remains explicitly exported for retained checkpoints.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-operator-inbox-v1"],
+      "success_contains": "conductor.agent_team_operator_inbox.v1"
+    },
+    {
+      "id": "agent-team-interruption-schema",
+      "description": "The public interruption artifact schema exposes only hash-bound control and session evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-interruption"],
+      "success_contains": "conductor.agent_team_interruption.v1"
+    },
+    {
+      "id": "agent-team-turn-schema",
+      "description": "The public teammate-turn schema exposes completion, continuation, bounded messages, deterministic claims, and lead-only task proposals.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-turn"],
+      "success_contains": "conductor.agent_team_turn.v2"
+    },
+    {
+      "id": "agent-team-hook-input-schema",
+      "description": "The public team quality-hook input schema exposes a strict bounded hash-only contract without task or summary text.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-hook-input"],
+      "success_contains": "conductor.agent_team_hook_input.v1"
+    },
+    {
+      "id": "agent-team-quality-retry-schema",
+      "description": "The public quality-retry checkpoint schema exposes bounded same-session retry identity, budgets, hashes, and no raw feedback.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-quality-retry"],
+      "success_contains": "conductor.agent_team_quality_retry.v1"
+    },
+    {
+      "id": "agent-team-turn-v1-schema",
+      "description": "The legacy teammate-turn envelope remains explicitly exported for v1 checkpoint continuation.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-turn-v1"],
+      "success_contains": "conductor.agent_team_turn.v1"
+    },
+    {
+      "id": "agent-team-merge-ledger-validate",
+      "description": "The strict deterministic merge-ledger template validates locally without source contents or a provider call.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-merge-ledger", "benchmark-suites/agent-team-merge-ledger-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-merge-ledger-template.json"
+    },
+    {
+      "id": "agent-team-merge-ledger-inspect",
+      "description": "Merge-ledger inspection exposes bounded counts and fingerprints without file contents.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-team-merge-ledger", "benchmark-suites/agent-team-merge-ledger-template.json"],
+      "success_contains": "Merge strategy: isolated-ordered-file-v1"
+    },
+    {
+      "id": "agent-team-merge-ledger-schema",
+      "description": "The public merge-ledger schema exposes editor and CI structure while runtime validation retains source-chain authority.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-merge-ledger"],
+      "success_contains": "conductor.agent_team_merge_ledger.v1"
+    },
+    {
+      "id": "agent-team-turn-terminal-schema",
+      "description": "The current terminal-turn schema exposes locally observed pre-return recovery and lifecycle-prompt identity while private output, session, event, and workspace data stays out of inspection.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-turn-terminal"],
+      "success_contains": "conductor.agent_team_turn_terminal.v2"
+    },
+    {
+      "id": "agent-team-turn-terminal-v1-schema",
+      "description": "The legacy team terminal-turn schema remains explicitly available for immutable evidence and resumable runs.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-turn-terminal-v1"],
+      "success_contains": "conductor.agent_team_turn_terminal.v1"
+    },
+    {
+      "id": "agent-map-packet-terminal-schema",
+      "description": "The public packet-terminal schema exposes locally observed recovery identity while private output, session, and provider events stay out of inspection.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-map-packet-terminal"],
+      "success_contains": "conductor.agent_map_packet_terminal.v1"
+    },
+    {
+      "id": "codex-step-terminal-schema",
+      "description": "The current Codex-step terminal schema exposes locally observed recovery and lifecycle-prompt identity while private output, session, provider events, and direct-write workspace data stays out of inspection.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "codex-step-terminal"],
+      "success_contains": "conductor.codex_step_terminal.v2"
+    },
+    {
+      "id": "codex-step-terminal-v1-schema",
+      "description": "The legacy Codex-step terminal schema remains explicitly available for immutable evidence and resumable runs.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "codex-step-terminal-v1"],
+      "success_contains": "conductor.codex_step_terminal.v1"
+    },
+    {
+      "id": "codex-progress-schema",
+      "description": "The current public Codex progress schema distinguishes runner-authorized native limits, passive lifecycle counters, and content-free aggregate parent-plus-child usage while prompt, command, path, diff, message, tool-payload, and session content stays out of inspection.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "codex-progress"],
+      "success_contains": "conductor.codex_progress.v4"
+    },
+    {
+      "id": "codex-progress-v3-schema",
+      "description": "The v3 content-free Codex progress schema remains available for runner-authorized native envelopes before aggregate child-usage reconciliation.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "codex-progress-v3"],
+      "success_contains": "conductor.codex_progress.v3"
+    },
+    {
+      "id": "codex-progress-v2-schema",
+      "description": "The v2 content-free Codex progress schema remains available for passive native-agent lifecycle receipts.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "codex-progress-v2"],
+      "success_contains": "conductor.codex_progress.v2"
+    },
+    {
+      "id": "codex-progress-v1-schema",
+      "description": "The legacy content-free Codex progress schema remains available for existing run receipts.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "codex-progress-v1"],
+      "success_contains": "conductor.codex_progress.v1"
+    },
+    {
+      "id": "agent-team-turn-completion-schema",
+      "description": "The current turn-completion schema exposes provider-completed recovery and lifecycle-prompt identity while runtime inspection keeps output, sessions, telemetry events, and workspace paths private.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-turn-completion"],
+      "success_contains": "conductor.agent_team_turn_completion.v2"
+    },
+    {
+      "id": "agent-team-turn-completion-v1-schema",
+      "description": "The legacy team turn-completion schema remains explicitly available for immutable evidence and resumable runs.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-turn-completion-v1"],
+      "success_contains": "conductor.agent_team_turn_completion.v1"
+    },
+    {
+      "id": "agent-team-merge-transaction-schema",
+      "description": "The public pending-transaction schema exposes the exact source, state, ledger, and retained-workspace recovery contract.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-merge-transaction"],
+      "success_contains": "conductor.agent_team_merge_transaction.v1"
+    },
+    {
+      "id": "agent-team-merge-intent-schema",
+      "description": "The public accepted-turn intent schema exposes the durable pre-transaction recovery contract without private state contents.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-merge-intent"],
+      "success_contains": "conductor.agent_team_merge_intent.v1"
+    },
+    {
+      "id": "agent-team-merge-recovery-schema",
+      "description": "The public recovery-receipt schema exposes durable checkpoint classification and provider no-replay evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-merge-recovery"],
+      "success_contains": "conductor.agent_team_merge_recovery.v1"
+    },
+    {
+      "id": "saved-workflows-validate",
+      "description": "Saved workflow commands in the workspace validate through the safe subset loader.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-saved-workflows", "--workspace", "."],
+      "success_contains": "OK:"
+    },
+    {
+      "id": "model-workflow-receipt-validate",
+      "description": "Model-authored workflow receipt template validates as planned, review-required, hard planner-token capped, isolated, and not executed.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-model-workflow-receipt", "benchmark-suites/model-workflow-receipt-template.json"],
+      "success_contains": "OK: benchmark-suites/model-workflow-receipt-template.json"
+    },
+    {
+      "id": "model-workflow-run-receipt-validate",
+      "description": "Model plan/preflight/run receipt templates validate foreground dry-run and detached final handoff contracts.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-model-workflow-run-receipt", "benchmark-suites/model-workflow-run-receipt-template.json", "benchmark-suites/model-workflow-background-run-receipt-template.json"],
+      "success_contains": "OK: benchmark-suites/model-workflow-background-run-receipt-template.json"
+    },
+    {
+      "id": "background-run-template-validate",
+      "description": "Detached background-run metadata preserves session isolation and non-persisted approval handoff invariants.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-background-run", "benchmark-suites/background-run-template/background.json"],
+      "success_contains": "OK: benchmark-suites/background-run-template/background.json"
+    },
+    {
+      "id": "desktop-notification-schema",
+      "description": "The public desktop-notification schema exposes the fixed content policy and strict content-free receipt shape.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "desktop-notification"],
+      "success_contains": "conductor.desktop_notification.v1"
+    },
+    {
+      "id": "desktop-notification-template-validate",
+      "description": "A content-free unavailable-backend receipt validates through the public read-only CLI.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-desktop-notification", "benchmark-suites/desktop-notification-template.json"],
+      "success_contains": "OK: benchmark-suites/desktop-notification-template.json"
+    },
+    {
+      "id": "desktop-notification-run-interface",
+      "description": "Direct workflow execution advertises explicit content-free desktop completion notification opt-in.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "desktop-notification-saved-interface",
+      "description": "Saved workflow execution advertises the same explicit desktop completion notification opt-in.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-saved-workflow", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "desktop-notification-background-interface",
+      "description": "Detached fixed-workflow execution advertises explicit worker-owned desktop completion notification opt-in.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "start-background-run", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "desktop-notification-goal-interface",
+      "description": "Bounded fixed-goal execution advertises artifact-owned content-free terminal notification opt-in.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-goal", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "desktop-notification-model-workflow-interface",
+      "description": "Model-authored workflow execution advertises content-free foreground or worker-owned detached notification opt-in.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-model-workflow", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "desktop-notification-reviewed-workflow-interface",
+      "description": "Exact reviewed model-workflow execution advertises the same content-free notification contract without replanning.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-reviewed-model-workflow", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "desktop-notification-model-goal-interface",
+      "description": "Adaptive model-goal execution advertises content-free foreground or detached terminal notification opt-in.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-model-goal", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "dynamic-model-goal-interval-interface",
+      "description": "Adaptive model goals advertise bounded model-selected retry intervals without an extra provider call.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-model-goal", "--help"],
+      "success_contains": "--dynamic-interval"
+    },
+    {
+      "id": "event-monitor-model-goal-interface",
+      "description": "Dynamic adaptive goals advertise a bounded read-only stdout monitor that wakes on an event before the selected deadline.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-model-goal", "--help"],
+      "success_contains": "--monitor-command-json"
+    },
+    {
+      "id": "desktop-notification-auto-interface",
+      "description": "Automatic orchestration advertises notifications only for real foreground or detached execution.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "auto", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "desktop-notification-routine-interface",
+      "description": "Routine manifests advertise a persisted boolean notification opt-in shared by manual, supervised, and durable-service launches.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "write-routine-manifest", "--help"],
+      "success_contains": "--desktop-notify"
+    },
+    {
+      "id": "routine-cron-schema",
+      "description": "The public routine manifest schema exposes an exact bounded cron schedule object.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "routine-manifest"],
+      "success_contains": "\"const\": \"cron\""
+    },
+    {
+      "id": "routine-cron-write-interface",
+      "description": "Routine creation advertises strict five-field numeric cron scheduling without launching a workflow.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "write-routine-manifest", "--help"],
+      "success_contains": "--cron"
+    },
+    {
+      "id": "routine-cron-update-interface",
+      "description": "Approved atomic schedule replacement advertises the same strict cron input.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "update-routine-schedule", "--help"],
+      "success_contains": "--cron"
+    },
+    {
+      "id": "background-model-goal-template-validate",
+      "description": "Detached adaptive model-goal metadata preserves readiness, session isolation, bounded lifecycle, and non-persisted task and approval handoff invariants.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-background-model-goal",
+        "benchmark-suites/background-model-goal-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/background-model-goal-template.json"
+    },
+    {
+      "id": "adaptive-model-goal-session-list",
+      "description": "Adaptive model-goal listing exposes same-session continuity evidence without exposing the resumable UUID.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "list-goals",
+        "--goals-dir",
+        "benchmark-suites/model-goal-session-template",
+        "--json"
+      ],
+      "success_contains": "\"mode\": \"same-session\""
+    },
+    {
+      "id": "background-routine-supervisor-template-validate",
+      "description": "Detached routine-supervisor metadata preserves bounded scheduling, session isolation, lifecycle counters, and non-persisted approval handoff invariants.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-background-routine-supervisor",
+        "benchmark-suites/background-routine-supervisor-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/background-routine-supervisor-template.json"
+    },
+    {
+      "id": "routine-controls-template-validate",
+      "description": "Durable pause, resume, and schedule-update control metadata preserves strict bounded audit and non-secret state.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-routine-controls",
+        "benchmark-suites/routine-controls-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/routine-controls-template.json"
+    },
+    {
+      "id": "routine-state-template-validate",
+      "description": "Bounded routine execution history validates strict statuses, triggers, timestamps, and non-persisted approval state.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-routine-state",
+        "benchmark-suites/routine-state-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/routine-state-template.json"
+    },
+    {
+      "id": "claude-provider-evidence-template-validate",
+      "description": "Pinned Sonnet Ultracode live-run evidence validates model, budget, measured token, stream, and non-persisted approval contracts without launching Claude.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-claude-provider-evidence",
+        "benchmark-suites/claude-provider-evidence-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/claude-provider-evidence-template.json"
+    },
+    {
+      "id": "claude-provider-evidence-v2-template-validate",
+      "description": "Legacy strict Sonnet Ultracode v2 plan-mode evidence remains readable without launching Claude.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-claude-provider-evidence",
+        "benchmark-suites/claude-provider-evidence-v2-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/claude-provider-evidence-v2-template.json"
+    },
+    {
+      "id": "claude-provider-evidence-v1-template-validate",
+      "description": "Legacy strict Sonnet Ultracode v1 evidence remains readable without launching Claude.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-claude-provider-evidence",
+        "benchmark-suites/claude-provider-evidence-v1-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/claude-provider-evidence-v1-template.json"
+    },
+    {
+      "id": "codex-provider-evidence-template-validate",
+      "description": "Pinned isolated Codex evidence validates command-bound model and service tier, runtime-hard token cap, exact-or-bounded usage provenance, workspace, and permission-profile contracts without launching Codex.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-provider-evidence",
+        "benchmark-suites/codex-provider-evidence-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-provider-evidence-template.json"
+    },
+    {
+      "id": "codex-provider-evidence-v4-template-validate",
+      "description": "Legacy Codex v4 evidence remains readable with explicit service-tier binding before token-usage provenance and bounds.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-provider-evidence",
+        "benchmark-suites/codex-provider-evidence-v4-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-provider-evidence-v4-template.json"
+    },
+    {
+      "id": "codex-provider-evidence-v3-template-validate",
+      "description": "Legacy Codex v3 evidence remains readable with weighted rollout-budget accounting and no priority-tier claim.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-provider-evidence",
+        "benchmark-suites/codex-provider-evidence-v3-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-provider-evidence-v3-template.json"
+    },
+    {
+      "id": "codex-provider-evidence-v2-template-validate",
+      "description": "Legacy Codex v2 evidence remains readable with its gross terminal token post-validation semantics.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-provider-evidence",
+        "benchmark-suites/codex-provider-evidence-v2-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-provider-evidence-v2-template.json"
+    },
+    {
+      "id": "codex-provider-evidence-v1-template-validate",
+      "description": "Legacy Codex v1 evidence remains readable with its post-run fail-closed token-cap provenance.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-provider-evidence",
+        "benchmark-suites/codex-provider-evidence-v1-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-provider-evidence-v1-template.json"
+    },
+    {
+      "id": "benchmark-score-input-template-validate",
+      "description": "Manual rubric input validates bounded criteria, reviewer provenance, and pass threshold fields.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-benchmark-score-input",
+        "benchmark-suites/benchmark-score-input-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/benchmark-score-input-template.json"
+    },
+    {
+      "id": "benchmark-quality-evidence-template-validate",
+      "description": "Hash-bound benchmark quality evidence validates score totals, reviewer provenance, and task/output bindings.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-benchmark-quality-evidence",
+        "benchmark-suites/benchmark-quality-evidence-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/benchmark-quality-evidence-template.json"
+    },
+    {
+      "id": "claude-staged-evidence-template-validate",
+      "description": "Source-isolated staged-write evidence validates source drift, verifier, patch, and non-apply contracts without launching Claude.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-claude-staged-evidence",
+        "benchmark-suites/claude-staged-evidence-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/claude-staged-evidence-template.json"
+    },
+    {
+      "id": "codex-staged-evidence-template-validate",
+      "description": "Source-isolated Codex staged-write evidence validates permission scope, source drift, verifier, patch, and non-apply contracts without launching Codex.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-staged-evidence",
+        "benchmark-suites/codex-staged-evidence-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-staged-evidence-template.json"
+    },
+    {
+      "id": "codex-staged-repair-template-validate",
+      "description": "Bounded Codex repair evidence validates attempt report hashes, cumulative patch integrity, source isolation, and non-apply policy without launching Codex.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-staged-repair",
+        "benchmark-suites/codex-staged-repair-template/repair.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-staged-repair-template/repair.json"
+    },
+    {
+      "id": "codex-staged-repair-state-template-validate",
+      "description": "Resumable Codex repair state validates hash-only bindings, transient approvals, non-apply policy, and fail-closed active-attempt replay without launching Codex.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-codex-staged-repair-state",
+        "benchmark-suites/codex-staged-repair-template/repair-state-ready.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-staged-repair-template/repair-state-ready.json"
+    },
+    {
+      "id": "codex-staged-repair-report-validate",
+      "description": "Aggregate repair benchmark evidence validates embedded attempt reports and truthful multi-attempt execution status without launching Codex.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-benchmark-report",
+        "benchmark-suites/codex-staged-repair-template/benchmark-report.json"
+      ],
+      "success_contains": "OK: benchmark-suites/codex-staged-repair-template/benchmark-report.json"
+    },
+    {
+      "id": "auto-orchestration-receipt-template-validate",
+      "description": "Deterministic auto routing validates task non-authority, safe plan fallback, bounded limits, and non-persisted approvals without launching Codex.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-auto-receipt",
+        "benchmark-suites/auto-orchestration-receipt-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/auto-orchestration-receipt-template.json"
+    },
+    {
+      "id": "auto-orchestration-receipt-v1-schema",
+      "description": "The v1 deterministic auto-routing receipt schema remains exported for historical plan and lifecycle evidence.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "schema",
+        "auto-orchestration-receipt-v1"
+      ],
+      "success_contains": "conductor.auto_orchestration_receipt.v1"
+    },
+    {
+      "id": "auto-orchestration-status-template",
+      "description": "Read-only auto status resolves a terminal plan receipt without promoting routing metadata into completion evidence.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "status-auto",
+        "benchmark-suites/auto-orchestration-receipt-template.json"
+      ],
+      "success_contains": "Effective status: planned"
+    },
+    {
+      "id": "implementation-campaign-trial-dry-run",
+      "description": "Single-trial campaign preflight binds the fixture, randomized order, budgets, and Sonnet Ultracode lane without launching providers or writing receipts.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "run-parity-campaign-trial",
+        "benchmark-suites/parity-campaign-template.json",
+        "benchmark-suites/implementation-canary-completion-reserve-tasks.json",
+        "--next",
+        "--dry-run"
+      ],
+      "success_contains": "Claude lane: sonnet + ultracode"
+    },
+    {
+      "id": "auto-topology-tasks-validate",
+      "description": "Matched automatic-topology tasks validate their direct, progressive, and plan-first resource envelope without launching Codex.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-parity-tasks",
+        "benchmark-suites/auto-topology-tasks.json"
+      ],
+      "success_contains": "OK: benchmark-suites/auto-topology-tasks.json"
+    },
+    {
+      "id": "auto-topology-campaign-plan",
+      "description": "Seeded topology planning preregisters matched isolated arms and balanced first-arm order without launching Codex or writing evidence.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "plan-auto-topology-campaign",
+        "benchmark-suites/auto-topology-tasks.json",
+        "--seed",
+        "20260709",
+        "--repetitions",
+        "1"
+      ],
+      "success_contains": "conductor.auto_topology_campaign.v3"
+    },
+    {
+      "id": "auto-topology-campaign-schema",
+      "description": "The public topology campaign schema exposes strict CI/editor structure while Python validation retains cross-field authority.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "schema",
+        "auto-topology-campaign"
+      ],
+      "success_contains": "conductor.auto_topology_campaign.v3"
+    },
+    {
+      "id": "auto-topology-campaign-v2-schema",
+      "description": "The frozen exact-release topology campaign schema remains available for validating historical prompt-only execution evidence without authorizing new provider work.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "schema",
+        "auto-topology-campaign-v2"
+      ],
+      "success_contains": "conductor.auto_topology_campaign.v2"
+    },
+    {
+      "id": "auto-topology-campaign-v1-schema",
+      "description": "The frozen release-unbound topology campaign schema remains available for validating historical evidence without authorizing new provider work.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "schema",
+        "auto-topology-campaign-v1"
+      ],
+      "success_contains": "conductor.auto_topology_campaign.v1"
+    },
+    {
+      "id": "routine-service-grant-template-validate",
+      "description": "Restart-persistent routine authorization validates exact runtime/manifest bindings, expiration, bounded routines, and hash-only approvals without installing a service.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-routine-service-grant",
+        "benchmark-suites/routine-service-grant-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/routine-service-grant-template.json"
+    },
+    {
+      "id": "routine-service-state-template-validate",
+      "description": "Visible routine-service lifecycle state validates heartbeat, bounded counters, grant binding, and non-persisted raw approvals without launching a service.",
+      "risk": "low",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "conductor_runtime",
+        "validate-routine-service-state",
+        "benchmark-suites/routine-service-state-template.json"
+      ],
+      "success_contains": "OK: benchmark-suites/routine-service-state-template.json"
+    },
+    {
+      "id": "plan-approved-team-workflow-validate",
+      "description": "The shipped plan-gated implementation team validates read-only planning, bounded autonomous lead review, explicit write approval, and unchanged ultra effort without launching providers.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "conductor-workflows/plan-approved-implementation-team.json"],
+      "success_contains": "OK: conductor-workflows/plan-approved-implementation-team.json"
+    },
+    {
+      "id": "operator-approved-team-workflow-validate",
+      "description": "The shipped operator-gated implementation team validates read-only planning, explicit human review, no review-model cap, explicit write approval, and unchanged ultra effort without launching providers.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "conductor-workflows/operator-approved-implementation-team.json"],
+      "success_contains": "OK: conductor-workflows/operator-approved-implementation-team.json"
+    },
+    {
+      "id": "agent-team-plan-schema",
+      "description": "The public teammate-plan schema exposes a strict bounded read-only planning contract.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-plan"],
+      "success_contains": "conductor.agent_team_plan.v1"
+    },
+    {
+      "id": "agent-team-plan-review-schema",
+      "description": "The public configured-reviewer schema exposes strict approve-or-reject evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-plan-review"],
+      "success_contains": "conductor.agent_team_plan_review.v1"
+    },
+    {
+      "id": "agent-team-plan-approval-schema",
+      "description": "The current approval-state schema exposes bounded lifecycle, budget, revision, provider-prompt, and context-receipt hash fields while Python retains cross-field authority.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-plan-approval"],
+      "success_contains": "conductor.agent_team_plan_approval.v3"
+    },
+    {
+      "id": "agent-team-plan-approval-v2-schema",
+      "description": "The prior operator-review approval-state schema remains explicitly available for immutable evidence and resumable runs.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-plan-approval-v2"],
+      "success_contains": "conductor.agent_team_plan_approval.v2"
+    },
+    {
+      "id": "agent-team-plan-approval-v1-schema",
+      "description": "The legacy fixed-lead approval-state schema remains explicitly available for immutable evidence and resumable runs.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "agent-team-plan-approval-v1"],
+      "success_contains": "conductor.agent_team_plan_approval.v1"
+    },
+    {
+      "id": "agent-team-plan-template-validate",
+      "description": "A strict teammate plan validates without a provider call.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-plan", "benchmark-suites/agent-team-plan-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-plan-template.json"
+    },
+    {
+      "id": "agent-team-plan-review-template-validate",
+      "description": "A strict configured-reviewer plan review validates without a provider call.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-plan-review", "benchmark-suites/agent-team-plan-review-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-plan-review-template.json"
+    },
+    {
+      "id": "agent-team-plan-approval-template-validate",
+      "description": "Strict current private operator-review lifecycle state validates mutually exclusive session/decision evidence, provider-prompt/context evidence, revision bounds, and hashes without a provider call.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-plan-approval", "benchmark-suites/agent-team-plan-approval-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-plan-approval-template.json"
+    },
+    {
+      "id": "agent-team-plan-approval-v2-template-validate",
+      "description": "Strict retained v2 operator-review lifecycle state remains valid under its original provider-review evidence contract.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-plan-approval", "benchmark-suites/agent-team-plan-approval-v2-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-plan-approval-v2-template.json"
+    },
+    {
+      "id": "agent-team-plan-approval-v1-template-validate",
+      "description": "Strict legacy fixed-lead plan-approval state remains valid under its original provider-review evidence contract.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-agent-team-plan-approval", "benchmark-suites/agent-team-plan-approval-v1-template.json"],
+      "success_contains": "OK: benchmark-suites/agent-team-plan-approval-v1-template.json"
+    },
+    {
+      "id": "agent-team-plan-approval-template-inspect",
+      "description": "Public inspection exposes only bounded plan-approval metadata and hashes, never plan, feedback, or raw session text.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-team-plan-approval", "benchmark-suites/agent-team-plan-approval-template.json", "--json"],
+      "success_contains": "\"status\": \"approved\""
+    },
+    {
+      "id": "auto-native-receipt-template-validate",
+      "description": "The current native auto receipt binds explicit child-thread, aggregate-token, policy, and approval limits without a provider call.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-auto-receipt", "benchmark-suites/auto-orchestration-native-receipt-template.json"],
+      "success_contains": "OK: benchmark-suites/auto-orchestration-native-receipt-template.json"
+    },
+    {
+      "id": "readonly-diagnostic-tasks-validate",
+      "description": "The objective three-task read-only diagnostic suite validates without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-parity-tasks", "benchmark-suites/read-only-diagnostic-tasks.json"],
+      "success_contains": "OK: benchmark-suites/read-only-diagnostic-tasks.json"
+    },
+    {
+      "id": "readonly-diagnostic-product-tasks-validate",
+      "description": "The product-profile diagnostic suite validates without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-parity-tasks", "benchmark-suites/read-only-diagnostic-product-tasks.json"],
+      "success_contains": "OK: benchmark-suites/read-only-diagnostic-product-tasks.json"
+    },
+    {
+      "id": "readonly-parity-campaign-schema",
+      "description": "The current public campaign schema fixes matched and product-profile Codex plus Claude Sonnet Ultracode contracts.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "readonly-parity-campaign"],
+      "success_contains": "conductor.readonly_parity_campaign.v2"
+    },
+    {
+      "id": "readonly-parity-campaign-v1-schema",
+      "description": "The frozen matched v1 campaign schema remains exported for historical evidence.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "readonly-parity-campaign-v1"],
+      "success_contains": "conductor.readonly_parity_campaign.v1"
+    },
+    {
+      "id": "readonly-parity-campaign-plan",
+      "description": "A balanced two-repetition read-only campaign preregisters eighteen arms with zero provider launches.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "plan-readonly-parity-campaign", "benchmark-suites/read-only-diagnostic-tasks.json", "--seed", "20260711", "--repetitions", "2"],
+      "success_contains": "\"arm_count\": 18"
+    },
+    {
+      "id": "readonly-parity-product-campaign-plan",
+      "description": "The product profile preregisters 20k serial and 42k native caps without launching providers.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "plan-readonly-parity-campaign", "benchmark-suites/read-only-diagnostic-product-tasks.json", "--seed", "20260711", "--repetitions", "1", "--budget-profile", "product-v1"],
+      "success_contains": "\"budget_profile\": \"product-v1\""
+    },
+    {
+      "id": "staged-apply-schema",
+      "description": "The public receipt schema exposes hash-bound, crash-recoverable, explicitly approved verified-stage application without a provider call.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "schema", "staged-apply"],
+      "success_contains": "conductor.staged_apply.v1"
+    },
+    {
+      "id": "staged-apply-command-help",
+      "description": "Exact verified-stage apply help exposes write, deletion, path-override, and receipt controls while remaining read-only.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "apply-verified-stage", "--help"],
+      "success_contains": "--allow-destructive"
+    },
+    {
+      "id": "comparison-templates-validate",
+      "description": "Benchmark comparison manifests validate, including the parity matrix comparison template.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-comparison", "benchmark-suites/comparisons/conductor-vs-claude-template.json", "benchmark-suites/comparisons/conductor-vs-claude-parity-template.json"],
+      "success_contains": "OK: benchmark-suites/comparisons/conductor-vs-claude-parity-template.json"
+    },
+    {
+      "id": "agent-profile-prompt-compaction",
+      "description": "The real selected-Skill profile reports a smaller hash-bound same-session continuation payload without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/profile-prompt-compaction-template.json", "--workspace", ".", "--json"],
+      "success_contains": "\"resume_static_saved_bytes\": 1995"
+    },
+    {
+      "id": "hybrid-memory-agent-profile-inspect",
+      "description": "A reusable profile exposes the opt-in deterministic hybrid memory selector without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-agent-profile", "benchmark-suites/hybrid-memory-agent-profile-template.json", "--json"],
+      "success_contains": "\"selection\": \"hybrid\""
+    },
+    {
+      "id": "claude-saved-workflow-validate",
+      "description": "The static Claude-compatible agent and pipeline script validates without evaluating JavaScript or launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-saved-workflows", "benchmark-suites/claude-saved-workflow-smoke.js", "--workspace", "."],
+      "success_contains": "(claude-saved-workflow-smoke, project)"
+    },
+    {
+      "id": "claude-saved-workflow-inspect",
+      "description": "Inspection exposes the compiled structured-output and JSON-item handoff without evaluating JavaScript or launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-saved-workflow-smoke.js", "--workspace", "."],
+      "success_contains": "reviews [agent_map, risk=low, json-items]"
+    },
+    {
+      "id": "structured-agent-map-validate",
+      "description": "A workflow with schema-bound output and RFC 6901 agent-map input validates without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "benchmark-suites/structured-agent-map-template.json"],
+      "success_contains": "OK: benchmark-suites/structured-agent-map-template.json"
+    }
+  ]
+}

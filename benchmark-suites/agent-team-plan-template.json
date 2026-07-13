@@ -1,0 +1,12 @@
+{
+  "schema": "conductor.agent_team_plan.v1",
+  "task_id": "implement-change",
+  "revision": 1,
+  "plan": "Update the bounded implementation path and preserve its public contract.",
+  "risks": [
+    "Avoid unrelated behavior changes."
+  ],
+  "verification": [
+    "Run the focused deterministic test command."
+  ]
+}

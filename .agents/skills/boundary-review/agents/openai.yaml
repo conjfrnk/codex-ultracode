@@ -1,0 +1,11 @@
+interface:
+  display_name: "Boundary Review"
+policy:
+  allow_implicit_invocation: false
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "openaiDeveloperDocs"
+      description: "OpenAI Developer Docs MCP server"
+      transport: "streamable_http"
+      url: "https://developers.openai.com/mcp"

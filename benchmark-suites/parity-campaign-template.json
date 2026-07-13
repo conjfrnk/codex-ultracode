@@ -1,0 +1,252 @@
+{
+  "claim_gate": {
+    "eligible_for_parity_claims": false,
+    "required_before_claim": [
+      "execute every preregistered trial without dropping failed outcomes",
+      "validate every provider report, deterministic evaluation, scored report, and run manifest",
+      "use equivalent task contracts, repositories, permissions, and stratified cap-enforcement cohorts",
+      "compute paired uncertainty across repeated tasks before making parity or superiority claims"
+    ]
+  },
+  "design": {
+    "codex_effort_policy": "verified-task-text-v6",
+    "provider_first_counts": {
+      "claude": 2,
+      "codex": 3
+    },
+    "randomization_algorithm": "sha256-rank-alternating-v1",
+    "repetitions": 1,
+    "seed": 3300,
+    "trial_count": 5
+  },
+  "evidence_status": "planned-not-evidence",
+  "generated_at_utc": "2026-07-10T10:50:00Z",
+  "name": "parity-campaign-template",
+  "schema": "conductor.parity_campaign.v4",
+  "source": {
+    "parity_tasks_schema": "conductor.parity_tasks.v1",
+    "parity_tasks_sha256": "8ab114debac54a8d3aa7ef64b212f4333210e1813951b152972dd74780a64bc2",
+    "parity_tasks_source": "benchmark-suites/implementation-canary-completion-reserve-tasks.json",
+    "required_dimensions": [
+      "seeded implementation with held-out verification",
+      "multi-file migration with held-out verification",
+      "behavior-preserving refactoring with held-out verification",
+      "test authoring with hidden mutation analysis",
+      "repository-scale contract repair with held-out verification"
+    ],
+    "suite": "conductor-implementation-canary",
+    "task_count": 5
+  },
+  "systems": [
+    {
+      "alternative_model_allowed": false,
+      "effort": "auto",
+      "model": "gpt-5.6-sol",
+      "name": "codex",
+      "provider": "openai",
+      "requires_external_tool": true,
+      "requires_paid_approval": false
+    },
+    {
+      "alternative_model_allowed": false,
+      "effort": "ultracode",
+      "model": "sonnet",
+      "name": "claude",
+      "provider": "anthropic",
+      "requires_external_tool": true,
+      "requires_paid_approval": true
+    }
+  ],
+  "trials": [
+    {
+      "artifacts": {
+        "claude": {
+          "evaluation": "parity-campaign-template-artifacts/r001-backoff-test-authoring/claude-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-backoff-test-authoring/claude-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-backoff-test-authoring/claude.patch",
+          "report": "parity-campaign-template-artifacts/r001-backoff-test-authoring/claude-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-backoff-test-authoring/claude-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-backoff-test-authoring/claude-stage"
+        },
+        "codex": {
+          "evaluation": "parity-campaign-template-artifacts/r001-backoff-test-authoring/codex-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-backoff-test-authoring/codex-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-backoff-test-authoring/codex.patch",
+          "report": "parity-campaign-template-artifacts/r001-backoff-test-authoring/codex-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-backoff-test-authoring/codex-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-backoff-test-authoring/codex-stage"
+        }
+      },
+      "budget": {
+        "max_agents": 1,
+        "max_cost_usd": 0.15,
+        "max_live_tool_cost": "low",
+        "max_minutes": 5,
+        "max_tokens": 24000
+      },
+      "codex_effort": "low",
+      "id": "r001-backoff-test-authoring",
+      "repetition": 1,
+      "sequence": 1,
+      "status": "planned",
+      "system_order": [
+        "claude",
+        "codex"
+      ],
+      "task_contract_sha256": "d1f2aa8512ea056e034522f45428f1ca72439daefadded0ea1d19cd212ef2247",
+      "task_id": "backoff-test-authoring"
+    },
+    {
+      "artifacts": {
+        "claude": {
+          "evaluation": "parity-campaign-template-artifacts/r001-event-routing-refactor/claude-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-event-routing-refactor/claude-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-event-routing-refactor/claude.patch",
+          "report": "parity-campaign-template-artifacts/r001-event-routing-refactor/claude-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-event-routing-refactor/claude-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-event-routing-refactor/claude-stage"
+        },
+        "codex": {
+          "evaluation": "parity-campaign-template-artifacts/r001-event-routing-refactor/codex-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-event-routing-refactor/codex-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-event-routing-refactor/codex.patch",
+          "report": "parity-campaign-template-artifacts/r001-event-routing-refactor/codex-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-event-routing-refactor/codex-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-event-routing-refactor/codex-stage"
+        }
+      },
+      "budget": {
+        "max_agents": 1,
+        "max_cost_usd": 0.15,
+        "max_live_tool_cost": "low",
+        "max_minutes": 5,
+        "max_tokens": 24000
+      },
+      "codex_effort": "medium",
+      "id": "r001-event-routing-refactor",
+      "repetition": 1,
+      "sequence": 2,
+      "status": "planned",
+      "system_order": [
+        "codex",
+        "claude"
+      ],
+      "task_contract_sha256": "603f3c8540cbfd1fda318fd9e6cf6d556bc5225ec5e5311d0e293bff352830c2",
+      "task_id": "event-routing-refactor"
+    },
+    {
+      "artifacts": {
+        "claude": {
+          "evaluation": "parity-campaign-template-artifacts/r001-slug-normalization/claude-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-slug-normalization/claude-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-slug-normalization/claude.patch",
+          "report": "parity-campaign-template-artifacts/r001-slug-normalization/claude-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-slug-normalization/claude-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-slug-normalization/claude-stage"
+        },
+        "codex": {
+          "evaluation": "parity-campaign-template-artifacts/r001-slug-normalization/codex-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-slug-normalization/codex-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-slug-normalization/codex.patch",
+          "report": "parity-campaign-template-artifacts/r001-slug-normalization/codex-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-slug-normalization/codex-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-slug-normalization/codex-stage"
+        }
+      },
+      "budget": {
+        "max_agents": 1,
+        "max_cost_usd": 0.25,
+        "max_live_tool_cost": "low",
+        "max_minutes": 5,
+        "max_tokens": 24000
+      },
+      "codex_effort": "low",
+      "id": "r001-slug-normalization",
+      "repetition": 1,
+      "sequence": 3,
+      "status": "planned",
+      "system_order": [
+        "codex",
+        "claude"
+      ],
+      "task_contract_sha256": "ee763c58a3cef238872377d67596cbb3457cde0dc9d45668450de807c15323bb",
+      "task_id": "slug-normalization"
+    },
+    {
+      "artifacts": {
+        "claude": {
+          "evaluation": "parity-campaign-template-artifacts/r001-retry-policy-migration/claude-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-retry-policy-migration/claude-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-retry-policy-migration/claude.patch",
+          "report": "parity-campaign-template-artifacts/r001-retry-policy-migration/claude-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-retry-policy-migration/claude-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-retry-policy-migration/claude-stage"
+        },
+        "codex": {
+          "evaluation": "parity-campaign-template-artifacts/r001-retry-policy-migration/codex-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-retry-policy-migration/codex-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-retry-policy-migration/codex.patch",
+          "report": "parity-campaign-template-artifacts/r001-retry-policy-migration/codex-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-retry-policy-migration/codex-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-retry-policy-migration/codex-stage"
+        }
+      },
+      "budget": {
+        "max_agents": 1,
+        "max_cost_usd": 0.1,
+        "max_live_tool_cost": "low",
+        "max_minutes": 5,
+        "max_tokens": 24000
+      },
+      "codex_effort": "medium",
+      "id": "r001-retry-policy-migration",
+      "repetition": 1,
+      "sequence": 4,
+      "status": "planned",
+      "system_order": [
+        "claude",
+        "codex"
+      ],
+      "task_contract_sha256": "a2df98e2938ff74f3ec8510d3c2167280a4547619ceea257cc0c59eca828aa31",
+      "task_id": "retry-policy-migration"
+    },
+    {
+      "artifacts": {
+        "claude": {
+          "evaluation": "parity-campaign-template-artifacts/r001-quota-ledger-contract/claude-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-quota-ledger-contract/claude-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-quota-ledger-contract/claude.patch",
+          "report": "parity-campaign-template-artifacts/r001-quota-ledger-contract/claude-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-quota-ledger-contract/claude-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-quota-ledger-contract/claude-stage"
+        },
+        "codex": {
+          "evaluation": "parity-campaign-template-artifacts/r001-quota-ledger-contract/codex-evaluation",
+          "manifest": "parity-campaign-template-artifacts/r001-quota-ledger-contract/codex-manifest.json",
+          "patch": "parity-campaign-template-artifacts/r001-quota-ledger-contract/codex.patch",
+          "report": "parity-campaign-template-artifacts/r001-quota-ledger-contract/codex-report.json",
+          "scored_report": "parity-campaign-template-artifacts/r001-quota-ledger-contract/codex-scored-report.json",
+          "stage": "parity-campaign-template-artifacts/r001-quota-ledger-contract/codex-stage"
+        }
+      },
+      "budget": {
+        "max_agents": 1,
+        "max_cost_usd": 0.2,
+        "max_live_tool_cost": "low",
+        "max_minutes": 7,
+        "max_tokens": 24000
+      },
+      "codex_effort": "medium",
+      "id": "r001-quota-ledger-contract",
+      "repetition": 1,
+      "sequence": 5,
+      "status": "planned",
+      "system_order": [
+        "codex",
+        "claude"
+      ],
+      "task_contract_sha256": "3e0d26d3db5049dc75137cc480787a5b776749414634e43d36c5c60198df6043",
+      "task_id": "quota-ledger-contract"
+    }
+  ]
+}

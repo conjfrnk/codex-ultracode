@@ -1,0 +1,65 @@
+{
+  "schema": "conductor.run_manifest.v1",
+  "run_id": "conductor-smoke-template",
+  "system": "conductor",
+  "suite": "conductor-smoke",
+  "generated_at_utc": "2026-07-07T00:00:00Z",
+  "live_run": false,
+  "repository": {
+    "state": "template",
+    "commit": null,
+    "dirty": "unknown"
+  },
+  "model": {
+    "provider": "openai",
+    "name": "codex",
+    "effort": "unspecified",
+    "version": "template"
+  },
+  "budget": {
+    "max_minutes": 10,
+    "max_agents": 0,
+    "max_live_tool_cost": "none",
+    "max_cost_usd": 0,
+    "max_tokens": 0
+  },
+  "permissions": {
+    "allow_writes": true,
+    "allow_destructive": false,
+    "allow_network": false,
+    "allow_agent": false,
+    "allow_parallel": false,
+    "approved_tokens": []
+  },
+  "scoring": {
+    "tasks": [
+      {
+        "id": "runtime-help",
+        "score": 0,
+        "max_score": 10,
+        "notes": "Template placeholder. Replace after a real Conductor run."
+      },
+      {
+        "id": "workflow-validation",
+        "score": 0,
+        "max_score": 10,
+        "notes": "Template placeholder. Replace after a real Conductor run."
+      },
+      {
+        "id": "unit-tests",
+        "score": 0,
+        "max_score": 10,
+        "notes": "Template placeholder. Replace after a real Conductor run."
+      },
+      {
+        "id": "skill-audit",
+        "score": 0,
+        "max_score": 10,
+        "notes": "Template placeholder. Replace after a real Conductor run."
+      }
+    ]
+  },
+  "safety": {
+    "incidents": []
+  }
+}

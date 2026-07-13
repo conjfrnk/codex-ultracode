@@ -1,0 +1,45 @@
+{
+  "active_attempt": null,
+  "active_duration_ms": 0,
+  "attempts": [],
+  "config": {
+    "check_command_sha256": "9246d2c044fee5a22d0c325acc4388c13e3e4ceeb79e6b2a38981e94be61017a",
+    "check_output_limit_bytes": 1048576,
+    "check_timeout_seconds": 30,
+    "effort": "ultra",
+    "max_attempts": 2,
+    "max_tokens_per_attempt": 1000,
+    "model": "gpt-5.6-sol",
+    "output_limit_bytes": 1048576,
+    "provider_timeout_seconds": 120,
+    "tool_output_token_limit": 4000,
+    "total_timeout_cap_seconds": 300,
+    "total_token_cap": 2000
+  },
+  "final": {
+    "patch_name": null,
+    "patch_sha256": null,
+    "repair_name": null,
+    "repair_sha256": null,
+    "report_name": null,
+    "report_sha256": null
+  },
+  "policy": {
+    "active_attempt_replay_allowed": false,
+    "approval_values_persisted": false,
+    "automatic_apply": false
+  },
+  "schema": "conductor.codex_staged_repair_state.v1",
+  "source": {
+    "before_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+    "file_count": 1,
+    "total_bytes": 7
+  },
+  "started_at_utc": "2026-07-09T08:09:29Z",
+  "status": "ready",
+  "suite": "codex-staged-repair-template",
+  "task_contract_sha256": "01ef0caeec3343cc9e71fc9c163f0a48937bbad832a1fbd5b5cd9bd31112f580",
+  "task_id": "repair-template",
+  "updated_at_utc": "2026-07-09T08:09:29Z",
+  "workspace_path_sha256": "51af8483d0e0511ccb1755a5c48767ebe6dbb6f8ce7742168ef30eb285b2b0c2"
+}

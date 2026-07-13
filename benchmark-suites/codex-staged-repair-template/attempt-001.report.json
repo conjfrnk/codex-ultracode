@@ -1,0 +1,212 @@
+{
+  "duration_ms": 0,
+  "environment": {
+    "codex": "available",
+    "codex_version": "codex-cli 0.143.0",
+    "external_tool_version_probes": "required",
+    "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6"
+  },
+  "failed_tasks": 0,
+  "passed_tasks": 1,
+  "results": [
+    {
+      "description": "Pinned, source-isolated Codex staged-write parity run.",
+      "duration_ms": 0,
+      "id": "repair-template",
+      "passed": true,
+      "provider_evidence": {
+        "incidents": [
+          {
+            "description": "Codex model provenance is bound to the explicit CLI request because JSONL omits the resolved model.",
+            "id": "model-command-enforced",
+            "severity": "info"
+          },
+          {
+            "description": "Codex rollout-budget enforcement uses non-cached input plus output tokens at command-enforced 1.0 weights.",
+            "id": "runtime-token-cap",
+            "severity": "info"
+          },
+          {
+            "description": "The Codex rollout-budget feature is marked under development by the installed CLI.",
+            "id": "experimental-rollout-budget",
+            "severity": "info"
+          }
+        ],
+        "observed": {
+          "agent_messages": 1,
+          "cached_input_tokens": 20,
+          "cli_version": "codex-cli 0.143.0",
+          "input_tokens": 120,
+          "model_binding": "command-enforced",
+          "output_source": "agent-messages",
+          "output_tokens": 30,
+          "parse_error": null,
+          "partial_output_preserved": false,
+          "provider_error_events": 0,
+          "reasoning_output_tokens": 10,
+          "returncode": 0,
+          "rollout_budget_overshoot": 0,
+          "rollout_budget_tokens": 130,
+          "runtime_budget_exhausted": false,
+          "stderr_truncated": false,
+          "stdout_truncated": false,
+          "stream_events": 4,
+          "terminal_event_present": true,
+          "terminal_status": "completed",
+          "thread_started": 1,
+          "timed_out": false,
+          "total_tokens": 150,
+          "turns": 1
+        },
+        "policy": {
+          "approval_values_persisted": false,
+          "automatic_retry": false,
+          "explicit_model": true,
+          "hooks_enabled": false,
+          "live_approval_present": true,
+          "minimal_filesystem_scope": true,
+          "multi_agent_enabled": false,
+          "network_tools_enabled": false,
+          "no_fallback_model": true,
+          "no_session_persistence": true,
+          "permission_profile_enforced": true,
+          "plugins_enabled": false,
+          "project_instructions_ignored": true,
+          "prompt_in_argv": false,
+          "read_only_tools": false,
+          "rollout_budget_enabled": true,
+          "rollout_budget_experimental": true,
+          "rules_ignored": true,
+          "shell_environment_sanitized": true,
+          "staged_write_approval_present": true,
+          "token_cap_enforcement": "runtime-hard",
+          "tool_output_token_limit_enforced": true,
+          "user_config_ignored": true,
+          "web_search_enabled": false
+        },
+        "requested": {
+          "approval_policy": "never",
+          "effort": "ultra",
+          "execution_mode": "staged-write",
+          "max_tokens": 1000,
+          "model": "gpt-5.6-sol",
+          "output_limit_bytes": 1048576,
+          "permission_profile": "conductor_staged",
+          "rollout_budget_reminders": [
+            900,
+            500,
+            100
+          ],
+          "sandbox": "permission-profile",
+          "timeout_seconds": 120,
+          "tool_output_token_limit": 4000
+        },
+        "schema": "conductor.codex_provider_evidence.v3",
+        "status": "success",
+        "workspace": {
+          "file_count": 1,
+          "scan_error": null,
+          "source_after_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+          "source_before_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+          "source_unchanged": true,
+          "stage_after_fingerprint_sha256": "b1acd4ab0b23456ec21423537fa10865bd3833e1db8878ab2e0b79b0ebe2e3a5",
+          "stage_before_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+          "stage_directory_name": "attempt-001.stage",
+          "stage_mutation_allowed": true,
+          "stage_outside_source": true,
+          "stage_path_sha256": "24214f227b10c85b7d1dda5f1035d607f79a17d98a2a9a6732b81ae185a4ccec",
+          "stage_persisted": true,
+          "stage_unchanged": false,
+          "total_bytes": 7
+        }
+      },
+      "returncode": 0,
+      "staged_evidence": {
+        "changes": {
+          "added": [],
+          "binary": [],
+          "change_count": 1,
+          "deleted": [],
+          "mode_changed": [],
+          "modified": [
+            "file.txt"
+          ],
+          "patch_bytes": 90,
+          "patch_error": null,
+          "patch_name": "attempt-001.patch",
+          "patch_sha256": "e9b8475d03df8351ea02e94f0d5b420845d4d6a8ed208c17e7f62b62428f99c5",
+          "patch_written": true,
+          "unpatchable": [],
+          "validation_error": null
+        },
+        "incidents": [],
+        "policy": {
+          "approval_values_persisted": false,
+          "automatic_apply": false,
+          "filesystem_scope": "minimal-read-stage-write",
+          "network_access": false,
+          "permission_profile": "conductor_staged",
+          "provider_shell_enabled": true,
+          "source_mutated": false,
+          "source_mutation_allowed": false,
+          "stage_outside_source": true,
+          "temporary_writes_allowed": false,
+          "tool_output_token_limit": 4000
+        },
+        "schema": "conductor.codex_staged_evidence.v1",
+        "source": {
+          "after_provider_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+          "before_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+          "file_count": 1,
+          "final_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+          "scan_error": null,
+          "total_bytes": 7,
+          "unchanged": true
+        },
+        "stage": {
+          "after_verification_sha256": "b1acd4ab0b23456ec21423537fa10865bd3833e1db8878ab2e0b79b0ebe2e3a5",
+          "before_verification_sha256": "b1acd4ab0b23456ec21423537fa10865bd3833e1db8878ab2e0b79b0ebe2e3a5",
+          "directory_name": "attempt-001.stage",
+          "file_count": 1,
+          "path_sha256": "24214f227b10c85b7d1dda5f1035d607f79a17d98a2a9a6732b81ae185a4ccec",
+          "persisted": true,
+          "scan_error": null,
+          "total_bytes": 6,
+          "verifier_mutated_files": false
+        },
+        "status": "success",
+        "verification": {
+          "argv_count": 1,
+          "command_sha256": "8894cdad26ef749f311249c169d54f2f48118502d7fdacfad532d5d190fb98ff",
+          "configured": true,
+          "duration_ms": 0,
+          "environment_sanitized": true,
+          "network_isolated": true,
+          "returncode": 0,
+          "sandbox": "macos-seatbelt",
+          "status": "passed",
+          "stderr_bytes": 0,
+          "stderr_excerpt": "",
+          "stderr_truncated": false,
+          "stdout_bytes": 3,
+          "stdout_excerpt": "OK\n",
+          "stdout_truncated": false,
+          "timed_out": false,
+          "write_scope": "stage-only"
+        }
+      },
+      "stderr": "",
+      "stderr_truncated": false,
+      "stdout": "Updated file.txt.",
+      "stdout_truncated": false,
+      "timed_out": false
+    }
+  ],
+  "schema": "conductor.benchmark_report.v1",
+  "started_at_utc": "2026-07-09T08:09:29Z",
+  "suite": "codex-staged-repair-template",
+  "suite_source": "configured-parity-tasks",
+  "system": "codex-isolated-staged",
+  "total_tasks": 1
+}

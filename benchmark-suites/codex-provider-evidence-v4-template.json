@@ -1,0 +1,109 @@
+{
+  "schema": "conductor.codex_provider_evidence.v4",
+  "status": "success",
+  "requested": {
+    "model": "gpt-5.6-sol",
+    "effort": "ultra",
+    "service_tier": "default",
+    "execution_mode": "read-only",
+    "sandbox": "permission-profile",
+    "permission_profile": "conductor_readonly",
+    "approval_policy": "never",
+    "max_tokens": 1000,
+    "timeout_seconds": 120,
+    "output_limit_bytes": 1048576,
+    "tool_output_token_limit": 4000,
+    "rollout_budget_reminders": [
+      900,
+      500,
+      100
+    ]
+  },
+  "observed": {
+    "cli_version": "codex-cli 0.144.0",
+    "model_binding": "command-enforced",
+    "service_tier_binding": "cli-default",
+    "terminal_event_present": true,
+    "terminal_status": "completed",
+    "runtime_budget_exhausted": false,
+    "thread_started": 1,
+    "turns": 1,
+    "agent_messages": 1,
+    "stream_events": 4,
+    "input_tokens": 120,
+    "cached_input_tokens": 20,
+    "output_tokens": 30,
+    "reasoning_output_tokens": 10,
+    "total_tokens": 150,
+    "rollout_budget_tokens": 130,
+    "rollout_budget_overshoot": 0,
+    "output_source": "agent-messages",
+    "partial_output_preserved": false,
+    "provider_error_events": 0,
+    "returncode": 0,
+    "timed_out": false,
+    "stdout_truncated": false,
+    "stderr_truncated": false,
+    "parse_error": null
+  },
+  "workspace": {
+    "source_before_fingerprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_after_fingerprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "stage_before_fingerprint_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "stage_after_fingerprint_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "source_unchanged": true,
+    "stage_unchanged": true,
+    "stage_mutation_allowed": false,
+    "file_count": 1,
+    "total_bytes": 7,
+    "stage_directory_name": "template.stage",
+    "stage_path_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "stage_outside_source": true,
+    "stage_persisted": true,
+    "scan_error": null
+  },
+  "policy": {
+    "live_approval_present": true,
+    "staged_write_approval_present": false,
+    "approval_values_persisted": false,
+    "explicit_model": true,
+    "no_fallback_model": true,
+    "no_session_persistence": true,
+    "prompt_in_argv": false,
+    "read_only_tools": true,
+    "permission_profile_enforced": true,
+    "minimal_filesystem_scope": true,
+    "shell_environment_sanitized": true,
+    "user_config_ignored": true,
+    "rules_ignored": true,
+    "project_instructions_ignored": true,
+    "network_tools_enabled": false,
+    "web_search_enabled": false,
+    "hooks_enabled": false,
+    "plugins_enabled": false,
+    "multi_agent_enabled": false,
+    "rollout_budget_enabled": true,
+    "rollout_budget_experimental": true,
+    "tool_output_token_limit_enforced": true,
+    "priority_service_tier_enabled": false,
+    "automatic_retry": false,
+    "token_cap_enforcement": "runtime-hard"
+  },
+  "incidents": [
+    {
+      "id": "model-command-enforced",
+      "severity": "info",
+      "description": "Codex model provenance is bound to the explicit CLI request because JSONL omits the resolved model."
+    },
+    {
+      "id": "runtime-token-cap",
+      "severity": "info",
+      "description": "Codex rollout-budget enforcement uses non-cached input plus output tokens at command-enforced 1.0 weights."
+    },
+    {
+      "id": "experimental-rollout-budget",
+      "severity": "info",
+      "description": "The Codex rollout-budget feature is marked under development by the installed CLI."
+    }
+  ]
+}

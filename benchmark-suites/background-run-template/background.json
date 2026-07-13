@@ -1,0 +1,47 @@
+{
+  "schema": "conductor.background_run.v1",
+  "status": "finished",
+  "created_at_utc": "2026-07-08T00:00:00.000Z",
+  "updated_at_utc": "2026-07-08T00:00:01.000Z",
+  "finished_at_utc": "2026-07-08T00:00:01.000Z",
+  "run_status": "completed",
+  "workflow": {
+    "name": "background-template",
+    "run_id": "background-template-run"
+  },
+  "worker": {
+    "pid": 12345,
+    "process_group_id": 12345,
+    "session_id": 12345,
+    "detached_session": true,
+    "argv": [
+      "python3",
+      "conductor-runtime.pyz",
+      "_background-worker",
+      "/external/conductor/runs/background-template-run"
+    ]
+  },
+  "policy": {
+    "allow_writes": false,
+    "allow_destructive": false,
+    "allow_network": false,
+    "allow_agent": false,
+    "allow_parallel": false,
+    "approval_count": 0,
+    "approval_values_persisted": false
+  },
+  "handoff": {
+    "prepared_preflight": true,
+    "transport": "anonymous-stdin-pipe",
+    "payload_persisted": false,
+    "daemon_installed": false,
+    "restart_policy": "never",
+    "max_workers": 1
+  },
+  "logs": {
+    "stdout": "background-worker.stdout.log",
+    "stderr": "background-worker.stderr.log"
+  },
+  "exit_code": 0,
+  "error_class": ""
+}

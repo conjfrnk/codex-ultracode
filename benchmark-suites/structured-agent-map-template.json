@@ -1,0 +1,43 @@
+{
+  "description": "Provider-free schema fixture for strict JSON-pointer map expansion.",
+  "max_items": 2,
+  "max_workers": 2,
+  "mode": "read_only",
+  "name": "structured-agent-map-template",
+  "schema": "conductor.workflow.v1",
+  "steps": [
+    {
+      "content": "{\"files\":[\"README.md\",\"PROJECT_SPEC.md\"]}\n",
+      "id": "items",
+      "kind": "write_artifact",
+      "output": "structured/items.json"
+    },
+    {
+      "capture_dir": "structured/reviews",
+      "depends_on": [
+        "items"
+      ],
+      "id": "reviews",
+      "items_artifact": "structured/items.json",
+      "items_pointer": "/files",
+      "kind": "agent_map",
+      "max_items": 2,
+      "max_workers": 2,
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "finding": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding"
+        ],
+        "type": "object"
+      },
+      "prompt_template": "Review {item}.",
+      "risk": "low",
+      "sandbox": "read-only"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "schema": "conductor.comparison.v1",
+  "name": "conductor-vs-claude-parity-template",
+  "description": "Template for comparing equivalent Conductor/Codex and Claude Code Ultracode runs against the parity task matrix. Replace all template reports and manifests with real live runs before making parity or superiority claims.",
+  "claim_policy": {
+    "model": {
+      "mode": "declared-comparable",
+      "rationale": "Cross-vendor model identities are recorded in each run manifest rather than forced to match. Claim eligibility still requires live manifests, complete provider/name/effort/version provenance, equivalent repository state, equivalent budgets, equivalent permissions, matching task IDs, scoring, and safety incident records."
+    }
+  },
+  "systems": [
+    {
+      "name": "conductor",
+      "report": "reports/conductor-parity-template-report.json",
+      "manifest": "run-manifests/conductor-parity-template.json"
+    },
+    {
+      "name": "claude",
+      "report": "reports/claude-parity-template-report.json",
+      "manifest": "run-manifests/claude-parity-template.json"
+    }
+  ],
+  "requirements": [
+    "Reports must use the parity task suite name and identical parity task ids.",
+    "Template reports and manifests have live_run=false and zero scores; they are not evidence.",
+    "Real runs must record concrete model provider, model name, effort mode, and version for every system.",
+    "Real runs must use equivalent repository state, budgets, permissions, scoring, and safety incident tracking.",
+    "The declared-comparable model policy permits cross-vendor model identities only when complete model provenance is present.",
+    "Do not interpret duration as meaningful unless hardware, model, and network conditions are comparable."
+  ]
+}

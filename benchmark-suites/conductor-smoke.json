@@ -1,0 +1,36 @@
+{
+  "schema": "conductor.benchmark.v1",
+  "name": "conductor-smoke",
+  "description": "Baseline local benchmark suite for Conductor runtime, workflow, tests, and skill audit health.",
+  "default_timeout_seconds": 240,
+  "tasks": [
+    {
+      "id": "runtime-help",
+      "description": "Runtime CLI imports and exposes help.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "--help"],
+      "success_contains": "Run Codex Conductor workflows."
+    },
+    {
+      "id": "workflow-validation",
+      "description": "All bundled workflow templates validate.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate", "conductor-workflows"],
+      "success_contains": "OK: conductor-workflows/verification-sweep.json"
+    },
+    {
+      "id": "unit-tests",
+      "description": "Focused runtime tests pass.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "unittest", "discover", "-s", "tests"],
+      "success_contains": "OK"
+    },
+    {
+      "id": "skill-audit",
+      "description": "Installable prompt-only skill passes local audit.",
+      "risk": "low",
+      "command": ["python3", "-B", "tools/run_local_audit.py", "codex-conductor"],
+      "success_contains": "OK: local audit passed"
+    }
+  ]
+}

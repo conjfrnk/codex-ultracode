@@ -1,0 +1,42 @@
+{
+  "schema": "conductor.parity_tasks.v1",
+  "name": "conductor-auto-topology-retry-canary",
+  "description": "Three-repetition matched direct, progressive, and plan-first canary for one validation-heavy migration shape.",
+  "required_dimensions": [
+    "automatic orchestration escalation efficiency"
+  ],
+  "tasks": [
+    {
+      "id": "retry-policy-migration",
+      "dimension": "automatic orchestration escalation efficiency",
+      "tags": [
+        "auto",
+        "debugging",
+        "migration",
+        "multi-file",
+        "held-out-verifier"
+      ],
+      "prompt": "Repair the retry-policy migration so legacy v1 and current v2 policy inputs normalize to the documented canonical v2 form, and make the retry decision use that canonical contract. Preserve both public function signatures, use only the Python standard library, do not mutate caller input, make the smallest maintainable change, and report the files changed and checks performed.",
+      "success_criteria": [
+        "Documented v1 and v2 policies normalize to the canonical v2 representation.",
+        "Retry boundaries use total max_attempts semantics without off-by-one errors.",
+        "Visible and held-out tests pass.",
+        "Both public function signatures remain unchanged and caller input is not mutated.",
+        "No dependency, test, or unrelated file changes are introduced."
+      ],
+      "required_evidence": [
+        "Files changed.",
+        "Visible test command and result when the provider can run commands.",
+        "Any remaining verification gap."
+      ],
+      "scoring": "10 points: 5 held-out correctness, 2 visible-test correctness, 1 scope control, 1 maintainability, 1 orchestration completion.",
+      "budget": {
+        "max_minutes": 5,
+        "max_agents": 4,
+        "max_live_tool_cost": "medium",
+        "max_cost_usd": 0.0,
+        "max_tokens": 300000
+      }
+    }
+  ]
+}

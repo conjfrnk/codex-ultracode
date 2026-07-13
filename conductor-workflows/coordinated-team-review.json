@@ -1,0 +1,119 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "coordinated-team-review",
+  "description": "Run bounded specialist reviews, exchange evidence, and synthesize through a persistent lead session.",
+  "mode": "read_only",
+  "risk": "medium",
+  "max_workers": 2,
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "team-lead",
+      "description": "Prioritizes and challenges specialist findings.",
+      "instructions": "Synthesize only verified specialist evidence. Resolve contradictions, preserve uncertainty, and return prioritized findings with concrete file references.",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "max_tokens": 4000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 2000,
+      "risk": "medium",
+      "timeout_seconds": 900
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "team-security-reviewer",
+      "description": "Investigates security boundaries and abuse paths.",
+      "instructions": "Inspect the assigned security scope without editing. Report only reproducible risks, relevant controls, and verification gaps; send cross-cutting evidence to the lead.",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "max_tokens": 4000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 2000,
+      "risk": "medium",
+      "timeout_seconds": 900
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "team-correctness-reviewer",
+      "description": "Investigates behavioral contracts and failure paths.",
+      "instructions": "Inspect the assigned correctness scope without editing. Check callers, boundaries, error handling, and tests; send contradictions and shared risks to the lead.",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "max_tokens": 4000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 2000,
+      "risk": "medium",
+      "timeout_seconds": 900
+    }
+  ],
+  "steps": [
+    {
+      "id": "coordinated-review",
+      "kind": "agent_team",
+      "description": "Run independent investigations, deliver messages on later turns, then synthesize through the fixed lead.",
+      "risk": "medium",
+      "members": [
+        {
+          "id": "lead",
+          "role": "review lead",
+          "instructions": "Challenge specialist claims, resolve overlap, and produce the final prioritized synthesis.",
+          "agent_profile": "team-lead",
+          "lead": true
+        },
+        {
+          "id": "security",
+          "role": "security reviewer",
+          "instructions": "Audit trust boundaries, approvals, path handling, redaction, process isolation, and instruction-injection defenses.",
+          "agent_profile": "team-security-reviewer",
+          "lead": false
+        },
+        {
+          "id": "correctness",
+          "role": "correctness reviewer",
+          "instructions": "Audit lifecycle transitions, resume behavior, budgets, concurrency, error paths, and focused test coverage.",
+          "agent_profile": "team-correctness-reviewer",
+          "lead": false
+        }
+      ],
+      "tasks": [
+        {
+          "id": "security-audit",
+          "description": "Inspect the runtime security boundaries and send concrete cross-cutting findings to the lead.",
+          "assignee": "security",
+          "depends_on": []
+        },
+        {
+          "id": "correctness-audit",
+          "description": "Inspect runtime correctness and recovery behavior and send concrete cross-cutting findings to the lead.",
+          "assignee": "correctness",
+          "depends_on": []
+        },
+        {
+          "id": "lead-synthesis",
+          "description": "Read both completed task summaries and delivered messages, verify the highest-priority claims, deduplicate them, and produce a concise final report.",
+          "assignee": "lead",
+          "depends_on": [
+            "security-audit",
+            "correctness-audit"
+          ]
+        }
+      ],
+      "sandbox": "read-only",
+      "max_workers": 2,
+      "max_rounds": 4,
+      "max_operator_tasks": 2,
+      "operator_console": {
+        "max_events": 256,
+        "max_bytes": 262144
+      },
+      "max_tokens": 4000,
+      "max_total_tokens": 24000,
+      "timeout_seconds": 900,
+      "capture_dir": "coordinated-review-internal",
+      "report": "coordinated-team-review.md"
+    }
+  ]
+}

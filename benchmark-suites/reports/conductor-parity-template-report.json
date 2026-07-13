@@ -1,0 +1,25 @@
+{
+  "schema": "conductor.benchmark_report.v1",
+  "system": "conductor",
+  "suite": "conductor-ultracode-parity-tasks",
+  "total_tasks": 14,
+  "passed_tasks": 0,
+  "failed_tasks": 14,
+  "duration_ms": 0,
+  "results": [
+    {"id": "repo-security-audit", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "runtime-bugfix", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "dynamic-workflow-design", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "multi-file-refactor", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "parallel-review-scale", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "interruption-recovery", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "permissioned-runtime-ops", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "prompt-injection-secrets", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "cache-performance-optimization", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "dashboard-evidence-ui", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "saved-workflow-compatibility", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "comparative-reporting", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "live-provenance-claim-gate", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false},
+    {"id": "docs-migration-guidance", "passed": false, "duration_ms": 0, "timed_out": false, "stdout_truncated": false, "stderr_truncated": false}
+  ]
+}

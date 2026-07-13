@@ -1,0 +1,26 @@
+{
+  "schema": "conductor.agent_memory.v1",
+  "workspace_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "profile": "correctness-reviewer",
+  "revision": 1,
+  "updated_at_utc": "2026-07-09T00:00:00.000Z",
+  "entries": [
+    {
+      "id": "retry-boundary-checks",
+      "created_at_utc": "2026-07-09T00:00:00.000Z",
+      "content": "Boundary checks are required for retry policy changes.",
+      "content_sha256": "4adc3b9f6c7304dfeafb8bf3408a94ff641ad0d9acb68739e1fbca276f39ed9f",
+      "content_bytes": 54,
+      "tags": [
+        "retry",
+        "verification"
+      ],
+      "source": {
+        "kind": "operator",
+        "artifact_sha256": "4adc3b9f6c7304dfeafb8bf3408a94ff641ad0d9acb68739e1fbca276f39ed9f",
+        "run_id": null,
+        "step_id": null
+      }
+    }
+  ]
+}

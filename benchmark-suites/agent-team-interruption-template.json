@@ -1,0 +1,8 @@
+{
+  "schema": "conductor.agent_team_interruption.v1",
+  "task_id": "security-audit",
+  "status": "interrupted",
+  "operator_entry_id": "operator-message-000001",
+  "instruction_sha256": "6119e0deb55e63333a11f17b1dbd3af5a2a97944dcf1d304820bde2d985131d6",
+  "session_id_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

@@ -1,0 +1,70 @@
+{
+  "installer": {
+    "path": "install.py",
+    "sha256": "984ecbceaa6cb4b246d4c5d1be2c54a55ff9f243b656769412dba52cc20300b2",
+    "size_bytes": 22433
+  },
+  "runtime": {
+    "path": "conductor-runtime.pyz",
+    "sha256": "0f08744ac027936aab8571c874192abd9cef1b95600d00100ba4933acab13c3a",
+    "size_bytes": 882113
+  },
+  "schema": "conductor.release_bundle.v1",
+  "skill": {
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "bb4ff0e46e346079900ae8d3cce3d7698905b5911798bf94c6fcd2f589d13c06",
+        "size_bytes": 5528
+      },
+      {
+        "path": "agents/openai.yaml",
+        "sha256": "1333f6a975cb560bb1f3a40bc306beebe28521857779a3a92a22a421d129cec1",
+        "size_bytes": 342
+      },
+      {
+        "path": "references/delegation-contract.md",
+        "sha256": "c3b63abab311bcaf6a350058be0370304b349e38a4d803d7b8f3a7bf823545bd",
+        "size_bytes": 2359
+      },
+      {
+        "path": "references/final-review.md",
+        "sha256": "efc40dfaaaca66ff7ffd88f7dada08ec3b9b34f194af17bcf70ca1e8b9c6bd0b",
+        "size_bytes": 740
+      },
+      {
+        "path": "references/mode-selection.md",
+        "sha256": "306413b2e6f3edfb7d18dbbdc5c7929eee2b2ab02730a3d0120b9c743a19bdc9",
+        "size_bytes": 3703
+      },
+      {
+        "path": "references/response-templates.md",
+        "sha256": "9322f47e62372d6cb24737c812f962b0872483828859f0a216c830bb248e950e",
+        "size_bytes": 1272
+      },
+      {
+        "path": "references/runtime.md",
+        "sha256": "a372e52d50fd3ac626390698a44f21199551b522f83e6c2c27bc7361025bf517",
+        "size_bytes": 58360
+      },
+      {
+        "path": "references/security-gates.md",
+        "sha256": "bcef944e5468dd06558a16d00758d8065e99e6901a8c5c5f9b3e916fb11ff2c9",
+        "size_bytes": 2977
+      },
+      {
+        "path": "references/verification-contract.md",
+        "sha256": "21d4fe612ff9d1a329ca89747b51164d42e7aa285b483638ea9fb8af0cae8d1c",
+        "size_bytes": 858
+      },
+      {
+        "path": "references/workflow-artifacts.md",
+        "sha256": "f31e2992f4f8b31fa90364d1d79926aa3cb91ab8d6a1ae7868459eee0dc3f93c",
+        "size_bytes": 2508
+      }
+    ],
+    "path": "codex-conductor",
+    "tree_sha256": "3e4f6ab00f915a2eda4e2018a5ab2a4e81173c8c89f448253b26ed65b9436ad0"
+  },
+  "version": "0.166.0"
+}

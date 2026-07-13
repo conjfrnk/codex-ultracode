@@ -1,0 +1,25 @@
+{
+  "schema": "conductor.agent_team_operator_chat.v1",
+  "step_id": "coordinated-review",
+  "workflow_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "entries": [
+    {
+      "id": "operator-question-g000000000-0001",
+      "generation": 0,
+      "message_id": "message-0001",
+      "member_id": "security",
+      "source_task_id": "security-audit",
+      "asked_round": 1,
+      "asked_at_utc": "2026-07-09T18:01:00.000Z",
+      "question": "Should this compatibility boundary preserve the legacy result?",
+      "question_sha256": "1bc76263405aff5acbdb4faaef2b1c8d789a3a1714c3d1869408ab607e37f99b",
+      "status": "pending",
+      "reply": null,
+      "reply_sha256": null,
+      "answered_at_utc": null,
+      "response_task_id": "team-operator-reply-0001",
+      "delivered_round": null,
+      "superseded_at_utc": null
+    }
+  ]
+}

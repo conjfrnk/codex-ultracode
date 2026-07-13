@@ -1,0 +1,21 @@
+{
+  "schema": "conductor.agent_profile.v1",
+  "name": "hybrid-memory-reviewer",
+  "description": "A read-only specialist using deterministic phrase- and identifier-aware memory selection.",
+  "instructions": "Review the assigned scope and use retained memory only after checking it against current workspace evidence.",
+  "model": "gpt-5.6-sol",
+  "effort": "high",
+  "max_tokens": 4000,
+  "sandbox": "read-only",
+  "tool_policy": "isolated",
+  "tool_output_token_limit": 2000,
+  "risk": "medium",
+  "max_workers": 4,
+  "timeout_seconds": 900,
+  "memory": {
+    "mode": "read-only",
+    "selection": "hybrid",
+    "max_entries": 16,
+    "max_bytes": 32768
+  }
+}

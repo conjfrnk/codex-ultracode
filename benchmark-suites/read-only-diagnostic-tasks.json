@@ -1,0 +1,87 @@
+{
+  "schema": "conductor.parity_tasks.v1",
+  "name": "conductor-readonly-diagnostic-canary",
+  "description": "Objective read-only repository diagnosis tasks for matched serial Codex, bounded native Codex, and Claude Sonnet Ultracode campaigns. Prompts and contracts are public; root-cause answer keys remain outside provider workspaces.",
+  "required_dimensions": [
+    "cross-file migration diagnosis",
+    "shared canonicalization diagnosis",
+    "validation and idempotency diagnosis"
+  ],
+  "tasks": [
+    {
+      "id": "diagnose-retry-policy",
+      "dimension": "cross-file migration diagnosis",
+      "tags": ["read-only", "debugging", "cross-file"],
+      "prompt": "Audit the retry-policy implementation against its docstrings and visible tests. Do not edit files. Identify distinct root causes, not every downstream symptom. Inspect all relevant production files and tests. Static inspection is sufficient. If you run tests, run python3 -B -m unittest discover -s tests -v at most once; do not try alternate discovery commands if it fails or finds zero tests. If bounded delegation is available, use one child only for a materially independent file group and verify its conclusions in the parent. Return only one JSON object with exactly these fields: findings, verification, residual_risk. findings must be an array of at most 8 objects with exactly file, line, severity, summary, evidence; file is workspace-relative, line is the first faulty executable line, severity is critical/high/medium/low, and each item covers one root cause. verification is an array of concise static or test observations. residual_risk is a string. Do not use Markdown fences.",
+      "success_criteria": [
+        "Finds the independent policy normalization and service boundary/validation defects.",
+        "Cites the first faulty executable line for each root cause.",
+        "Avoids duplicate symptom findings and unsupported claims.",
+        "Returns the exact machine-readable JSON contract."
+      ],
+      "required_evidence": [
+        "Production file and line evidence for each finding.",
+        "At least one visible-test or static-contract observation.",
+        "A concise residual-risk statement."
+      ],
+      "scoring": "10 points: 7 hidden root-cause coverage, 1 line/evidence specificity, 1 precision, 1 protocol completeness.",
+      "budget": {
+        "max_minutes": 10,
+        "max_agents": 2,
+        "max_live_tool_cost": "low",
+        "max_cost_usd": 0.25,
+        "max_tokens": 18000
+      }
+    },
+    {
+      "id": "diagnose-event-routing",
+      "dimension": "shared canonicalization diagnosis",
+      "tags": ["read-only", "debugging", "integration"],
+      "prompt": "Audit the event-routing implementation against its docstrings and visible tests. Do not edit files. Identify distinct root causes, not every downstream symptom. Inspect all relevant production files and tests. Static inspection is sufficient. If you run tests, run python3 -B -m unittest discover -s tests -v at most once; do not try alternate discovery commands if it fails or finds zero tests. If bounded delegation is available, use one child only for a materially independent file group and verify its conclusions in the parent. Return only one JSON object with exactly these fields: findings, verification, residual_risk. findings must be an array of at most 8 objects with exactly file, line, severity, summary, evidence; file is workspace-relative, line is the first faulty executable line, severity is critical/high/medium/low, and each item covers one root cause. verification is an array of concise static or test observations. residual_risk is a string. Do not use Markdown fences.",
+      "success_criteria": [
+        "Finds the canonical-name contract defect and both callers that bypass it.",
+        "Cites the first faulty executable line for each root cause.",
+        "Avoids duplicate symptom findings and unsupported claims.",
+        "Returns the exact machine-readable JSON contract."
+      ],
+      "required_evidence": [
+        "Production file and line evidence for each finding.",
+        "At least one visible-test or static-contract observation.",
+        "A concise residual-risk statement."
+      ],
+      "scoring": "10 points: 7 hidden root-cause coverage, 1 line/evidence specificity, 1 precision, 1 protocol completeness.",
+      "budget": {
+        "max_minutes": 10,
+        "max_agents": 2,
+        "max_live_tool_cost": "low",
+        "max_cost_usd": 0.25,
+        "max_tokens": 18000
+      }
+    },
+    {
+      "id": "diagnose-quota-ledger",
+      "dimension": "validation and idempotency diagnosis",
+      "tags": ["read-only", "debugging", "contracts"],
+      "prompt": "Audit the quota-ledger implementation against its docstrings and visible tests. Do not edit files. Identify distinct root causes, not every downstream symptom. Inspect all relevant production files and tests. Static inspection is sufficient. If you run tests, run python3 -B -m unittest discover -s tests -v at most once; do not try alternate discovery commands if it fails or finds zero tests. If bounded delegation is available, use one child only for a materially independent file group and verify its conclusions in the parent. Return only one JSON object with exactly these fields: findings, verification, residual_risk. findings must be an array of at most 8 objects with exactly file, line, severity, summary, evidence; file is workspace-relative, line is the first faulty executable line, severity is critical/high/medium/low, and each item covers one root cause. verification is an array of concise static or test observations. residual_risk is a string. Do not use Markdown fences.",
+      "success_criteria": [
+        "Finds parser, constructor, idempotency, boundary, and unknown-tenant root causes.",
+        "Cites the first faulty executable line for each root cause.",
+        "Avoids duplicate symptom findings and unsupported claims.",
+        "Returns the exact machine-readable JSON contract."
+      ],
+      "required_evidence": [
+        "Production file and line evidence for each finding.",
+        "At least one visible-test or static-contract observation.",
+        "A concise residual-risk statement."
+      ],
+      "scoring": "10 points: 7 hidden root-cause coverage, 1 line/evidence specificity, 1 precision, 1 protocol completeness.",
+      "budget": {
+        "max_minutes": 10,
+        "max_agents": 2,
+        "max_live_tool_cost": "low",
+        "max_cost_usd": 0.25,
+        "max_tokens": 18000
+      }
+    }
+  ]
+}

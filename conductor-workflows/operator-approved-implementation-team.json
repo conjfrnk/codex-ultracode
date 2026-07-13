@@ -1,0 +1,105 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "operator-approved-implementation-team",
+  "description": "Require a bounded read-only teammate plan and explicit human approval before one isolated implementation task, without a model review call.",
+  "mode": "workspace_write",
+  "risk": "medium",
+  "max_workers": 1,
+  "max_items": 2,
+  "agent_effort": "ultra",
+  "agent_max_tokens": 20000,
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "operator-plan-team-lead",
+      "description": "Coordinates the fixed team without reviewing the teammate plan.",
+      "instructions": "Coordinate only within the fixed team graph and configured authority. The human operator owns plan review; do not imitate or bypass that decision.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "sandbox": "workspace-write",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "operator-approved-implementer",
+      "description": "Plans read-only, incorporates bounded operator feedback, then implements in an isolated workspace.",
+      "instructions": "Inspect only the requested behavior and relevant contracts. During planning, produce a minimal concrete approach and verification list without writes. After operator approval, implement only that bounded task and run focused checks.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "sandbox": "workspace-write",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    }
+  ],
+  "steps": [
+    {
+      "id": "approve-operator-gated-write",
+      "kind": "manual_gate",
+      "description": "Require explicit approval before the isolated implementation turn can write.",
+      "risk": "medium",
+      "approval_id": "operator-plan-gated-team-write",
+      "prompt": "Approve one bounded isolated teammate implementation whose plan will also require explicit operator review."
+    },
+    {
+      "id": "implement-after-operator-plan-approval",
+      "kind": "agent_team",
+      "description": "Plan, wait for operator review, revise when requested, and implement the approved bounded change.",
+      "risk": "medium",
+      "depends_on": [
+        "approve-operator-gated-write"
+      ],
+      "sandbox": "workspace-write",
+      "members": [
+        {
+          "id": "lead",
+          "role": "fixed coordination lead",
+          "instructions": "Coordinate the fixed task without widening authority or substituting for operator plan review.",
+          "agent_profile": "operator-plan-team-lead",
+          "lead": true
+        },
+        {
+          "id": "implementer",
+          "role": "operator-gated implementation specialist",
+          "instructions": "Plan without writes, revise from bounded operator feedback, and implement only after approval.",
+          "agent_profile": "operator-approved-implementer",
+          "lead": false
+        }
+      ],
+      "tasks": [
+        {
+          "id": "implement-requested-change",
+          "description": "Implement the requested bounded repository change, preserve affected public contracts, and run focused deterministic verification.",
+          "assignee": "implementer",
+          "depends_on": []
+        }
+      ],
+      "plan_approval": {
+        "task_ids": [
+          "implement-requested-change"
+        ],
+        "criteria": "Approve only a minimal plan that identifies affected contracts, material risks, exact intended edits, and focused deterministic verification without unrelated cleanup.",
+        "max_revisions": 2,
+        "plan_max_tokens": 5000,
+        "reviewer": "operator",
+        "reply_timeout_seconds": 1800
+      },
+      "max_workers": 1,
+      "max_rounds": 2,
+      "max_dynamic_tasks": 0,
+      "max_operator_tasks": 2,
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "max_total_tokens": 50000,
+      "timeout_seconds": 1200,
+      "capture_dir": "operator-approved-implementation-team-internal",
+      "report": "operator-approved-implementation-team.md"
+    }
+  ]
+}

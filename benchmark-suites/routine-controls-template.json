@@ -1,0 +1,22 @@
+{
+  "controls": {
+    "nightly-verification": {
+      "events": [
+        {
+          "action": "paused",
+          "at_utc": "2026-07-09T04:00:00.000Z",
+          "reason": "maintenance window",
+          "schedule_after": null,
+          "schedule_before": null
+        }
+      ],
+      "last_action": "paused",
+      "name": "nightly-verification",
+      "paused": true,
+      "reason": "maintenance window",
+      "updated_at_utc": "2026-07-09T04:00:00.000Z"
+    }
+  },
+  "schema": "conductor.routine_controls.v1",
+  "updated_at_utc": "2026-07-09T04:00:00.000Z"
+}

@@ -1,0 +1,8 @@
+.codex-conductor/
+.claude/settings.local.json
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.runtime-state/

@@ -1,0 +1,57 @@
+{
+  "schema": "conductor.agent_profile.v1",
+  "name": "restricted-correctness-reviewer",
+  "description": "A read-only reviewer with a mechanically enforced command allowlist.",
+  "instructions": "Inspect only the assigned scope. Check behavior, boundary cases, callers, and tests. Do not edit files. Return prioritized findings with concrete file evidence, verification performed, and remaining uncertainty.",
+  "model": "gpt-5.6-sol",
+  "effort": "high",
+  "max_tokens": 4000,
+  "sandbox": "read-only",
+  "tool_policy": "restricted",
+  "tool_output_token_limit": 2000,
+  "command_allowlist": [
+    {
+      "argv": [
+        "git",
+        "status",
+        "--short"
+      ]
+    },
+    {
+      "argv_prefix": [
+        "git",
+        "diff"
+      ]
+    },
+    {
+      "argv_prefix": [
+        "rg"
+      ]
+    }
+  ],
+  "allow_apply_patch": false,
+  "risk": "medium",
+  "max_workers": 4,
+  "timeout_seconds": 900,
+  "skills": [
+    ".agents/skills/boundary-review"
+  ],
+  "skill_scripts": [
+    {
+      "skill": ".agents/skills/boundary-review",
+      "script": "scripts/verify-boundary.sh",
+      "args": []
+    }
+  ],
+  "skill_mcp_dependencies": [
+    {
+      "skill": ".agents/skills/boundary-review",
+      "name": "openaiDeveloperDocs",
+      "url": "https://developers.openai.com/mcp",
+      "tools": [
+        "search_openai_docs",
+        "fetch_openai_doc"
+      ]
+    }
+  ]
+}

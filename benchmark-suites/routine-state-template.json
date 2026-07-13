@@ -1,0 +1,34 @@
+{
+  "routines": {
+    "nightly-verification": {
+      "approval_values_persisted": false,
+      "executions": 1,
+      "history": [
+        {
+          "detail": "",
+          "duration_ms": 25,
+          "finished_at_utc": "2026-07-09T04:00:00.025Z",
+          "returncode": 0,
+          "scheduled_for_utc": "2026-07-09T04:00:00.000Z",
+          "started_at_utc": "2026-07-09T04:00:00.000Z",
+          "status": "completed",
+          "stderr_log": "nightly-verification.stderr.log",
+          "stdout_log": "nightly-verification.stdout.log",
+          "trigger": "scheduled"
+        }
+      ],
+      "last_duration_ms": 25,
+      "last_finished_at_utc": "2026-07-09T04:00:00.025Z",
+      "last_returncode": 0,
+      "last_scheduled_for_utc": "2026-07-09T04:00:00.000Z",
+      "last_started_at_utc": "2026-07-09T04:00:00.000Z",
+      "last_status": "completed",
+      "last_stderr_log": "nightly-verification.stderr.log",
+      "last_stdout_log": "nightly-verification.stdout.log",
+      "last_trigger": "scheduled",
+      "manifest": "nightly-verification.json"
+    }
+  },
+  "schema": "conductor.routine_supervisor.v1",
+  "updated_at_utc": "2026-07-09T04:00:00.025Z"
+}

@@ -1,0 +1,51 @@
+{
+  "schema": "conductor.background_routine_supervisor.v1",
+  "status": "finished",
+  "created_at_utc": "2026-07-09T00:00:00.000Z",
+  "updated_at_utc": "2026-07-09T00:00:02.000Z",
+  "heartbeat_at_utc": "2026-07-09T00:00:02.000Z",
+  "finished_at_utc": "2026-07-09T00:00:02.000Z",
+  "worker": {
+    "pid": 12345,
+    "process_group_id": 12345,
+    "session_id": 12345,
+    "hostname": "fixture-host",
+    "detached_session": true,
+    "ready": true,
+    "argv": [
+      "python3",
+      "conductor-runtime.pyz",
+      "_background-routine-supervisor-worker",
+      "/external/conductor/routines/_supervisor/workers/template.json"
+    ]
+  },
+  "configuration": {
+    "poll_seconds": 60,
+    "max_cycles": 1,
+    "max_routines": 50,
+    "output_limit_bytes": 1048576
+  },
+  "policy": {
+    "approval_count": 2,
+    "approval_values_persisted": false
+  },
+  "handoff": {
+    "preflight_completed": true,
+    "transport": "anonymous-stdin-pipe",
+    "payload_persisted": false,
+    "daemon_installed": false,
+    "restart_policy": "never"
+  },
+  "logs": {
+    "stdout": "background-routine-supervisor-template.stdout.log",
+    "stderr": "background-routine-supervisor-template.stderr.log"
+  },
+  "supervisor_status": "completed",
+  "cycles_completed": 1,
+  "results_count": 1,
+  "completed_count": 1,
+  "blocked_count": 0,
+  "failed_count": 0,
+  "exit_code": 0,
+  "error_class": ""
+}

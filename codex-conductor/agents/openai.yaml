@@ -1,0 +1,8 @@
+interface:
+  display_name: "Codex Conductor"
+  short_description: "Secure orchestration for goal-driven Codex coding workflows."
+  brand_color: "#344054"
+  default_prompt: "Use $codex-conductor to orchestrate this coding task with proportionate planning, security gates, and verification evidence."
+
+policy:
+  allow_implicit_invocation: true

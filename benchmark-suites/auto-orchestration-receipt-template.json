@@ -1,0 +1,55 @@
+{
+  "artifacts": [],
+  "decision": {
+    "execution_mode": "plan-only",
+    "execution_reason_code": "execute-approval-absent",
+    "reason_code": "serial-direct-no-verifier",
+    "route": "direct-workflow",
+    "route_version": "deterministic-v3",
+    "strategy_requested": "auto",
+    "task_text_controls_capabilities": false,
+    "task_text_controls_route": false,
+    "verifier_kind": "none",
+    "worker_source": "efficient-default",
+    "write_capable": false
+  },
+  "generated_at_utc": "2026-07-09T00:00:00.000Z",
+  "limits": {
+    "check_output_limit_bytes": 1048576,
+    "check_timeout_seconds": 120,
+    "max_items": 1000,
+    "max_iterations": 3,
+    "max_steps": 32,
+    "max_workers": 1,
+    "planner_effort": "high",
+    "planning_output_limit_bytes": 1048576,
+    "planning_timeout_seconds": 900
+  },
+  "policy": {
+    "allow_agent": true,
+    "allow_destructive": false,
+    "allow_network": false,
+    "allow_parallel": false,
+    "allow_writes": false,
+    "approval_count": 0,
+    "approval_values_persisted": false,
+    "execution_approval_present": false,
+    "write_approval_present": false
+  },
+  "result": {
+    "background_handoff": false,
+    "error_class": "",
+    "execution_started": false,
+    "iterations": 0,
+    "run_count": 0,
+    "status": "planned"
+  },
+  "schema": "conductor.auto_orchestration_receipt.v1",
+  "status": "planned",
+  "task": {
+    "chars": 33,
+    "raw_persisted": false,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "updated_at_utc": "2026-07-09T00:00:00.000Z"
+}

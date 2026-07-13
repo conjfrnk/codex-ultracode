@@ -1,0 +1,138 @@
+{
+  "schema": "conductor.parity_tasks.v1",
+  "name": "conductor-auto-topology-canary",
+  "description": "Matched direct, progressive, and plan-first automatic orchestration tasks with isolated workspaces and post-run held-out evaluation.",
+  "required_dimensions": [
+    "automatic orchestration topology quality",
+    "automatic orchestration escalation efficiency",
+    "automatic orchestration quality per token"
+  ],
+  "tasks": [
+    {
+      "id": "slug-normalization",
+      "dimension": "automatic orchestration topology quality",
+      "tags": ["auto", "debugging", "implementation", "held-out-verifier"],
+      "prompt": "Repair the slug normalization implementation so it satisfies its documented public contract and visible tests. Keep the public function signature, use only the Python standard library, make the smallest maintainable change, and report the files changed and checks performed.",
+      "success_criteria": [
+        "The documented normalize_slug contract is implemented for ASCII and Unicode input.",
+        "Visible and held-out tests pass.",
+        "The public function signature remains unchanged.",
+        "No dependency or unrelated file changes are introduced."
+      ],
+      "required_evidence": [
+        "Files changed.",
+        "Visible test command and result when the provider can run commands.",
+        "Any remaining verification gap."
+      ],
+      "scoring": "10 points: 5 held-out correctness, 2 visible-test correctness, 1 scope control, 1 maintainability, 1 orchestration completion.",
+      "budget": {
+        "max_minutes": 5,
+        "max_agents": 4,
+        "max_live_tool_cost": "medium",
+        "max_cost_usd": 0.0,
+        "max_tokens": 300000
+      }
+    },
+    {
+      "id": "retry-policy-migration",
+      "dimension": "automatic orchestration escalation efficiency",
+      "tags": ["auto", "debugging", "migration", "multi-file", "held-out-verifier"],
+      "prompt": "Repair the retry-policy migration so legacy v1 and current v2 policy inputs normalize to the documented canonical v2 form, and make the retry decision use that canonical contract. Preserve both public function signatures, use only the Python standard library, do not mutate caller input, make the smallest maintainable change, and report the files changed and checks performed.",
+      "success_criteria": [
+        "Documented v1 and v2 policies normalize to the canonical v2 representation.",
+        "Retry boundaries use total max_attempts semantics without off-by-one errors.",
+        "Visible and held-out tests pass.",
+        "Both public function signatures remain unchanged and caller input is not mutated.",
+        "No dependency, test, or unrelated file changes are introduced."
+      ],
+      "required_evidence": [
+        "Files changed.",
+        "Visible test command and result when the provider can run commands.",
+        "Any remaining verification gap."
+      ],
+      "scoring": "10 points: 5 held-out correctness, 2 visible-test correctness, 1 scope control, 1 maintainability, 1 orchestration completion.",
+      "budget": {
+        "max_minutes": 5,
+        "max_agents": 4,
+        "max_live_tool_cost": "medium",
+        "max_cost_usd": 0.0,
+        "max_tokens": 300000
+      }
+    },
+    {
+      "id": "event-routing-refactor",
+      "dimension": "automatic orchestration topology quality",
+      "tags": ["auto", "refactoring", "multi-file", "shared-contract", "held-out-verifier"],
+      "prompt": "Refactor event-name handling so names.py owns the documented canonical event-name contract and both EventRouter and dedupe_subscriptions use it consistently. Preserve all public class, function, and method signatures; use only the Python standard library; reject invalid inputs as documented; remove duplicated normalization logic from router.py and subscriptions.py; make the smallest maintainable change; and report the files changed and checks performed.",
+      "success_criteria": [
+        "The documented Unicode-aware canonical event-name contract is implemented.",
+        "Router registration, dispatch, and subscription deduplication use the shared helper without duplicated normalization logic.",
+        "Visible and held-out tests pass.",
+        "Public signatures remain unchanged and no dependency, test, or unrelated file changes are introduced."
+      ],
+      "required_evidence": [
+        "Files changed.",
+        "Visible test command and result when the provider can run commands.",
+        "Any remaining verification gap."
+      ],
+      "scoring": "10 points: 5 held-out correctness, 2 visible-test correctness, 1 scope control, 1 maintainable shared-helper structure, 1 orchestration completion.",
+      "budget": {
+        "max_minutes": 5,
+        "max_agents": 4,
+        "max_live_tool_cost": "medium",
+        "max_cost_usd": 0.0,
+        "max_tokens": 300000
+      }
+    },
+    {
+      "id": "backoff-test-authoring",
+      "dimension": "automatic orchestration quality per token",
+      "tags": ["auto", "test-authoring", "mutation-testing", "held-out-verifier"],
+      "prompt": "Add tests in tests/test_backoff_contract.py that thoroughly verify retry_delay's documented public contract. Do not modify production code or existing tests. Use only unittest and the Python standard library, cover normal growth, capping, boundaries, type errors, range errors, and boolean rejection, keep the tests deterministic, and report the file added and checks performed.",
+      "success_criteria": [
+        "The added tests pass against the documented implementation.",
+        "The tests detect every preregistered held-out behavior mutant.",
+        "Production code and existing tests remain unchanged.",
+        "The test module is focused, deterministic, and dependency-free."
+      ],
+      "required_evidence": [
+        "File added.",
+        "Visible test command and result when the provider can run commands.",
+        "Any remaining verification gap."
+      ],
+      "scoring": "10 points: 5 hidden-mutant detection, 2 baseline test correctness and breadth, 1 scope control, 1 test maintainability, 1 orchestration completion.",
+      "budget": {
+        "max_minutes": 5,
+        "max_agents": 4,
+        "max_live_tool_cost": "medium",
+        "max_cost_usd": 0.0,
+        "max_tokens": 300000
+      }
+    },
+    {
+      "id": "quota-ledger-contract",
+      "dimension": "automatic orchestration escalation efficiency",
+      "tags": ["auto", "repository-scale", "multi-module", "idempotency", "held-out-verifier"],
+      "prompt": "Repair the quota package so external reservation requests follow parse_reservation's documented validation and normalization contract and QuotaLedger implements its documented validation, exact-boundary, and idempotency semantics. Read the surrounding package before editing, preserve all public signatures and the Reservation model, use only the Python standard library, do not mutate caller input, make the smallest maintainable cross-module change, and report the files changed and checks performed.",
+      "success_criteria": [
+        "Reservation parsing validates exact keys, types, ranges, normalization, and non-mutation as documented.",
+        "Quota limits, exact-boundary reservations, successful and rejected idempotency, conflicts, and unknown tenants follow the documented ledger contract.",
+        "Visible and held-out tests pass across the package.",
+        "Public signatures and the frozen Reservation model remain unchanged, with no dependency, test, or unrelated changes."
+      ],
+      "required_evidence": [
+        "Files changed.",
+        "Visible test command and result when the provider can run commands.",
+        "Any remaining verification gap."
+      ],
+      "scoring": "10 points: 5 held-out correctness, 2 visible-test correctness, 1 scope control, 1 cross-module maintainability, 1 orchestration completion.",
+      "budget": {
+        "max_minutes": 7,
+        "max_agents": 4,
+        "max_live_tool_cost": "medium",
+        "max_cost_usd": 0.0,
+        "max_tokens": 300000
+      }
+    }
+  ]
+}

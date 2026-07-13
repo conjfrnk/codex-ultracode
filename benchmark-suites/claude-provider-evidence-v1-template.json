@@ -1,0 +1,45 @@
+{
+  "schema": "conductor.claude_provider_evidence.v1",
+  "status": "success",
+  "requested": {
+    "model": "sonnet",
+    "effort": "ultracode",
+    "permission_mode": "plan",
+    "tools": ["Read", "Glob", "Grep"],
+    "max_budget_usd": 0.75,
+    "max_turns": 8,
+    "timeout_seconds": 900,
+    "output_limit_bytes": 1048576
+  },
+  "observed": {
+    "cli_version": "2.1.205 (Claude Code)",
+    "main_models": ["claude-sonnet-5"],
+    "helper_models": [],
+    "sonnet_main_only": true,
+    "opus_observed": false,
+    "terminal_event_present": true,
+    "terminal_subtype": "success",
+    "is_error": false,
+    "cost_usd": 0.25,
+    "budget_overshoot_usd": 0.0,
+    "turns": 4,
+    "assistant_messages": 4,
+    "stream_events": 0,
+    "output_source": "final",
+    "partial_output_preserved": false,
+    "returncode": 0,
+    "timed_out": false,
+    "stdout_truncated": false,
+    "stderr_truncated": false,
+    "parse_error": null
+  },
+  "policy": {
+    "paid_approval_present": true,
+    "approval_values_persisted": false,
+    "no_fallback_model": true,
+    "no_session_persistence": true,
+    "prompt_in_argv": false,
+    "read_only_tools": true
+  },
+  "incidents": []
+}

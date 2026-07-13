@@ -1,0 +1,65 @@
+{
+  "attempt": 0,
+  "created_at_utc": "2026-07-11T00:00:00.000Z",
+  "error_class": null,
+  "events": [
+    {
+      "at_utc": "2026-07-11T00:00:00.100Z",
+      "item_type": null,
+      "sequence": 1,
+      "status": null,
+      "text": null,
+      "text_sha256": null,
+      "truncated": false,
+      "type": "session-started"
+    },
+    {
+      "at_utc": "2026-07-11T00:00:01.000Z",
+      "item_type": "command_execution",
+      "sequence": 2,
+      "status": "completed",
+      "text": null,
+      "text_sha256": null,
+      "truncated": false,
+      "type": "activity"
+    },
+    {
+      "at_utc": "2026-07-11T00:00:02.000Z",
+      "item_type": null,
+      "sequence": 3,
+      "status": null,
+      "text": "Bounded teammate progress is ready for explicit operator review.",
+      "text_sha256": "826d21bb36eab536d7a86e5c86c49e235c672ff9cc7a30c8574f6219bd3a557d",
+      "truncated": false,
+      "type": "assistant-message"
+    },
+    {
+      "at_utc": "2026-07-11T00:00:03.000Z",
+      "item_type": null,
+      "sequence": 4,
+      "status": null,
+      "text": null,
+      "text_sha256": null,
+      "truncated": false,
+      "type": "turn-completed"
+    }
+  ],
+  "events_dropped": 0,
+  "generation": 0,
+  "ignored_lines": 1,
+  "max_bytes": 65536,
+  "max_events": 64,
+  "member_id": "worker",
+  "output_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "provider_lines": 5,
+  "round": 1,
+  "schema": "conductor.agent_team_transcript.v1",
+  "session_id_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "completed",
+  "step_id": "team-debug",
+  "task_id": "debug",
+  "transcript_id": "transcript-0123456789abcdef01234567",
+  "truncated": false,
+  "updated_at_utc": "2026-07-11T00:00:03.100Z",
+  "workflow_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+}

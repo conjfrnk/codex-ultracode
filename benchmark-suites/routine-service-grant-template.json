@@ -1,0 +1,35 @@
+{
+  "authorization": {
+    "bounded_expiration": true,
+    "exact_manifest_binding": true,
+    "exact_runtime_binding": true,
+    "raw_approval_values_persisted": false,
+    "unlisted_routines_allowed": false,
+    "wildcard_approval_allowed": false
+  },
+  "created_at_utc": "2026-07-09T00:00:00.000Z",
+  "expires_at_utc": "2026-08-08T00:00:00.000Z",
+  "limits": {
+    "max_routines": 50,
+    "output_limit_bytes": 1048576,
+    "poll_seconds": 60
+  },
+  "platform": "launchd",
+  "routines": [
+    {
+      "approval_sha256": [],
+      "manifest_name": "monthly-check.json",
+      "manifest_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "name": "monthly-check",
+      "workflow_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "routines_dir": "/tmp/conductor-routines",
+  "runtime": {
+    "path": "/tmp/conductor-runtime.pyz",
+    "python_path": "/usr/bin/python3",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "schema": "conductor.routine_service_grant.v1",
+  "service_id": "routine-d0251fc4e0a4275a82d5"
+}

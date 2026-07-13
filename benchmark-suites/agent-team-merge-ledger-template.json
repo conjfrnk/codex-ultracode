@@ -1,0 +1,14 @@
+{
+  "schema": "conductor.agent_team_merge_ledger.v1",
+  "step_id": "team-implementation",
+  "workflow_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "generation": 0,
+  "strategy": "isolated-ordered-file-v1",
+  "source_initial_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "source_current_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "event_count": 0,
+  "conflict_count": 0,
+  "created_at_utc": "2026-07-09T00:00:00.000Z",
+  "updated_at_utc": "2026-07-09T00:00:00.000Z",
+  "events": []
+}

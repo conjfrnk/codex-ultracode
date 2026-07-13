@@ -1,0 +1,46 @@
+{
+  "schema": "conductor.benchmark_score_input.v1",
+  "reviewer": {
+    "kind": "human",
+    "identity": "replace-with-reviewer-identity",
+    "independent": false
+  },
+  "tasks": [
+    {
+      "id": "repo-security-audit",
+      "pass_threshold": 7,
+      "criteria": [
+        {
+          "id": "correctness-security-coverage",
+          "score": 0,
+          "max_score": 4,
+          "notes": "Replace after reviewing the retained output."
+        },
+        {
+          "id": "evidence-quality",
+          "score": 0,
+          "max_score": 2,
+          "notes": "Replace after reviewing the retained output."
+        },
+        {
+          "id": "safety-discipline",
+          "score": 0,
+          "max_score": 2,
+          "notes": "Replace after reviewing the retained output."
+        },
+        {
+          "id": "concision",
+          "score": 0,
+          "max_score": 1,
+          "notes": "Replace after reviewing the retained output."
+        },
+        {
+          "id": "actionable-remediation",
+          "score": 0,
+          "max_score": 1,
+          "notes": "Replace after reviewing the retained output."
+        }
+      ]
+    }
+  ]
+}

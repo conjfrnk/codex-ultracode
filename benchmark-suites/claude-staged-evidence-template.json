@@ -1,0 +1,68 @@
+{
+  "schema": "conductor.claude_staged_evidence.v1",
+  "status": "success",
+  "source": {
+    "before_fingerprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "after_provider_fingerprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "final_fingerprint_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "file_count": 12,
+    "total_bytes": 4096,
+    "unchanged": true,
+    "scan_error": null
+  },
+  "stage": {
+    "directory_name": "runtime-bugfix.stage",
+    "path_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "file_count": 12,
+    "total_bytes": 4102,
+    "before_verification_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "after_verification_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "verifier_mutated_files": false,
+    "persisted": true,
+    "scan_error": null
+  },
+  "changes": {
+    "change_count": 1,
+    "added": [],
+    "modified": ["src/example.py"],
+    "deleted": [],
+    "binary": [],
+    "mode_changed": [],
+    "unpatchable": [],
+    "patch_written": true,
+    "patch_name": "runtime-bugfix.patch",
+    "patch_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "patch_bytes": 128,
+    "validation_error": null,
+    "patch_error": null
+  },
+  "verification": {
+    "configured": true,
+    "status": "passed",
+    "returncode": 0,
+    "timed_out": false,
+    "duration_ms": 125,
+    "stdout_bytes": 3,
+    "stderr_bytes": 0,
+    "stdout_truncated": false,
+    "stderr_truncated": false,
+    "stdout_excerpt": "OK\n",
+    "stderr_excerpt": "",
+    "command_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "argv_count": 5,
+    "sandbox": "macos-seatbelt",
+    "environment_sanitized": true,
+    "network_isolated": true,
+    "write_scope": "stage-only"
+  },
+  "policy": {
+    "source_mutation_allowed": false,
+    "source_mutated": false,
+    "claude_shell_enabled": false,
+    "tools": ["Read", "Glob", "Grep", "Edit", "Write"],
+    "stage_outside_source": true,
+    "approval_values_persisted": false,
+    "automatic_apply": false
+  },
+  "incidents": []
+}

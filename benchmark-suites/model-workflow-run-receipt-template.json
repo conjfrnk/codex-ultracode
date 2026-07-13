@@ -1,0 +1,61 @@
+{
+  "error": {
+    "class": ""
+  },
+  "execution": {
+    "approval_values_persisted": false,
+    "automatic_handoff": false,
+    "background_service": false,
+    "execute_approval_id": "model-workflow-execute",
+    "execute_approval_present": false,
+    "foreground": true,
+    "mode": "dry-run",
+    "started": false
+  },
+  "generated_at_utc": "2026-07-08T00:00:00Z",
+  "limits": {
+    "max_items": 100,
+    "max_steps": 8,
+    "max_workers": 1,
+    "planner_effort": "high",
+    "planning_output_limit_bytes": 1048576,
+    "planning_timeout_seconds": 900
+  },
+  "planning": {
+    "receipt_filename": "model-workflow.json.receipt.json",
+    "receipt_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "status": "validated-draft"
+  },
+  "policy": {
+    "allow_agent": true,
+    "allow_destructive": false,
+    "allow_network": false,
+    "allow_parallel": false,
+    "allow_writes": false,
+    "approval_count": 0,
+    "approval_values_persisted": false
+  },
+  "preflight": {
+    "completed": true,
+    "status": "planned"
+  },
+  "run": {
+    "id": "template-dry-run",
+    "status": "planned"
+  },
+  "schema": "conductor.model_workflow_run_receipt.v3",
+  "status": "planned",
+  "task": {
+    "chars": 10,
+    "raw_persisted": false,
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "workflow": {
+    "available": true,
+    "filename": "model-workflow.json",
+    "mode": "review",
+    "name": "model-workflow",
+    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "steps": 3
+  }
+}

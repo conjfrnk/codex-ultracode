@@ -1,0 +1,102 @@
+{
+  "attempts": [
+    {
+      "budget_charge_tokens": 130,
+      "cached_input_tokens": 20,
+      "chain_scan_error": null,
+      "cli_version": "codex-cli 0.143.0",
+      "duration_ms": 0,
+      "effort": "ultra",
+      "feedback_chars": 0,
+      "feedback_sha256": null,
+      "gross_total_tokens": 150,
+      "index": 1,
+      "max_tokens": 1000,
+      "model": "gpt-5.6-sol",
+      "output_limit_bytes": 1048576,
+      "provider_schema": "conductor.codex_provider_evidence.v3",
+      "provider_status": "success",
+      "report_name": "attempt-001.report.json",
+      "report_sha256": "7794bbefaaf21534444558531bbf3722c732ae8a534142f250d743c0d0d6be8c",
+      "rollout_budget_tokens": 130,
+      "source_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+      "stage_fingerprint_sha256": "ab3865e590b1e3ea52115a33c120286e24b2e36dfd65d577466b8c43fc845f7b",
+      "stage_path_sha256": "24214f227b10c85b7d1dda5f1035d607f79a17d98a2a9a6732b81ae185a4ccec",
+      "stage_tracked_fingerprint_sha256": "b1acd4ab0b23456ec21423537fa10865bd3833e1db8878ab2e0b79b0ebe2e3a5",
+      "staged_schema": "conductor.codex_staged_evidence.v1",
+      "staged_status": "success",
+      "timeout_seconds": 120,
+      "tool_output_token_limit": 4000,
+      "verification_status": "passed"
+    }
+  ],
+  "duration_ms": 11,
+  "final": {
+    "added": [],
+    "binary": [],
+    "change_count": 1,
+    "deleted": [],
+    "mode_changed": [],
+    "modified": [
+      "file.txt"
+    ],
+    "patch_bytes": 90,
+    "patch_error": null,
+    "patch_name": "final.patch",
+    "patch_sha256": "e9b8475d03df8351ea02e94f0d5b420845d4d6a8ed208c17e7f62b62428f99c5",
+    "patch_written": true,
+    "stage_directory_name": "attempt-001.stage",
+    "stage_fingerprint_sha256": "ab3865e590b1e3ea52115a33c120286e24b2e36dfd65d577466b8c43fc845f7b",
+    "stage_path_sha256": "24214f227b10c85b7d1dda5f1035d607f79a17d98a2a9a6732b81ae185a4ccec",
+    "unpatchable": [],
+    "verification_status": "passed"
+  },
+  "incidents": [],
+  "limits": {
+    "check_output_limit_bytes": 1048576,
+    "check_timeout_seconds": 30,
+    "max_attempts": 1,
+    "max_tokens_per_attempt": 1000,
+    "output_limit_bytes": 1048576,
+    "provider_timeout_seconds": 120,
+    "tool_output_token_limit": 4000,
+    "total_timeout_cap_seconds": 150,
+    "total_token_cap": 1000
+  },
+  "policy": {
+    "approval_values_persisted": false,
+    "automatic_apply": false,
+    "feedback_max_chars": 8000,
+    "feedback_treated_as_untrusted": true,
+    "network_access": false,
+    "retry_statuses": [
+      "no-changes",
+      "verification-failed"
+    ],
+    "source_mutated": false,
+    "source_mutation_allowed": false,
+    "stage_chain_external": true
+  },
+  "schema": "conductor.codex_staged_repair.v1",
+  "source": {
+    "before_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+    "file_count": 1,
+    "final_fingerprint_sha256": "bbd358966fee20b151ad5a34da9740d7895c06938b0ddf2382d1f037820c7245",
+    "scan_error": null,
+    "total_bytes": 7,
+    "unchanged": true
+  },
+  "started_at_utc": "2026-07-09T08:09:29Z",
+  "status": "success",
+  "suite": "codex-staged-repair-template",
+  "task_id": "repair-template",
+  "usage": {
+    "attempt_count": 1,
+    "budget_charge_tokens": 130,
+    "cached_input_tokens": 20,
+    "gross_total_tokens": 150,
+    "remaining_token_budget": 870,
+    "rollout_budget_tokens": 130,
+    "usage_complete": true
+  }
+}

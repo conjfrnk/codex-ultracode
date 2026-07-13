@@ -1,0 +1,15 @@
+{
+  "cycles_completed": 4,
+  "grant_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "heartbeat_at_utc": "2026-07-09T00:05:00.000Z",
+  "last_error": "",
+  "pid": 1234,
+  "raw_approval_values_persisted": false,
+  "results_completed": 3,
+  "results_failed": 1,
+  "schema": "conductor.routine_service_state.v1",
+  "service_id": "routine-d0251fc4e0a4275a82d5",
+  "started_at_utc": "2026-07-09T00:00:00.000Z",
+  "status": "stopped",
+  "updated_at_utc": "2026-07-09T00:05:00.000Z"
+}

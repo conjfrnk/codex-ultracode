@@ -1,0 +1,24 @@
+{
+  "schema": "conductor.agent_team_operator_inbox.v2",
+  "step_id": "coordinated-review",
+  "workflow_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "next_sequence": 2,
+  "entries": [
+    {
+      "id": "operator-message-000001",
+      "generation": 0,
+      "created_at_utc": "2026-07-10T18:00:00.000Z",
+      "member_id": "security",
+      "instruction": "Recheck the authentication boundary before final synthesis.",
+      "instruction_sha256": "6119e0deb55e63333a11f17b1dbd3af5a2a97944dcf1d304820bde2d985131d6",
+      "delivery": "next-turn",
+      "interrupt_round": null,
+      "interrupt_task_id": null,
+      "interrupted_at_utc": null,
+      "status": "pending",
+      "task_id": "operator-g000000000-000001",
+      "accepted_round": null,
+      "superseded_at_utc": null
+    }
+  ]
+}

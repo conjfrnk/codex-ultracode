@@ -1,0 +1,36 @@
+{
+  "schema": "conductor.agent_profile.v1",
+  "name": "authenticated-docs-reviewer",
+  "description": "A read-only restricted reviewer with an environment-authenticated selected Skill MCP route.",
+  "instructions": "Inspect only the assigned scope. Use the exact selected documentation tool when needed. Never repeat or write credential material returned by an endpoint.",
+  "model": "gpt-5.6-sol",
+  "effort": "high",
+  "max_tokens": 4000,
+  "sandbox": "read-only",
+  "tool_policy": "restricted",
+  "tool_output_token_limit": 2000,
+  "command_allowlist": [],
+  "allow_apply_patch": false,
+  "risk": "medium",
+  "max_workers": 4,
+  "timeout_seconds": 900,
+  "skills": [
+    ".agents/skills/boundary-review"
+  ],
+  "skill_mcp_dependencies": [
+    {
+      "skill": ".agents/skills/boundary-review",
+      "name": "openaiDeveloperDocs",
+      "url": "https://developers.openai.com/mcp",
+      "tools": [
+        "search_openai_docs"
+      ],
+      "auth": {
+        "bearer_token_env_var": "CONDUCTOR_FIXTURE_MCP_TOKEN",
+        "env_http_headers": {
+          "X-API-Key": "CONDUCTOR_FIXTURE_MCP_API_KEY"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "adaptive-team-review",
+  "description": "Let a bounded read-only lead inspect the target, create only material specialist work, and synthesize through persistent sessions.",
+  "mode": "read_only",
+  "risk": "medium",
+  "max_workers": 3,
+  "max_items": 5,
+  "agent_effort": "ultra",
+  "agent_max_tokens": 12000,
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "adaptive-lead",
+      "description": "Scopes the review, delegates only material work, and owns the final synthesis.",
+      "instructions": "Inspect the bounded request first. Propose the smallest dependency-safe set of specialist tasks that materially improves the answer, including a lead synthesis task after specialist work when needed. If no follow-up is warranted, make the planning-task summary itself a complete evidence-backed result. Challenge claims and preserve uncertainty.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 12000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "adaptive-code-reviewer",
+      "description": "Traces implementation behavior and cross-module contracts.",
+      "instructions": "Investigate only the assigned task. Trace relevant callers and state transitions, verify claims directly in the workspace, and report concise file-level evidence plus unresolved uncertainty.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 12000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "adaptive-verifier",
+      "description": "Challenges findings against tests, edge cases, and observable evidence.",
+      "instructions": "Investigate only the assigned task. Check tests, failure paths, boundary conditions, and contrary evidence. Distinguish verified defects from hypotheses and send material contradictions to the lead.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 12000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    }
+  ],
+  "steps": [
+    {
+      "id": "adaptive-review",
+      "kind": "agent_team",
+      "description": "Inspect, adapt the task graph within hard limits, and return an evidence-backed team report.",
+      "risk": "medium",
+      "sandbox": "read-only",
+      "members": [
+        {
+          "id": "lead",
+          "role": "adaptive review lead",
+          "instructions": "Own scope, bounded task proposals, contradiction resolution, and final synthesis.",
+          "agent_profile": "adaptive-lead",
+          "lead": true
+        },
+        {
+          "id": "code-reviewer",
+          "role": "implementation investigator",
+          "instructions": "Trace assigned implementation behavior and return concrete workspace evidence.",
+          "agent_profile": "adaptive-code-reviewer",
+          "lead": false
+        },
+        {
+          "id": "verifier",
+          "role": "adversarial verifier",
+          "instructions": "Challenge assigned claims through tests, edge cases, and contrary evidence.",
+          "agent_profile": "adaptive-verifier",
+          "lead": false
+        }
+      ],
+      "tasks": [
+        {
+          "id": "scope-and-plan",
+          "description": "Inspect the requested review scope, identify the smallest material investigations, and either return a complete result or propose dependency-safe specialist and synthesis tasks.",
+          "assignee": "lead",
+          "depends_on": []
+        }
+      ],
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_workers": 3,
+      "max_rounds": 6,
+      "max_dynamic_tasks": 4,
+      "max_operator_tasks": 2,
+      "max_tokens": 12000,
+      "max_total_tokens": 72000,
+      "timeout_seconds": 1200,
+      "capture_dir": "adaptive-review-internal",
+      "report": "adaptive-team-review.md"
+    }
+  ]
+}

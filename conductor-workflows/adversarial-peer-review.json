@@ -1,0 +1,129 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "adversarial-peer-review",
+  "description": "Run independent hypotheses, automatically wake peers for bounded challenges, and synthesize the surviving evidence.",
+  "mode": "read_only",
+  "risk": "medium",
+  "max_workers": 3,
+  "agent_effort": "ultra",
+  "agent_max_tokens": 12000,
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "adversarial-review-lead",
+      "description": "Challenges competing findings and synthesizes only verified conclusions.",
+      "instructions": "Resolve disagreements with repository evidence. Preserve material uncertainty, reject unsupported consensus, and produce a prioritized synthesis with concrete file references.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 12000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 6000,
+      "risk": "medium",
+      "timeout_seconds": 900
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "adversarial-reviewer-a",
+      "description": "Builds and tests the strongest primary hypothesis.",
+      "instructions": "Investigate the assigned hypothesis independently, verify concrete evidence, and request a peer challenge only when it can discriminate between plausible explanations.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 12000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 6000,
+      "risk": "medium",
+      "timeout_seconds": 900
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "adversarial-reviewer-b",
+      "description": "Seeks counterexamples and competing explanations.",
+      "instructions": "Investigate independently, search for evidence that falsifies the leading explanation, and use a bounded peer response only for a concrete contradiction or missing check.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 12000,
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 6000,
+      "risk": "medium",
+      "timeout_seconds": 900
+    }
+  ],
+  "steps": [
+    {
+      "id": "adversarial-review",
+      "kind": "agent_team",
+      "description": "Investigate independently, exchange bounded automatic response requests, then synthesize verified conclusions.",
+      "risk": "medium",
+      "members": [
+        {
+          "id": "lead",
+          "role": "adversarial synthesis lead",
+          "instructions": "Challenge the strongest claims, resolve contradictions with direct evidence, and synthesize only after all generated response tasks finish.",
+          "agent_profile": "adversarial-review-lead",
+          "lead": true
+        },
+        {
+          "id": "hypothesis-a",
+          "role": "primary hypothesis investigator",
+          "instructions": "Develop the strongest evidence-backed explanation and ask a named peer to challenge a specific uncertain claim when useful.",
+          "agent_profile": "adversarial-reviewer-a",
+          "lead": false
+        },
+        {
+          "id": "hypothesis-b",
+          "role": "counter-hypothesis investigator",
+          "instructions": "Seek disconfirming evidence and ask a named peer to resolve one concrete contradiction when useful.",
+          "agent_profile": "adversarial-reviewer-b",
+          "lead": false
+        }
+      ],
+      "tasks": [
+        {
+          "id": "investigate-primary",
+          "description": "Inspect the target independently, develop the strongest primary explanation, and identify evidence that would falsify it.",
+          "assignee": "hypothesis-a",
+          "depends_on": []
+        },
+        {
+          "id": "investigate-counter",
+          "description": "Inspect the same target independently, develop a competing explanation, and search for counterexamples to likely conclusions.",
+          "assignee": "hypothesis-b",
+          "depends_on": []
+        },
+        {
+          "id": "synthesize-surviving-evidence",
+          "description": "Review both investigations and every completed peer response, verify decisive claims against the workspace, and report the surviving explanation, contradictions, and remaining uncertainty.",
+          "assignee": "lead",
+          "depends_on": [
+            "investigate-primary",
+            "investigate-counter"
+          ]
+        }
+      ],
+      "sandbox": "read-only",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_workers": 3,
+      "max_rounds": 6,
+      "max_tokens": 12000,
+      "max_total_tokens": 68000,
+      "active_messaging": {
+        "max_tasks": 4,
+        "max_depth": 2,
+        "max_tokens": 5000,
+        "allow_broadcast": false
+      },
+      "operator_chat": {
+        "max_questions": 2,
+        "max_tokens": 5000,
+        "reply_timeout_seconds": 1800
+      },
+      "timeout_seconds": 900,
+      "capture_dir": "adversarial-review-internal",
+      "report": "adversarial-peer-review.md"
+    }
+  ]
+}
