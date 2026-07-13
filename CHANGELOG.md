@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.172.0
+
+- Added bounded map-to-single-agent synthesis to the non-evaluating Claude saved-workflow compiler. A later `agent()` template may reference a prior `pipeline()` or accepted `parallel()` result directly, through exact `.filter(Boolean)`, through `.join()` with one static delimiter, or through `JSON.stringify()` without running JavaScript.
+- Reused the one-MiB canonical intermediate collector and the existing `codex_exec.context_from` evidence channel. One collector artifact replaces potentially hundreds of packet artifacts, every synthesis call directly depends on it, and the existing redacted, marker-escaped, path-free 64-KiB aggregate context ceiling remains authoritative.
+- Extended intermediate result contracts and runtime reconciliation so a collector may feed either a later map or one synthesis agent. Source/result receipts, strict no-follow reads, immediate pre-launch revalidation, falsey filtering, resume drift detection, and the separate terminal result collector remain fail closed.
+- Added adversarial compiler/runtime tests and a real structured audit-to-ranked-report fixture. Dynamic delimiters, arbitrary methods/transforms, helper functions, loops, branches, nested callback fan-out, write-capable script compilation, and broad/universal Claude/Ultracode superiority remain unclaimed.
+- Completed one preregistered exact-0.172 completion-reserve comparison. Codex `gpt-5.6-sol` medium and pinned Sonnet Ultracode both completed normally and passed five visible tests; Codex passed all eight held-out tests for 10/10 in 43.113 seconds with 25,177 gross tokens, while Sonnet scored 5/10 in 42.986 seconds with 84,056 tokens and `$0.1976266` observed cost. The Claude trace names `claude-sonnet-5` as its only main model, one Haiku helper, and no Opus. One row, unlike cap enforcement, and unavailable Codex dollar telemetry support no broad, universal, latency, or cost-superiority claim.
+
 ## 0.171.0
 
 - Added bounded top-level map-to-map dataflow to the inert Claude saved-workflow compiler. A prior `pipeline()` or accepted `parallel()` result can feed a later map directly, through exact source `.filter(Boolean)`, or through assignment-level falsey filtering without evaluating JavaScript or launching a planning model.

@@ -1576,6 +1576,27 @@
       "success_contains": "Status: planned"
     },
     {
+      "id": "claude-map-synthesis-validate",
+      "description": "A real Claude-style map-reduce script validates its canonical collector and one bounded synthesis call without JavaScript evaluation or a provider launch.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-saved-workflows", "benchmark-suites/claude-map-synthesis-smoke.js", "--workspace", "."],
+      "success_contains": "(claude-map-synthesis-smoke, project)"
+    },
+    {
+      "id": "claude-map-synthesis-inspect",
+      "description": "Inspection exposes the canonical intermediate collector, context-bound synthesis agent, and separate terminal result collector.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-map-synthesis-smoke.js", "--workspace", "."],
+      "success_contains": "report [codex_exec, risk=low, phase=Synthesize"
+    },
+    {
+      "id": "claude-map-synthesis-dry-run",
+      "description": "The map-reduce saved workflow completes policy preflight and plans the future synthesis context without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-saved-workflow", "benchmark-suites/claude-map-synthesis-smoke.js", "--workspace", ".", "--dry-run", "--allow-agent", "--allow-parallel"],
+      "success_contains": "Status: planned"
+    },
+    {
       "id": "structured-agent-map-validate",
       "description": "A workflow with schema-bound output and RFC 6901 agent-map input validates without launching a provider.",
       "risk": "low",

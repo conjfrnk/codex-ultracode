@@ -92,7 +92,13 @@ MAX_CODEX_CONTEXT_SOURCES = 32
 MAX_CODEX_CONTEXT_ARTIFACTS = 32
 MAX_CODEX_CONTEXT_SOURCE_ID_CHARS = 128
 MAX_CODEX_OUTPUT_SCHEMA_BYTES = 256 * 1024
-CODEX_CONTEXT_SOURCE_KINDS = {"write_artifact", "shell", "codex_exec", "agent_map"}
+CODEX_CONTEXT_SOURCE_KINDS = {
+    "write_artifact",
+    "shell",
+    "codex_exec",
+    "agent_map",
+    "collect_results",
+}
 
 
 def slugify(value: str) -> str:
@@ -678,19 +684,25 @@ def _validate_result_contract(workflow: Dict, steps: List[Dict]) -> None:
             raise ValidationError(
                 "intermediate collect_results output must not equal workflow result_artifact"
             )
-        consumers = [
+        map_consumers = [
             step
             for step in steps
             if step["kind"] == "agent_map"
             and step.get("items_artifact") == collector["output"]
         ]
-        if not consumers:
+        context_consumers = [
+            step
+            for step in steps
+            if step["kind"] == "codex_exec"
+            and collector["id"] in step.get("context_from", [])
+        ]
+        if not map_consumers and not context_consumers:
             raise ValidationError(
-                "intermediate collect_results step %s must feed a later agent_map"
+                "intermediate collect_results step %s must feed a later agent_map or codex_exec context"
                 % collector["id"]
             )
         source_schema = source.get("output_schema")
-        for consumer in consumers:
+        for consumer in map_consumers:
             if collector["id"] not in consumer.get("depends_on", []):
                 raise ValidationError(
                     "agent_map step %s must directly depend on intermediate collector %s"
@@ -719,6 +731,12 @@ def _validate_result_contract(workflow: Dict, steps: List[Dict]) -> None:
                 raise ValidationError(
                     "agent_map step %s opaque intermediate items require text output or a string source schema"
                     % consumer["id"]
+                )
+        for consumer in context_consumers:
+            if collector["id"] not in consumer.get("depends_on", []):
+                raise ValidationError(
+                    "codex_exec step %s must directly depend on intermediate collector %s"
+                    % (consumer["id"], collector["id"])
                 )
 
 

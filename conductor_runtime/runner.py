@@ -8119,14 +8119,21 @@ class WorkflowRunner:
             relative = source.get("capture")
         elif kind == "codex_exec":
             relative = source.get("capture", "%s.md" % source_id)
+        elif kind == "collect_results":
+            self._verify_completed_collect_results(source)
+            relative = source["output"]
         else:
             raise ValidationError(
                 "context_from source %s has no supported artifact contract" % source_id
             )
         if not isinstance(relative, str) or not relative:
             raise ValidationError("context_from source %s has no captured output" % source_id)
-        expected_sha256 = source_state.get("context_output_sha256")
-        expected_bytes = source_state.get("context_output_bytes")
+        if kind == "collect_results":
+            expected_sha256 = source_state.get("result_output_sha256")
+            expected_bytes = source_state.get("result_output_bytes")
+        else:
+            expected_sha256 = source_state.get("context_output_sha256")
+            expected_bytes = source_state.get("context_output_bytes")
         if not _is_sha256(expected_sha256) or (
             not isinstance(expected_bytes, int)
             or isinstance(expected_bytes, bool)

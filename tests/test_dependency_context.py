@@ -129,6 +129,13 @@ class TamperingMapRunner(RecordingCodexRunner):
         output.write_text("changed after producer completion\n", encoding="utf-8")
 
 
+class TamperingCollectorRunner(RecordingCodexRunner):
+    def _collect_results(self, step):
+        super()._collect_results(step)
+        if step.get("intermediate", False):
+            self.run.write_artifact(step["output"], '["changed"]\n')
+
+
 class SymlinkArtifactRunner(RecordingCodexRunner):
     def _write_artifact(self, step):
         super()._write_artifact(step)
@@ -301,6 +308,37 @@ class DependencyContextTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValidationError, "at most 32 artifacts"):
             validate_workflow(oversized_map)
+
+        collected = workflow_with_steps(
+            [
+                {
+                    "id": "packet-review",
+                    "kind": "agent_map",
+                    "items": ["a.txt"],
+                    "prompt_template": "Review {item}",
+                },
+                {
+                    "id": "collected",
+                    "kind": "collect_results",
+                    "source_step": "packet-review",
+                    "output": "collected.json",
+                    "depends_on": ["packet-review"],
+                    "intermediate": True,
+                },
+                {
+                    "id": "sink",
+                    "kind": "codex_exec",
+                    "depends_on": ["collected"],
+                    "context_from": ["collected"],
+                    "prompt": "Synthesize.",
+                },
+            ]
+        )
+        validate_workflow(collected)
+
+        collected["steps"][2]["depends_on"] = []
+        with self.assertRaisesRegex(ValidationError, "direct"):
+            validate_workflow(collected)
 
     def test_schema_exports_context_from_bounds(self):
         schema = get_schema("workflow")
@@ -856,6 +894,66 @@ class DependencyContextTests(unittest.TestCase):
                 policy=RuntimePolicy(allow_agent=True),
             )
             with self.assertRaisesRegex(ValidationError, "missing, stale, or unbound"):
+                runner.execute()
+        self.assertEqual(len(runner.prompts), 1)
+
+    def test_intermediate_collector_context_is_reconciled_before_provider_launch(self):
+        workflow = workflow_with_steps(
+            [
+                {
+                    "id": "packet-review",
+                    "kind": "agent_map",
+                    "risk": "medium",
+                    "items": ["a.txt"],
+                    "prompt_template": "Review {item}",
+                    "capture_dir": "packets",
+                    "max_workers": 1,
+                },
+                {
+                    "id": "collected",
+                    "kind": "collect_results",
+                    "source_step": "packet-review",
+                    "output": "collected.json",
+                    "depends_on": ["packet-review"],
+                    "intermediate": True,
+                },
+                {
+                    "id": "synthesize",
+                    "kind": "codex_exec",
+                    "risk": "medium",
+                    "depends_on": ["collected"],
+                    "context_from": ["collected"],
+                    "prompt": "Synthesize.",
+                },
+            ]
+        )
+        validate_workflow(workflow)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("evidence\n", encoding="utf-8")
+            runner = RecordingCodexRunner(
+                workflow=workflow,
+                workspace=root,
+                base_run_dir=root / "runs",
+                policy=RuntimePolicy(allow_agent=True),
+            )
+            run = runner.execute()
+            state = run.read_state()["steps"]["synthesize"]
+        self.assertEqual(len(runner.prompts), 2)
+        self.assertIn("step=collected", runner.prompts[1])
+        self.assertIn("Review a.txt", runner.prompts[1])
+        self.assertEqual(state["agent_context_artifact_count"], 1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "a.txt").write_text("evidence\n", encoding="utf-8")
+            runner = TamperingCollectorRunner(
+                workflow=workflow,
+                workspace=root,
+                base_run_dir=root / "runs",
+                policy=RuntimePolicy(allow_agent=True),
+            )
+            with self.assertRaisesRegex(ValidationError, "output changed after completion"):
                 runner.execute()
         self.assertEqual(len(runner.prompts), 1)
 

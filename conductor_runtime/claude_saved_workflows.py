@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .errors import ValidationError
 from .packet_items import MAX_PACKET_ITEM_FILE_BYTES
-from .workflow import SAFE_ID, SCHEMA
+from .workflow import MAX_CODEX_CONTEXT_SOURCES, SAFE_ID, SCHEMA
 
 
 MAX_CLAUDE_WORKFLOW_BINDINGS = 64
@@ -20,11 +20,25 @@ MAX_CLAUDE_WORKFLOW_TOKENS = 100000
 MAX_CLAUDE_WORKFLOW_AGENTS = 1000
 MAX_CLAUDE_WORKFLOW_WORKERS = 16
 MAX_CLAUDE_WORKFLOW_RESULT_BYTES = 10 * 1024 * 1024
+MAX_CLAUDE_WORKFLOW_JOIN_DELIMITER_CHARS = 128
+MAX_CLAUDE_WORKFLOW_JOIN_DELIMITER_SOURCE_CHARS = 1024
 CLAUDE_WORKFLOW_RESULT_ARTIFACT = "claude-workflow/result.json"
 CLAUDE_AGENT_EFFORTS = {"low", "medium", "high", "xhigh", "max", "ultra"}
 _JS_IDENTIFIER = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
 _JS_REFERENCE = re.compile(
     r"^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$"
+)
+_JS_REFERENCE_SOURCE = r"[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*"
+_JS_TEMPLATE_FILTER = re.compile(
+    r"^(?P<reference>%s)\.filter\(Boolean\)$" % _JS_REFERENCE_SOURCE
+)
+_JS_TEMPLATE_JOIN = re.compile(
+    r"^(?P<reference>%s)(?P<filter>\.filter\(Boolean\))?\.join\((?P<delimiter>[\s\S]*)\)$"
+    % _JS_REFERENCE_SOURCE
+)
+_JS_TEMPLATE_JSON = re.compile(
+    r"^JSON\.stringify\(\s*(?P<reference>%s)(?P<filter>\.filter\(Boolean\))?\s*\)$"
+    % _JS_REFERENCE_SOURCE
 )
 _JS_NUMBER = re.compile(
     r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?"
@@ -46,6 +60,13 @@ class Reference:
 
 
 @dataclass(frozen=True)
+class RenderedMapReference:
+    value: Reference
+    filter_falsey: bool
+    rendering: str
+
+
+@dataclass(frozen=True)
 class FilteredSource:
     value: Any
 
@@ -57,7 +78,7 @@ class ArgAlias:
 
 @dataclass(frozen=True)
 class Template:
-    parts: Tuple[Union[str, Reference], ...]
+    parts: Tuple[Union[str, Reference, RenderedMapReference], ...]
 
 
 @dataclass(frozen=True)
@@ -91,7 +112,6 @@ class MapHandoff:
     filter_falsey: bool
     step_id: str
     output: str
-    item_semantics: str
 
 
 @dataclass(frozen=True)
@@ -232,7 +252,7 @@ class _Scanner:
     def _scan_template(self) -> Template:
         start = self.index
         self.index += 1
-        parts: List[Union[str, Reference]] = []
+        parts: List[Union[str, Reference, RenderedMapReference]] = []
         literal: List[str] = []
         while self.index < len(self.text):
             char = self.text[self.index]
@@ -251,17 +271,64 @@ class _Scanner:
                 if expression_end < 0:
                     self._fail(start, "has an unterminated template interpolation")
                 expression = self.text[expression_start:expression_end].strip()
-                if not _JS_REFERENCE.fullmatch(expression):
-                    self._fail(
-                        expression_start,
-                        "template interpolations may contain only dotted identifiers",
-                    )
-                parts.append(Reference(tuple(expression.split("."))))
+                parts.append(
+                    self._scan_template_interpolation(expression, expression_start)
+                )
                 self.index = expression_end + 1
                 continue
             literal.append(char)
             self.index += 1
         self._fail(start, "has an unterminated template literal")
+
+    def _scan_template_interpolation(
+        self,
+        expression: str,
+        expression_start: int,
+    ) -> Union[Reference, RenderedMapReference]:
+        if _JS_REFERENCE.fullmatch(expression):
+            return Reference(tuple(expression.split(".")))
+        match = _JS_TEMPLATE_FILTER.fullmatch(expression)
+        if match is not None:
+            return RenderedMapReference(
+                Reference(tuple(match.group("reference").split("."))),
+                True,
+                "value",
+            )
+        match = _JS_TEMPLATE_JOIN.fullmatch(expression)
+        if match is not None:
+            delimiter = match.group("delimiter").strip()
+            if len(delimiter) > MAX_CLAUDE_WORKFLOW_JOIN_DELIMITER_SOURCE_CHARS:
+                self._fail(
+                    expression_start,
+                    "template join() delimiter source is too long",
+                )
+            tokens = _Scanner(delimiter, self.source).scan()
+            if len(tokens) != 2 or tokens[0].kind != "string":
+                self._fail(
+                    expression_start,
+                    "template join() delimiter must be one static string",
+                )
+            if len(tokens[0].value) > MAX_CLAUDE_WORKFLOW_JOIN_DELIMITER_CHARS:
+                self._fail(
+                    expression_start,
+                    "template join() delimiter is too long",
+                )
+            return RenderedMapReference(
+                Reference(tuple(match.group("reference").split("."))),
+                match.group("filter") is not None,
+                "join",
+            )
+        match = _JS_TEMPLATE_JSON.fullmatch(expression)
+        if match is not None:
+            return RenderedMapReference(
+                Reference(tuple(match.group("reference").split("."))),
+                match.group("filter") is not None,
+                "json",
+            )
+        self._fail(
+            expression_start,
+            "template interpolations may contain only dotted identifiers or exact map filter/join/JSON.stringify rendering",
+        )
 
     def _scan_escape(self, quote: str, template: bool) -> str:
         offset = self.index
@@ -771,6 +838,22 @@ def _compile_program(program: Program, source: Path) -> Dict:
     consumed_properties: Dict[str, Tuple[str, bool]] = {}
     handoffs: Dict[Tuple[str, bool], MapHandoff] = {}
     handoffs_by_owner: Dict[str, List[MapHandoff]] = {}
+
+    def ensure_handoff(owner: str, filter_falsey: bool) -> MapHandoff:
+        key = (owner, filter_falsey)
+        handoff = handoffs.get(key)
+        if handoff is None:
+            index = len(handoffs) + 1
+            handoff = MapHandoff(
+                source_binding=owner,
+                filter_falsey=filter_falsey,
+                step_id="claude-handoff-%03d" % index,
+                output="claude-workflow/handoffs/%03d.json" % index,
+            )
+            handoffs[key] = handoff
+            handoffs_by_owner.setdefault(owner, []).append(handoff)
+        return handoff
+
     direct_agents = sum(isinstance(binding.expression, AgentCall) for binding in program.bindings)
     map_calls = sum(
         isinstance(binding.expression, (PipelineCall, ParallelCall))
@@ -789,6 +872,33 @@ def _compile_program(program: Program, source: Path) -> Dict:
                 "%s filter(Boolean) may be used only on a pipeline or parallel result"
                 % source
             )
+        if isinstance(expression, AgentCall):
+            context_sources = []
+            for reference, reference_filters_falsey in _expression_context_references(
+                expression.prompt
+            ):
+                if len(reference.parts) == 2 and reference.parts[0] == "args":
+                    continue
+                if reference.parts[0] in constants:
+                    continue
+                owner = reference.parts[0]
+                owner_binding = bindings.get(owner)
+                if (
+                    len(reference.parts) == 1
+                    and owner_binding is not None
+                    and isinstance(owner_binding.expression, (PipelineCall, ParallelCall))
+                ):
+                    handoff = ensure_handoff(
+                        owner,
+                        reference_filters_falsey or owner_binding.filters_falsey,
+                    )
+                    if handoff.step_id not in context_sources:
+                        context_sources.append(handoff.step_id)
+            if len(context_sources) > MAX_CODEX_CONTEXT_SOURCES:
+                raise ValidationError(
+                    "%s %s agent prompt references more than %d map results"
+                    % (source, binding.name, MAX_CODEX_CONTEXT_SOURCES)
+                )
         if not isinstance(expression, (PipelineCall, ParallelCall)):
             continue
         reference, source_filters_falsey = _filtered_source(expression.source)
@@ -813,7 +923,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
                     binding.name,
                     constants=constants,
                 )
-                item_semantics = _map_handoff_item_semantics(
+                _map_handoff_item_semantics(
                     owner_binding,
                     structured_items,
                     source,
@@ -821,23 +931,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
                     constants,
                 )
                 filter_falsey = source_filters_falsey or owner_binding.filters_falsey
-                key = (owner, filter_falsey)
-                if key not in handoffs:
-                    index = len(handoffs) + 1
-                    handoff = MapHandoff(
-                        source_binding=owner,
-                        filter_falsey=filter_falsey,
-                        step_id="claude-handoff-%03d" % index,
-                        output="claude-workflow/handoffs/%03d.json" % index,
-                        item_semantics=item_semantics,
-                    )
-                    handoffs[key] = handoff
-                    handoffs_by_owner.setdefault(owner, []).append(handoff)
-                elif handoffs[key].item_semantics != item_semantics:
-                    raise ValidationError(
-                        "%s map result %s cannot feed both string and object item semantics"
-                        % (source, owner)
-                    )
+                ensure_handoff(owner, filter_falsey)
                 continue
             if source_filters_falsey:
                 raise ValidationError(
@@ -898,11 +992,14 @@ def _compile_program(program: Program, source: Path) -> Dict:
                 binding.name,
                 constants=constants,
             )
-            prompt = _agent_prompt(
+            prompt, context_sources = _agent_prompt(
                 expression.prompt,
                 source,
                 binding.name,
                 constants=constants,
+                bindings=bindings,
+                seen_bindings=seen_bindings,
+                handoffs=handoffs,
             )
             consumed_property = consumed_properties.get(binding.name)
             if consumed_property is not None:
@@ -926,6 +1023,11 @@ def _compile_program(program: Program, source: Path) -> Dict:
                 step["output_schema"] = _normalize_output_schema(options["schema"])
             if options.get("effort") is not None:
                 step["effort"] = options["effort"]
+            if context_sources:
+                step["context_from"] = context_sources
+                for context_source in context_sources:
+                    if context_source not in dependencies:
+                        dependencies.append(context_source)
         else:
             if per_map_items < 1:
                 raise ValidationError("%s Claude-style workflow exceeds its 1,000-agent cap" % source)
@@ -1127,17 +1229,67 @@ def _agent_prompt(
     source: Path,
     binding_name: str,
     constants: Optional[Dict[str, Any]] = None,
-) -> str:
+    bindings: Optional[Dict[str, Binding]] = None,
+    seen_bindings: Optional[set] = None,
+    handoffs: Optional[Dict[Tuple[str, bool], MapHandoff]] = None,
+) -> Tuple[str, List[str]]:
     constants = constants or {}
+    bindings = bindings or {}
+    seen_bindings = seen_bindings or set()
+    handoffs = handoffs or {}
     if not isinstance(value, (str, Reference, Template, Concat)):
         raise ValidationError(
             "%s %s agent prompt must be text, args.NAME, or a text constant"
             % (source, binding_name)
         )
     output = []
+    context_sources = []
+    allow_map_context = isinstance(value, (Template, Concat))
+
+    def append_map_context(
+        reference: Reference,
+        *,
+        filter_falsey: bool,
+        rendering: str,
+    ) -> None:
+        owner = reference.parts[0]
+        owner_binding = bindings.get(owner)
+        if len(reference.parts) != 1 or owner_binding is None or not isinstance(
+            owner_binding.expression,
+            (PipelineCall, ParallelCall),
+        ):
+            raise ValidationError(
+                "%s %s agent prompt references unknown map %s"
+                % (source, binding_name, ".".join(reference.parts))
+            )
+        if owner not in seen_bindings:
+            raise ValidationError(
+                "%s %s agent prompt must reference a prior map"
+                % (source, binding_name)
+            )
+        effective_filter = filter_falsey or owner_binding.filters_falsey
+        handoff = handoffs.get((owner, effective_filter))
+        if handoff is None:
+            raise ValidationError(
+                "%s %s agent prompt has no compiled handoff for map %s"
+                % (source, binding_name, owner)
+            )
+        output.append(
+            "[The %s value of %s is provided below as completed dependency evidence from step %s.]"
+            % (rendering, owner, handoff.step_id)
+        )
+        if handoff.step_id not in context_sources:
+            context_sources.append(handoff.step_id)
+
     for part in _text_expression_parts(value):
         if isinstance(part, str):
             output.append(part)
+        elif isinstance(part, RenderedMapReference) and allow_map_context:
+            append_map_context(
+                part.value,
+                filter_falsey=part.filter_falsey,
+                rendering=part.rendering,
+            )
         elif (
             isinstance(part, Reference)
             and len(part.parts) == 2
@@ -1152,12 +1304,18 @@ def _agent_prompt(
                     binding_name,
                 )
             )
+        elif isinstance(part, Reference) and len(part.parts) == 1 and allow_map_context:
+            append_map_context(
+                part,
+                filter_falsey=False,
+                rendering="value",
+            )
         else:
             raise ValidationError(
-                "%s %s agent prompt text may reference only args.NAME or static constants"
+                "%s %s agent prompt text may reference only args.NAME, static constants, or a prior map result"
                 % (source, binding_name)
             )
-    return "".join(output)
+    return "".join(output), context_sources
 
 
 def _pipeline_prompt(
@@ -1423,15 +1581,17 @@ def _pipeline_source(
                     "%s %s pipeline source has no compiled handoff for map %s"
                     % (source, binding_name, owner)
                 )
-            if structured_items and handoff.item_semantics != "json":
-                raise ValidationError(
-                    "%s map %s must declare an object output schema before %s reads item properties"
-                    % (source, owner, binding_name)
-                )
+            item_semantics = _map_handoff_item_semantics(
+                owner_binding,
+                structured_items,
+                source,
+                binding_name,
+                constants,
+            )
             return {
                 "items_artifact": handoff.output,
                 "items_pointer": "",
-                "item_semantics": handoff.item_semantics,
+                "item_semantics": item_semantics,
             }, handoff.step_id
     if source_filters_falsey:
         raise ValidationError(
@@ -1700,7 +1860,7 @@ def _agent_capture(binding_name: str, structured: bool = False) -> str:
 
 
 def _contains_expression(value: Any) -> bool:
-    if isinstance(value, (Reference, Template, Concat)):
+    if isinstance(value, (Reference, RenderedMapReference, Template, Concat)):
         return True
     if isinstance(value, list):
         return any(_contains_expression(item) for item in value)
@@ -1721,11 +1881,17 @@ def _text_expression_parts(value: Any) -> List[Any]:
 
 
 def _expression_references(value: Any) -> List[Reference]:
-    return [
-        part
-        for part in _text_expression_parts(value)
-        if isinstance(part, Reference)
-    ]
+    return [reference for reference, _ in _expression_context_references(value)]
+
+
+def _expression_context_references(value: Any) -> List[Tuple[Reference, bool]]:
+    references = []
+    for part in _text_expression_parts(value):
+        if isinstance(part, Reference):
+            references.append((part, False))
+        elif isinstance(part, RenderedMapReference):
+            references.append((part.value, part.filter_falsey))
+    return references
 
 
 def _diagnostic(text: str, source: Path, offset: int, message: str) -> str:

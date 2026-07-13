@@ -42,6 +42,9 @@ return audits.filter(Boolean)
 
 class ResultFixtureRunner(WorkflowRunner):
     def _codex_exec(self, step):
+        prepared = self._prepare_codex_dependency_context(step)
+        if prepared is not step:
+            self.prepared_dependency_context = prepared["_agent_dependency_context"]
         output = step.get("fixture_output", step["prompt"])
         path = self.run.write_artifact(
             step.get("capture", "%s.md" % step["id"]),
@@ -678,6 +681,110 @@ return challenges
         )
         self.assertEqual(challenges["items_artifact"], handoff["output"])
 
+    def test_direct_agent_synthesizes_filtered_prior_map_as_bounded_context(self):
+        source = """\
+export const meta = { name: 'synthesize-findings' }
+const findings = (await pipeline(['a.py', 'b.py'], file => agent(`Audit ${file}`, {
+  schema: {
+    type: 'object',
+    required: ['summary'],
+    properties: { summary: { type: 'string' } },
+  },
+}))).filter(Boolean)
+const summary = await agent(`Rank ${findings}; join ${findings.filter(Boolean).join('\\n---\\n')}; preserve ${JSON.stringify(findings)}.`)
+return summary
+"""
+        _, workflow = self.compile(source)
+        validate_workflow(workflow)
+
+        findings, handoff, summary, result = workflow["steps"]
+        self.assertEqual(findings["kind"], "agent_map")
+        self.assertTrue(handoff["intermediate"])
+        self.assertTrue(handoff["filter_falsey"])
+        self.assertEqual(handoff["output_limit_bytes"], 1024 * 1024)
+        self.assertEqual(summary["kind"], "codex_exec")
+        self.assertEqual(summary["context_from"], [handoff["id"]])
+        self.assertEqual(summary["depends_on"], [handoff["id"]])
+        self.assertEqual(summary["prompt"].count("completed dependency evidence"), 3)
+        self.assertEqual(result["source_step"], "summary")
+
+    def test_direct_map_context_rejects_forward_dotted_and_non_text_references(self):
+        forward = """\
+export const meta = { name: 'forward-synthesis' }
+const summary = await agent(`Synthesize ${findings}`)
+const findings = await pipeline(['a.py'], file => agent(`Audit ${file}`))
+return summary
+"""
+        self.assert_rejected(forward, "must reference a prior map")
+
+        dotted = """\
+export const meta = { name: 'dotted-synthesis' }
+const findings = await pipeline(['a.py'], file => agent(`Audit ${file}`))
+const summary = await agent(`Count ${findings.length}`)
+return summary
+"""
+        self.assert_rejected(dotted, "prior map result")
+
+        non_text = """\
+export const meta = { name: 'non-text-synthesis' }
+const findings = await pipeline(['a.py'], file => agent(`Audit ${file}`))
+const summary = await agent(findings)
+return summary
+"""
+        self.assert_rejected(non_text, "prior map result")
+
+        dynamic_join = """\
+export const meta = { name: 'dynamic-join-synthesis' }
+const findings = await pipeline(['a.py'], file => agent(`Audit ${file}`))
+const summary = await agent(`Join ${findings.join(args.separator)}`)
+return summary
+"""
+        self.assert_rejected(dynamic_join, "one static string")
+
+        arbitrary_transform = """\
+export const meta = { name: 'transform-synthesis' }
+const findings = await pipeline(['a.py'], file => agent(`Audit ${file}`))
+const summary = await agent(`Slice ${findings.slice(0)}`)
+return summary
+"""
+        self.assert_rejected(arbitrary_transform, "exact map filter/join/JSON.stringify")
+
+    def test_direct_agent_keeps_filtered_and_unfiltered_map_views_distinct(self):
+        source = """\
+export const meta = { name: 'dual-view-synthesis' }
+const findings = await pipeline(['a.py', 'b.py'], file => agent(`Audit ${file}`))
+const summary = await agent(`Filtered ${findings.filter(Boolean)}; complete ${JSON.stringify(findings)}.`)
+return summary
+"""
+        _, workflow = self.compile(source)
+        validate_workflow(workflow)
+
+        findings, filtered, complete, summary, _ = workflow["steps"]
+        self.assertEqual(findings["kind"], "agent_map")
+        self.assertTrue(filtered["filter_falsey"])
+        self.assertNotIn("filter_falsey", complete)
+        self.assertNotEqual(filtered["output"], complete["output"])
+        self.assertEqual(
+            summary["context_from"],
+            [filtered["id"], complete["id"]],
+        )
+        self.assertEqual(set(summary["context_from"]), set(summary["depends_on"]))
+
+    def test_direct_agent_map_context_enforces_source_ceiling(self):
+        maps = "\n".join(
+            "const map%02d = await pipeline(['item'], item => agent(`Review ${item}`))"
+            % index
+            for index in range(33)
+        )
+        references = " ".join("${map%02d}" % index for index in range(33))
+        source = """\
+export const meta = { name: 'too-many-contexts' }
+%s
+const summary = await agent(`%s`)
+return summary
+""" % (maps, references)
+        self.assert_rejected(source, "more than 32 map results")
+
     def test_map_handoff_rejects_unprovable_shapes_and_non_map_filtering(self):
         missing_schema = """\
 export const meta = { name: 'missing-map-schema' }
@@ -1107,6 +1214,55 @@ return reviews
                 root / "runs",
                 RuntimePolicy(allow_agent=True, allow_parallel=True),
                 run_id="runtime-handoff-race",
+            )
+            with self.assertRaisesRegex(ValidationError, "output changed after completion"):
+                runner.execute()
+
+    def test_executes_map_to_synthesis_context_and_revalidates_before_launch(self):
+        source = """\
+export const meta = { name: 'runtime-synthesis' }
+const findings = (await pipeline(['a.py', 'b.py', 'c.py'], file => agent(`Audit ${file}`))).filter(Boolean)
+const summary = await agent(`Rank these findings: ${findings}`)
+return summary
+"""
+        _, workflow = self.compile(source)
+        workflow["steps"][0]["fixture_outputs"] = ["alpha", "", "beta"]
+        workflow["steps"][2]["fixture_output"] = "ranked-summary"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = ResultFixtureRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(allow_agent=True, allow_parallel=True),
+                run_id="runtime-synthesis",
+            )
+            run = runner.execute()
+            self.assertIn('["alpha","beta"]', runner.prepared_dependency_context)
+            self.assertIn("step=claude-handoff-001", runner.prepared_dependency_context)
+            self.assertEqual(
+                (run.artifacts_dir / workflow["result_artifact"]).read_text(
+                    encoding="utf-8"
+                ),
+                '"ranked-summary"\n',
+            )
+
+        class SynthesisTamperRunner(ResultFixtureRunner):
+            def _codex_exec(self, step):
+                if step["id"] == "summary":
+                    handoff = self.workflow["steps"][1]
+                    self.run.write_artifact(handoff["output"], '["changed"]\n')
+                super()._codex_exec(step)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = SynthesisTamperRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(allow_agent=True, allow_parallel=True),
+                run_id="runtime-synthesis-tamper",
             )
             with self.assertRaisesRegex(ValidationError, "output changed after completion"):
                 runner.execute()
