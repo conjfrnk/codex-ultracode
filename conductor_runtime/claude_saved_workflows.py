@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .errors import ValidationError
+from .packet_items import MAX_PACKET_ITEM_FILE_BYTES
 from .workflow import SAFE_ID, SCHEMA
 
 
@@ -45,6 +46,11 @@ class Reference:
 
 
 @dataclass(frozen=True)
+class FilteredSource:
+    value: Any
+
+
+@dataclass(frozen=True)
 class ArgAlias:
     name: str
 
@@ -77,6 +83,15 @@ class ParallelCall:
     source: Any
     item_name: str
     agent: AgentCall
+
+
+@dataclass(frozen=True)
+class MapHandoff:
+    source_binding: str
+    filter_falsey: bool
+    step_id: str
+    output: str
+    item_semantics: str
 
 
 @dataclass(frozen=True)
@@ -476,7 +491,7 @@ class _Parser:
 
     def _parse_pipeline_call(self) -> PipelineCall:
         self._expect_symbol("(")
-        source = self._parse_value()
+        source = self._parse_pipeline_source()
         self._expect_symbol(",")
         self._accept_identifier("async")
         if self._accept_symbol("("):
@@ -492,6 +507,20 @@ class _Parser:
         self._accept_symbol(",")
         self._expect_symbol(")")
         return PipelineCall(source, item_name, agent)
+
+    def _parse_pipeline_source(self) -> Any:
+        value = self._parse_value()
+        if (
+            isinstance(value, Reference)
+            and len(value.parts) > 1
+            and value.parts[-1] == "filter"
+            and self._at_symbol("(")
+        ):
+            self._expect_symbol("(")
+            self._expect_identifier("Boolean")
+            self._expect_symbol(")")
+            return FilteredSource(Reference(value.parts[:-1]))
+        return value
 
     def _parse_parallel_call(self) -> ParallelCall:
         self._expect_symbol("(")
@@ -664,6 +693,55 @@ class _Parser:
         raise ValidationError(_diagnostic(self.text, self.source, current.offset, message))
 
 
+def _filtered_source(value: Any) -> Tuple[Any, bool]:
+    if isinstance(value, FilteredSource):
+        return value.value, True
+    return value, False
+
+
+def _map_handoff_item_semantics(
+    owner_binding: Binding,
+    structured_items: bool,
+    source: Path,
+    consumer_name: str,
+    constants: Dict[str, Any],
+) -> str:
+    expression = owner_binding.expression
+    if not isinstance(expression, (PipelineCall, ParallelCall)):
+        raise ValidationError(
+            "%s %s handoff source must be a prior map" % (source, consumer_name)
+        )
+    options = _agent_options(
+        expression.agent.options,
+        source,
+        owner_binding.name,
+        label_reference=expression.item_name,
+        constants=constants,
+    )
+    schema = options.get("schema")
+    if schema is None:
+        if structured_items:
+            raise ValidationError(
+                "%s map %s must declare an object output schema before %s reads item properties"
+                % (source, owner_binding.name, consumer_name)
+            )
+        return "opaque"
+    schema_type = schema.get("type")
+    if schema_type == "object":
+        return "json"
+    if schema_type == "string" and not structured_items:
+        return "opaque"
+    if structured_items:
+        raise ValidationError(
+            "%s map %s must declare an object output schema before %s reads item properties"
+            % (source, owner_binding.name, consumer_name)
+        )
+    raise ValidationError(
+        "%s map %s output schema must have root type string or object before it feeds %s"
+        % (source, owner_binding.name, consumer_name)
+    )
+
+
 def _compile_program(program: Program, source: Path) -> Dict:
     command_name = program.meta.get("name")
     description = program.meta.get("description", "")
@@ -691,6 +769,8 @@ def _compile_program(program: Program, source: Path) -> Dict:
     phase_ids, phases_declared = _declared_phase_ids(program.meta.get("phases"), source)
     bindings = {binding.name: binding for binding in program.bindings}
     consumed_properties: Dict[str, Tuple[str, bool]] = {}
+    handoffs: Dict[Tuple[str, bool], MapHandoff] = {}
+    handoffs_by_owner: Dict[str, List[MapHandoff]] = {}
     direct_agents = sum(isinstance(binding.expression, AgentCall) for binding in program.bindings)
     map_calls = sum(
         isinstance(binding.expression, (PipelineCall, ParallelCall))
@@ -704,11 +784,6 @@ def _compile_program(program: Program, source: Path) -> Dict:
 
     for binding in program.bindings:
         expression = binding.expression
-        if binding.filters_falsey and binding.name != program.return_name:
-            raise ValidationError(
-                "%s filter(Boolean) on %s cannot feed a later binding"
-                % (source, binding.name)
-            )
         if binding.filters_falsey and not isinstance(expression, (PipelineCall, ParallelCall)):
             raise ValidationError(
                 "%s filter(Boolean) may be used only on a pipeline or parallel result"
@@ -716,11 +791,65 @@ def _compile_program(program: Program, source: Path) -> Dict:
             )
         if not isinstance(expression, (PipelineCall, ParallelCall)):
             continue
-        reference = expression.source
+        reference, source_filters_falsey = _filtered_source(expression.source)
         if isinstance(reference, Reference) and len(reference.parts) == 1:
             if reference.parts[0] in constants:
+                if source_filters_falsey:
+                    raise ValidationError(
+                        "%s mapped binding %s may filter only a prior map result"
+                        % (source, binding.name)
+                    )
                 continue
+            owner = reference.parts[0]
+            owner_binding = bindings.get(owner)
+            if owner_binding is not None and isinstance(
+                owner_binding.expression,
+                (PipelineCall, ParallelCall),
+            ):
+                _, structured_items = _pipeline_prompt(
+                    expression.agent.prompt,
+                    expression.item_name,
+                    source,
+                    binding.name,
+                    constants=constants,
+                )
+                item_semantics = _map_handoff_item_semantics(
+                    owner_binding,
+                    structured_items,
+                    source,
+                    binding.name,
+                    constants,
+                )
+                filter_falsey = source_filters_falsey or owner_binding.filters_falsey
+                key = (owner, filter_falsey)
+                if key not in handoffs:
+                    index = len(handoffs) + 1
+                    handoff = MapHandoff(
+                        source_binding=owner,
+                        filter_falsey=filter_falsey,
+                        step_id="claude-handoff-%03d" % index,
+                        output="claude-workflow/handoffs/%03d.json" % index,
+                        item_semantics=item_semantics,
+                    )
+                    handoffs[key] = handoff
+                    handoffs_by_owner.setdefault(owner, []).append(handoff)
+                elif handoffs[key].item_semantics != item_semantics:
+                    raise ValidationError(
+                        "%s map result %s cannot feed both string and object item semantics"
+                        % (source, owner)
+                    )
+                continue
+            if source_filters_falsey:
+                raise ValidationError(
+                    "%s mapped binding %s may filter only a prior map result"
+                    % (source, binding.name)
+                )
         if isinstance(reference, Reference) and len(reference.parts) == 2:
+            if source_filters_falsey:
+                raise ValidationError(
+                    "%s mapped binding %s may filter only a prior map result"
+                    % (source, binding.name)
+                )
             owner, property_name = reference.parts
             if owner == "args":
                 continue
@@ -743,6 +872,18 @@ def _compile_program(program: Program, source: Path) -> Dict:
                     "%s agent result %s cannot feed multiple schema properties" % (source, owner)
                 )
             consumed_properties[owner] = (property_name, structured_items)
+
+    consumed_maps = {owner for owner, _ in handoffs}
+    for binding in program.bindings:
+        if (
+            binding.filters_falsey
+            and binding.name != program.return_name
+            and binding.name not in consumed_maps
+        ):
+            raise ValidationError(
+                "%s filter(Boolean) on %s cannot feed a later binding"
+                % (source, binding.name)
+            )
 
     steps = []
     prior_step = None
@@ -812,6 +953,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
                     source,
                     constants=constants,
                     structured_items=structured_items,
+                    handoffs=handoffs,
                 )
                 if structured_items:
                     item_source["item_semantics"] = "json"
@@ -824,6 +966,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
                     per_map_items,
                     source,
                     constants,
+                    handoffs,
                 )
             if source_dependency is not None and source_dependency not in dependencies:
                 dependencies.append(source_dependency)
@@ -854,8 +997,23 @@ def _compile_program(program: Program, source: Path) -> Dict:
         if dependencies:
             step["depends_on"] = dependencies
         steps.append(step)
-        prior_step = binding.name
         seen_bindings.add(binding.name)
+        prior_step = binding.name
+        for handoff in handoffs_by_owner.get(binding.name, []):
+            handoff_step = {
+                "id": handoff.step_id,
+                "kind": "collect_results",
+                "risk": "low",
+                "source_step": binding.name,
+                "output": handoff.output,
+                "output_limit_bytes": MAX_PACKET_ITEM_FILE_BYTES,
+                "depends_on": [binding.name],
+                "intermediate": True,
+            }
+            if handoff.filter_falsey:
+                handoff_step["filter_falsey"] = True
+            steps.append(handoff_step)
+            prior_step = handoff.step_id
 
     returned = bindings[program.return_name].expression
     filters_falsey = program.filters_falsey or bindings[program.return_name].filters_falsey
@@ -1068,6 +1226,7 @@ def _parallel_map(
     max_items: int,
     source: Path,
     constants: Dict[str, Any],
+    handoffs: Dict[Tuple[str, bool], MapHandoff],
 ) -> Tuple[str, Dict[str, Any], Optional[str]]:
     static_items = None
     if isinstance(expression.source, list):
@@ -1125,6 +1284,7 @@ def _parallel_map(
         source,
         constants=constants,
         structured_items=structured_items,
+        handoffs=handoffs,
     )
     if structured_items:
         item_source["item_semantics"] = "json"
@@ -1232,14 +1392,50 @@ def _pipeline_source(
     source: Path,
     constants: Optional[Dict[str, Any]] = None,
     structured_items: bool = False,
+    handoffs: Optional[Dict[Tuple[str, bool], MapHandoff]] = None,
 ) -> Tuple[Dict[str, Any], Optional[str]]:
     constants = constants or {}
+    handoffs = handoffs or {}
+    value, source_filters_falsey = _filtered_source(value)
     if isinstance(value, Reference) and len(value.parts) == 1 and value.parts[0] in constants:
         resolved = constants[value.parts[0]]
         value = (
             Reference(("args", resolved.name))
             if isinstance(resolved, ArgAlias)
             else resolved
+        )
+    if isinstance(value, Reference) and len(value.parts) == 1:
+        owner = value.parts[0]
+        owner_binding = bindings.get(owner)
+        if owner_binding is not None and isinstance(
+            owner_binding.expression,
+            (PipelineCall, ParallelCall),
+        ):
+            if owner not in seen_bindings:
+                raise ValidationError(
+                    "%s %s pipeline source must reference a prior map"
+                    % (source, binding_name)
+                )
+            filter_falsey = source_filters_falsey or owner_binding.filters_falsey
+            handoff = handoffs.get((owner, filter_falsey))
+            if handoff is None:
+                raise ValidationError(
+                    "%s %s pipeline source has no compiled handoff for map %s"
+                    % (source, binding_name, owner)
+                )
+            if structured_items and handoff.item_semantics != "json":
+                raise ValidationError(
+                    "%s map %s must declare an object output schema before %s reads item properties"
+                    % (source, owner, binding_name)
+                )
+            return {
+                "items_artifact": handoff.output,
+                "items_pointer": "",
+                "item_semantics": handoff.item_semantics,
+            }, handoff.step_id
+    if source_filters_falsey:
+        raise ValidationError(
+            "%s %s may filter only a prior map result" % (source, binding_name)
         )
     if isinstance(value, list):
         valid_items = (

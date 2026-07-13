@@ -443,7 +443,7 @@ return reviews
         self.assertEqual(len(source["sha256"]), 64)
         self.assertNotIn(step["items"][0], json.dumps(source))
 
-    def test_opaque_agent_map_requires_inline_items_and_is_exported(self):
+    def test_opaque_agent_map_rejects_line_files_and_accepts_json_artifacts(self):
         workflow = {
             "schema": "conductor.workflow.v1",
             "name": "bad-opaque",
@@ -458,8 +458,13 @@ return reviews
                 }
             ],
         }
-        with self.assertRaisesRegex(ValidationError, "opaque item semantics require inline items"):
+        with self.assertRaisesRegex(ValidationError, "do not support line-oriented items_file"):
             validate_workflow(workflow)
+
+        workflow["steps"][0].pop("items_file")
+        workflow["steps"][0]["items_artifact"] = "topics.json"
+        workflow["steps"][0]["items_pointer"] = ""
+        validate_workflow(workflow)
 
         schema = get_schema("workflow")
         agent_map = next(
@@ -618,6 +623,97 @@ return second
         self.assertEqual(workflow["steps"][1]["max_items"], 499)
         self.assertEqual(workflow["steps"][2]["max_items"], 499)
         self.assertEqual(workflow["steps"][2]["depends_on"], ["first", "found"])
+
+    def test_pipeline_consumes_filtered_prior_map_text_results(self):
+        source = """\
+export const meta = { name: 'challenge-audits' }
+const audits = await pipeline(['a.py', 'b.py'], file => agent(`Audit ${file}`))
+const challenges = await pipeline(audits.filter(Boolean), audit => agent(`Challenge ${audit}`))
+return challenges
+"""
+        _, workflow = self.compile(source)
+        validate_workflow(workflow)
+
+        self.assertEqual(workflow["max_items"], 500)
+        self.assertEqual(len(workflow["steps"]), 4)
+        audits, handoff, challenges, result = workflow["steps"]
+        self.assertEqual(audits["kind"], "agent_map")
+        self.assertEqual(handoff["kind"], "collect_results")
+        self.assertTrue(handoff["intermediate"])
+        self.assertTrue(handoff["filter_falsey"])
+        self.assertEqual(handoff["source_step"], "audits")
+        self.assertEqual(handoff["output_limit_bytes"], 1024 * 1024)
+        self.assertEqual(challenges["items_artifact"], handoff["output"])
+        self.assertEqual(challenges["items_pointer"], "")
+        self.assertEqual(challenges["item_semantics"], "opaque")
+        self.assertEqual(challenges["depends_on"], [handoff["id"]])
+        self.assertEqual(result["source_step"], "challenges")
+
+    def test_parallel_consumes_assignment_filtered_structured_map_results(self):
+        source = """\
+export const meta = { name: 'challenge-findings' }
+const findings = (await pipeline(['a.py', 'b.py'], file => agent(`Audit ${file}`, {
+  schema: {
+    type: 'object',
+    required: ['summary', 'severity'],
+    properties: { summary: { type: 'string' }, severity: { type: 'string' } },
+  },
+}))).filter(Boolean)
+const challenges = await parallel(findings.map(finding => () =>
+  agent(`Challenge ${finding.severity}: ${finding.summary}`)
+))
+return challenges
+"""
+        _, workflow = self.compile(source)
+        validate_workflow(workflow)
+
+        findings, handoff, challenges, _ = workflow["steps"]
+        self.assertEqual(findings["output_schema"]["type"], "object")
+        self.assertTrue(handoff["intermediate"])
+        self.assertTrue(handoff["filter_falsey"])
+        self.assertEqual(challenges["item_semantics"], "json")
+        self.assertEqual(
+            challenges["prompt_template"],
+            "Challenge {item.severity}: {item.summary}",
+        )
+        self.assertEqual(challenges["items_artifact"], handoff["output"])
+
+    def test_map_handoff_rejects_unprovable_shapes_and_non_map_filtering(self):
+        missing_schema = """\
+export const meta = { name: 'missing-map-schema' }
+const findings = await pipeline(args.files, file => agent(`Audit ${file}`))
+const reviews = await pipeline(findings, finding => agent(`Review ${finding.summary}`))
+return reviews
+"""
+        self.assert_rejected(missing_schema, "must declare an object output schema")
+
+        scalar_schema = """\
+export const meta = { name: 'scalar-map-schema' }
+const findings = await pipeline(args.files, file => agent(`Audit ${file}`, {
+  schema: { type: 'number' },
+}))
+const reviews = await pipeline(findings, finding => agent(`Review ${finding}`))
+return reviews
+"""
+        self.assert_rejected(scalar_schema, "root type string or object")
+
+        direct_filter = """\
+export const meta = { name: 'direct-filter' }
+const found = await agent('Find files', {
+  schema: { type: 'object', required: ['files'], properties: { files: { type: 'array', items: { type: 'string' } } } },
+})
+const reviews = await pipeline(found.files.filter(Boolean), file => agent(`Review ${file}`))
+return reviews
+"""
+        self.assert_rejected(direct_filter, "may filter only a prior map result")
+
+        forward_map = """\
+export const meta = { name: 'forward-map' }
+const reviews = await pipeline(findings, finding => agent(`Review ${finding}`))
+const findings = await pipeline(args.files, file => agent(`Audit ${file}`))
+return reviews
+"""
+        self.assert_rejected(forward_map, "must reference a prior map")
 
     def test_pipeline_requires_prior_array_of_strings_schema(self):
         missing_required = """\
@@ -817,6 +913,51 @@ export const workflow = {
                 with self.assertRaisesRegex(ValidationError, detail):
                     validate_workflow(candidate)
 
+    def test_intermediate_result_contract_is_narrow_and_dependency_bound(self):
+        source = """\
+export const meta = { name: 'intermediate-contract' }
+const audits = await pipeline(['a.py', 'b.py'], file => agent(`Audit ${file}`))
+const reviews = await pipeline(audits.filter(Boolean), audit => agent(`Review ${audit}`))
+return reviews
+"""
+        _, workflow = self.compile(source)
+        validate_workflow(workflow)
+        handoff = workflow["steps"][1]
+        consumer = workflow["steps"][2]
+
+        cases = []
+        terminal = json.loads(json.dumps(workflow))
+        terminal["steps"][1]["intermediate"] = False
+        cases.append((terminal, "exactly one terminal collect_results"))
+
+        orphaned = json.loads(json.dumps(workflow))
+        orphaned["steps"][1]["output"] = "claude-workflow/handoffs/orphan.json"
+        cases.append((orphaned, "must feed a later agent_map"))
+
+        missing_dependency = json.loads(json.dumps(workflow))
+        missing_dependency["steps"][2]["depends_on"] = []
+        cases.append((missing_dependency, "must directly depend on intermediate collector"))
+
+        nested_pointer = json.loads(json.dumps(workflow))
+        nested_pointer["steps"][2]["items_pointer"] = "/items"
+        cases.append((nested_pointer, "at the JSON root"))
+
+        path_semantics = json.loads(json.dumps(workflow))
+        path_semantics["steps"][2].pop("item_semantics")
+        cases.append((path_semantics, "must use opaque or json semantics"))
+
+        result_collision = json.loads(json.dumps(workflow))
+        result_collision["steps"][1]["output"] = result_collision["result_artifact"]
+        result_collision["steps"][2]["items_artifact"] = result_collision["result_artifact"]
+        cases.append((result_collision, "must not equal workflow result_artifact"))
+
+        for candidate, detail in cases:
+            with self.subTest(detail=detail):
+                with self.assertRaisesRegex(ValidationError, detail):
+                    validate_workflow(candidate)
+
+        self.assertEqual(consumer["items_artifact"], handoff["output"])
+
     def test_workflow_schema_exports_result_contract(self):
         schema = get_schema("workflow")
         self.assertIn("result_artifact", schema["properties"])
@@ -828,6 +969,7 @@ export const workflow = {
         )
         self.assertEqual(collector["required"], ["id", "kind", "source_step", "output"])
         self.assertEqual(collector["properties"]["filter_falsey"]["type"], "boolean")
+        self.assertEqual(collector["properties"]["intermediate"]["type"], "boolean")
 
     def test_collects_canonical_structured_direct_result(self):
         source = {
@@ -889,6 +1031,85 @@ export const workflow = {
             self.assertEqual(state["result_source_count"], 6)
             self.assertEqual(state["result_item_count"], 4)
             self.assertTrue(state["result_filter_falsey"])
+
+    def test_executes_filtered_map_to_map_handoff_and_detects_resume_drift(self):
+        source = """\
+export const meta = { name: 'runtime-handoff' }
+const audits = await pipeline(['a.py', 'b.py', 'c.py'], file => agent(`Audit ${file}`))
+const reviews = await pipeline(audits.filter(Boolean), audit => agent(`Review ${audit}`))
+return reviews
+"""
+        _, workflow = self.compile(source)
+        workflow["steps"][0]["fixture_outputs"] = ["alpha", "", "beta"]
+        workflow["steps"][2]["fixture_outputs"] = ["review-alpha", "review-beta"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = ResultFixtureRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(allow_agent=True, allow_parallel=True),
+                run_id="runtime-handoff",
+            ).execute()
+
+            handoff = workflow["steps"][1]
+            self.assertEqual(
+                (run.artifacts_dir / handoff["output"]).read_text(encoding="utf-8"),
+                '["alpha","beta"]\n',
+            )
+            self.assertEqual(
+                (run.artifacts_dir / workflow["result_artifact"]).read_text(encoding="utf-8"),
+                '["review-alpha","review-beta"]\n',
+            )
+            state = run.read_state()["steps"][handoff["id"]]
+            self.assertEqual(state["result_source_count"], 3)
+            self.assertEqual(state["result_item_count"], 2)
+            self.assertTrue(state["result_filter_falsey"])
+
+            (run.artifacts_dir / handoff["output"]).write_text(
+                '["changed"]\n',
+                encoding="utf-8",
+            )
+            resumed = ResultFixtureRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(allow_agent=True, allow_parallel=True),
+                resume_dir=run.run_dir,
+            )
+            with self.assertRaisesRegex(ValidationError, "output changed after completion"):
+                resumed.execute()
+
+    def test_map_consumer_revalidates_handoff_immediately_before_launch(self):
+        source = """\
+export const meta = { name: 'runtime-handoff-race' }
+const audits = await pipeline(['a.py'], file => agent(`Audit ${file}`))
+const reviews = await pipeline(audits.filter(Boolean), audit => agent(`Review ${audit}`))
+return reviews
+"""
+        _, workflow = self.compile(source)
+        workflow["steps"][0]["fixture_outputs"] = ["alpha"]
+        workflow["steps"][2]["fixture_outputs"] = ["review-alpha"]
+
+        class HandoffTamperRunner(ResultFixtureRunner):
+            def _agent_map(self, step):
+                if step["id"] == "reviews":
+                    handoff = self.workflow["steps"][1]
+                    self.run.write_artifact(handoff["output"], '["changed"]\n')
+                super()._agent_map(step)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = HandoffTamperRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(allow_agent=True, allow_parallel=True),
+                run_id="runtime-handoff-race",
+            )
+            with self.assertRaisesRegex(ValidationError, "output changed after completion"):
+                runner.execute()
 
     def test_collect_results_rejects_non_strict_and_oversized_outputs(self):
         invalid_values = [

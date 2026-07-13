@@ -1555,6 +1555,27 @@
       "success_contains": "Status: planned"
     },
     {
+      "id": "claude-multistage-handoff-validate",
+      "description": "A real two-stage Claude audit and challenge script validates its bounded map-result handoff without JavaScript evaluation or a provider launch.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-saved-workflows", "benchmark-suites/claude-multistage-handoff-smoke.js", "--workspace", "."],
+      "success_contains": "(claude-multistage-handoff-smoke, project)"
+    },
+    {
+      "id": "claude-multistage-handoff-inspect",
+      "description": "Inspection exposes the internal canonical collector, direct second-stage JSON map, and separate terminal result collector.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-multistage-handoff-smoke.js", "--workspace", "."],
+      "success_contains": "claude-handoff-001 [collect_results, risk=low]"
+    },
+    {
+      "id": "claude-multistage-handoff-dry-run",
+      "description": "The two-stage saved workflow completes policy preflight and plans unresolved internal artifacts without launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "run-saved-workflow", "benchmark-suites/claude-multistage-handoff-smoke.js", "--workspace", ".", "--dry-run", "--allow-agent", "--allow-parallel"],
+      "success_contains": "Status: planned"
+    },
+    {
       "id": "structured-agent-map-validate",
       "description": "A workflow with schema-bound output and RFC 6901 agent-map input validates without launching a provider.",
       "risk": "low",

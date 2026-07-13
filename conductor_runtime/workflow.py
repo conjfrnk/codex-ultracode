@@ -256,6 +256,10 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
             raise ValidationError(
                 "collect_results step %s filter_falsey must be boolean" % step_id
             )
+        if not isinstance(step.get("intermediate", False), bool):
+            raise ValidationError(
+                "collect_results step %s intermediate must be boolean" % step_id
+            )
     elif kind == "manual_gate":
         approval_id = step.get("approval_id", step_id)
         if not isinstance(approval_id, str) or not approval_id:
@@ -355,10 +359,17 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
                 "agent_map step %s item_semantics must be workspace_path, opaque, or json"
                 % step_id
             )
-        if item_semantics == "opaque" and items is None:
-            raise ValidationError(
-                "agent_map step %s opaque item semantics require inline items" % step_id
-            )
+        if item_semantics == "opaque":
+            if items_file is not None:
+                raise ValidationError(
+                    "agent_map step %s opaque item semantics do not support line-oriented items_file"
+                    % step_id
+                )
+            if items_artifact is not None and step.get("items_pointer") is None:
+                raise ValidationError(
+                    "agent_map step %s opaque artifact items require items_pointer"
+                    % step_id
+                )
         if item_semantics == "json":
             if items_file is not None:
                 raise ValidationError(
@@ -586,64 +597,129 @@ def _validate_dependencies(steps: List[Dict]) -> None:
 def _validate_result_contract(workflow: Dict, steps: List[Dict]) -> None:
     result_artifact = workflow.get("result_artifact")
     collectors = [step for step in steps if step["kind"] == "collect_results"]
+    terminal_collectors = [
+        step for step in collectors if not step.get("intermediate", False)
+    ]
     if result_artifact is None:
-        if collectors:
+        if terminal_collectors:
             raise ValidationError(
                 "collect_results requires a workflow result_artifact contract"
             )
-        return
-    if not isinstance(result_artifact, str) or not result_artifact:
-        raise ValidationError("workflow result_artifact must be a relative path")
-    require_no_path_escape(result_artifact)
-    if len(collectors) != 1:
-        raise ValidationError(
-            "workflow result_artifact requires exactly one collect_results step"
-        )
-    collector = collectors[0]
-    if collector is not steps[-1]:
-        raise ValidationError("collect_results must be the final workflow step")
-    if collector["output"] != result_artifact:
-        raise ValidationError(
-            "collect_results output must equal workflow result_artifact"
-        )
-
-    source_id = collector["source_step"]
-    step_map = {step["id"]: step for step in steps}
-    source = step_map.get(source_id)
-    if source is None:
-        raise ValidationError(
-            "collect_results step %s references unknown source_step %s"
-            % (collector["id"], source_id)
-        )
-    if source_id not in collector.get("depends_on", []):
-        raise ValidationError(
-            "collect_results step %s source_step must be a direct dependency"
-            % collector["id"]
-        )
-    if source["kind"] not in {"codex_exec", "agent_map"}:
-        raise ValidationError(
-            "collect_results step %s source_step must be codex_exec or agent_map"
-            % collector["id"]
-        )
-    if collector.get("filter_falsey", False) and source["kind"] != "agent_map":
-        raise ValidationError(
-            "collect_results step %s filter_falsey requires an agent_map source"
-            % collector["id"]
-        )
-
-    output_path = Path(collector["output"])
-    if source["kind"] == "codex_exec":
-        source_path = Path(source.get("capture", "%s.md" % source_id))
-        if output_path == source_path:
-            raise ValidationError(
-                "collect_results output must not overwrite its codex_exec source"
-            )
     else:
-        source_dir = Path(source.get("capture_dir", source_id))
-        if output_path == source_dir or source_dir in output_path.parents:
+        if not isinstance(result_artifact, str) or not result_artifact:
+            raise ValidationError("workflow result_artifact must be a relative path")
+        require_no_path_escape(result_artifact)
+        if len(terminal_collectors) != 1:
             raise ValidationError(
-                "collect_results output must be outside its agent_map capture_dir"
+                "workflow result_artifact requires exactly one terminal collect_results step"
             )
+        terminal = terminal_collectors[0]
+        if terminal is not steps[-1]:
+            raise ValidationError("collect_results must be the final workflow step")
+        if terminal["output"] != result_artifact:
+            raise ValidationError(
+                "collect_results output must equal workflow result_artifact"
+            )
+
+    step_map = {step["id"]: step for step in steps}
+    collector_outputs = set()
+    for collector in collectors:
+        if collector["output"] in collector_outputs:
+            raise ValidationError(
+                "collect_results outputs must be unique"
+            )
+        collector_outputs.add(collector["output"])
+
+        source_id = collector["source_step"]
+        source = step_map.get(source_id)
+        if source is None:
+            raise ValidationError(
+                "collect_results step %s references unknown source_step %s"
+                % (collector["id"], source_id)
+            )
+        if source_id not in collector.get("depends_on", []):
+            raise ValidationError(
+                "collect_results step %s source_step must be a direct dependency"
+                % collector["id"]
+            )
+        if source["kind"] not in {"codex_exec", "agent_map"}:
+            raise ValidationError(
+                "collect_results step %s source_step must be codex_exec or agent_map"
+                % collector["id"]
+            )
+        if collector.get("filter_falsey", False) and source["kind"] != "agent_map":
+            raise ValidationError(
+                "collect_results step %s filter_falsey requires an agent_map source"
+                % collector["id"]
+            )
+
+        output_path = Path(collector["output"])
+        if source["kind"] == "codex_exec":
+            source_path = Path(source.get("capture", "%s.md" % source_id))
+            if output_path == source_path:
+                raise ValidationError(
+                    "collect_results output must not overwrite its codex_exec source"
+                )
+        else:
+            source_dir = Path(source.get("capture_dir", source_id))
+            if output_path == source_dir or source_dir in output_path.parents:
+                raise ValidationError(
+                    "collect_results output must be outside its agent_map capture_dir"
+                )
+
+        if not collector.get("intermediate", False):
+            continue
+        if source["kind"] != "agent_map":
+            raise ValidationError(
+                "intermediate collect_results step %s requires an agent_map source"
+                % collector["id"]
+            )
+        if result_artifact is not None and collector["output"] == result_artifact:
+            raise ValidationError(
+                "intermediate collect_results output must not equal workflow result_artifact"
+            )
+        consumers = [
+            step
+            for step in steps
+            if step["kind"] == "agent_map"
+            and step.get("items_artifact") == collector["output"]
+        ]
+        if not consumers:
+            raise ValidationError(
+                "intermediate collect_results step %s must feed a later agent_map"
+                % collector["id"]
+            )
+        source_schema = source.get("output_schema")
+        for consumer in consumers:
+            if collector["id"] not in consumer.get("depends_on", []):
+                raise ValidationError(
+                    "agent_map step %s must directly depend on intermediate collector %s"
+                    % (consumer["id"], collector["id"])
+                )
+            if consumer.get("items_pointer") != "":
+                raise ValidationError(
+                    "agent_map step %s must read an intermediate collector at the JSON root"
+                    % consumer["id"]
+                )
+            item_semantics = consumer.get("item_semantics", "workspace_path")
+            if item_semantics not in {"opaque", "json"}:
+                raise ValidationError(
+                    "agent_map step %s intermediate items must use opaque or json semantics"
+                    % consumer["id"]
+                )
+            schema_type = (
+                source_schema.get("type") if isinstance(source_schema, dict) else None
+            )
+            if item_semantics == "json" and schema_type != "object":
+                raise ValidationError(
+                    "agent_map step %s JSON intermediate items require an object source schema"
+                    % consumer["id"]
+                )
+            if item_semantics == "opaque" and source_schema is not None and schema_type != "string":
+                raise ValidationError(
+                    "agent_map step %s opaque intermediate items require text output or a string source schema"
+                    % consumer["id"]
+                )
 
 
 def _validate_codex_context_from(step: Dict) -> None:

@@ -8392,6 +8392,19 @@ class WorkflowRunner:
             path = self.run.resolve_artifact_path(step["items_artifact"])
             if allow_missing and not path.exists():
                 return None
+            if not allow_missing:
+                producer = next(
+                    (
+                        candidate
+                        for candidate in self.workflow["steps"]
+                        if candidate.get("kind") == "collect_results"
+                        and candidate.get("intermediate", False)
+                        and candidate.get("output") == step["items_artifact"]
+                    ),
+                    None,
+                )
+                if producer is not None:
+                    self._verify_completed_collect_results(producer)
             label = "agent_map step %s items_artifact" % step["id"]
             if "items_pointer" in step:
                 items = read_packet_items_json_file(

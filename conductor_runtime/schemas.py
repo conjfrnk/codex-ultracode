@@ -7014,6 +7014,13 @@ def _collect_results_step_schema() -> Dict:
                     "empty arrays and objects remain truthy, matching JavaScript Boolean semantics."
                 ),
             },
+            "intermediate": {
+                "type": "boolean",
+                "description": (
+                    "Mark a bounded internal map-result handoff that must be consumed "
+                    "directly by a later agent_map."
+                ),
+            },
         },
     )
 
@@ -7182,8 +7189,14 @@ def _agent_map_step_schema() -> Dict:
                 "required": ["item_semantics"],
             },
             "then": {
-                "required": ["items"],
                 "properties": {"items": {"items": _opaque_packet_item()}},
+                "not": {"required": ["items_file"]},
+                "allOf": [
+                    {
+                        "if": {"required": ["items_artifact"]},
+                        "then": {"required": ["items_pointer"]},
+                    }
+                ],
             },
         },
         {
