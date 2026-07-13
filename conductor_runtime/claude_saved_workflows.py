@@ -12,6 +12,8 @@ from .workflow import SAFE_ID, SCHEMA
 
 
 MAX_CLAUDE_WORKFLOW_BINDINGS = 64
+MAX_CLAUDE_WORKFLOW_CONSTANTS = 64
+MAX_CLAUDE_WORKFLOW_PHASES = 32
 MAX_CLAUDE_WORKFLOW_DEPTH = 32
 MAX_CLAUDE_WORKFLOW_TOKENS = 100000
 MAX_CLAUDE_WORKFLOW_AGENTS = 1000
@@ -25,6 +27,15 @@ _JS_REFERENCE = re.compile(
 _JS_NUMBER = re.compile(
     r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?"
 )
+_RESERVED_BINDINGS = {
+    "agent",
+    "args",
+    "Boolean",
+    "meta",
+    "parallel",
+    "phase",
+    "pipeline",
+}
 
 
 @dataclass(frozen=True)
@@ -51,14 +62,30 @@ class PipelineCall:
 
 
 @dataclass(frozen=True)
+class ParallelCall:
+    source: Any
+    item_name: str
+    agent: AgentCall
+
+
+@dataclass(frozen=True)
+class ConstantBinding:
+    name: str
+    value: Any
+
+
+@dataclass(frozen=True)
 class Binding:
     name: str
-    expression: Union[AgentCall, PipelineCall]
+    expression: Union[AgentCall, PipelineCall, ParallelCall]
+    phase: Optional[str] = None
+    filters_falsey: bool = False
 
 
 @dataclass(frozen=True)
 class Program:
     meta: Dict[str, Any]
+    constants: Tuple[ConstantBinding, ...]
     bindings: Tuple[Binding, ...]
     return_name: str
     filters_falsey: bool
@@ -263,10 +290,14 @@ class _Parser:
 
     def parse(self) -> Program:
         meta = None
+        constants: List[ConstantBinding] = []
         bindings: List[Binding] = []
         names = set()
+        binding_names = set()
         return_name = None
         filters_falsey = False
+        active_phase = None
+        saw_binding = False
         while not self._at("eof"):
             if self._accept_symbol(";"):
                 continue
@@ -278,20 +309,35 @@ class _Parser:
                 meta = self._parse_meta()
                 continue
             if self._at_identifier("const"):
-                binding = self._parse_binding()
-                if binding.name in names:
-                    self._fail("redeclares variable %s" % binding.name)
-                if binding.name in {"args", "meta"}:
-                    self._fail("must not bind reserved variable %s" % binding.name)
-                if not SAFE_ID.fullmatch(binding.name):
+                declaration = self._parse_declaration(active_phase)
+                if declaration.name in names:
+                    self._fail("redeclares variable %s" % declaration.name)
+                if declaration.name in _RESERVED_BINDINGS:
+                    self._fail("must not bind reserved variable %s" % declaration.name)
+                if not SAFE_ID.fullmatch(declaration.name):
                     self._fail("binding names must be safe Conductor identifiers")
-                names.add(binding.name)
-                bindings.append(binding)
+                names.add(declaration.name)
+                if isinstance(declaration, ConstantBinding):
+                    if saw_binding:
+                        self._fail("static constants must be declared before awaited bindings")
+                    constants.append(declaration)
+                    if len(constants) > MAX_CLAUDE_WORKFLOW_CONSTANTS:
+                        self._fail(
+                            "may define at most %d static constants"
+                            % MAX_CLAUDE_WORKFLOW_CONSTANTS
+                        )
+                    continue
+                saw_binding = True
+                binding_names.add(declaration.name)
+                bindings.append(declaration)
                 if len(bindings) > MAX_CLAUDE_WORKFLOW_BINDINGS:
                     self._fail(
-                        "may define at most %d agent or pipeline bindings"
+                        "may define at most %d agent, pipeline, or parallel bindings"
                         % MAX_CLAUDE_WORKFLOW_BINDINGS
                     )
+                continue
+            if self._at_identifier("phase"):
+                active_phase = self._parse_phase_statement()
                 continue
             if self._at_identifier("return"):
                 return_name, filters_falsey = self._parse_return()
@@ -302,12 +348,18 @@ class _Parser:
         if meta is None:
             self._fail("must export const meta")
         if not bindings:
-            self._fail("must define at least one awaited agent or pipeline binding")
+            self._fail("must define at least one awaited agent, pipeline, or parallel binding")
         if return_name is None:
             self._fail("must end with a return statement")
-        if return_name not in names:
+        if return_name not in binding_names:
             self._fail("returns unknown variable %s" % return_name)
-        return Program(meta, tuple(bindings), return_name, filters_falsey)
+        return Program(
+            meta,
+            tuple(constants),
+            tuple(bindings),
+            return_name,
+            filters_falsey,
+        )
 
     def _parse_meta(self) -> Dict[str, Any]:
         self._expect_identifier("export")
@@ -316,24 +368,58 @@ class _Parser:
         self._expect_symbol("=")
         value = self._parse_value()
         self._accept_symbol(";")
-        if not isinstance(value, dict) or _contains_expression(value):
+        try:
+            value = _normalize_static_literal(value)
+        except ValidationError:
+            self._fail("export const meta must be a static object literal")
+        if not isinstance(value, dict):
             self._fail("export const meta must be a static object literal")
         return value
 
-    def _parse_binding(self) -> Binding:
+    def _parse_declaration(
+        self,
+        active_phase: Optional[str],
+    ) -> Union[ConstantBinding, Binding]:
         self._expect_identifier("const")
         name = self._expect_kind("identifier").value
         self._expect_symbol("=")
+        wrapped = False
+        if self._at_symbol("(") and self._peek_token().kind == "identifier" and self._peek_token().value == "await":
+            self._expect_symbol("(")
+            wrapped = True
+        if not self._at_identifier("await"):
+            value = self._parse_value()
+            self._accept_symbol(";")
+            try:
+                return ConstantBinding(name, _normalize_static_literal(value))
+            except ValidationError:
+                self._fail("static constants must contain only JSON-compatible literals")
         self._expect_identifier("await")
         call = self._expect_kind("identifier")
         if call.value == "agent":
             expression = self._parse_agent_call(call_consumed=True)
         elif call.value == "pipeline":
             expression = self._parse_pipeline_call()
+        elif call.value == "parallel":
+            expression = self._parse_parallel_call()
         else:
-            self._fail("awaited calls may use only agent() or pipeline()", call)
+            self._fail("awaited calls may use only agent(), pipeline(), or parallel()", call)
+        if wrapped:
+            self._expect_symbol(")")
+        filters_falsey = self._parse_optional_boolean_filter()
         self._accept_symbol(";")
-        return Binding(name, expression)
+        return Binding(name, expression, active_phase, filters_falsey)
+
+    def _parse_phase_statement(self) -> str:
+        self._expect_identifier("phase")
+        self._expect_symbol("(")
+        title = self._expect_kind("string").value
+        self._accept_symbol(",")
+        self._expect_symbol(")")
+        self._accept_symbol(";")
+        if not title.strip():
+            self._fail("phase title must be non-empty")
+        return title
 
     def _parse_agent_call(self, call_consumed: bool = False) -> AgentCall:
         if not call_consumed:
@@ -372,18 +458,52 @@ class _Parser:
         self._expect_symbol(")")
         return PipelineCall(source, item_name, agent)
 
+    def _parse_parallel_call(self) -> ParallelCall:
+        self._expect_symbol("(")
+        source = self._parse_value()
+        if isinstance(source, Reference) and source.parts[-1:] == ("map",):
+            if len(source.parts) == 1:
+                self._fail("parallel source must precede .map()")
+            source = Reference(source.parts[:-1])
+        else:
+            self._expect_symbol(".")
+            self._expect_identifier("map")
+        self._expect_symbol("(")
+        if self._accept_symbol("("):
+            item_name = self._expect_kind("identifier").value
+            self._expect_symbol(")")
+        else:
+            item_name = self._expect_kind("identifier").value
+        if not _JS_IDENTIFIER.fullmatch(item_name):
+            self._fail("parallel callback parameter must be an identifier")
+        self._expect_symbol("=>")
+        self._accept_identifier("async")
+        self._expect_symbol("(")
+        self._expect_symbol(")")
+        self._expect_symbol("=>")
+        self._accept_identifier("await")
+        agent = self._parse_agent_call()
+        self._accept_symbol(",")
+        self._expect_symbol(")")
+        self._accept_symbol(",")
+        self._expect_symbol(")")
+        return ParallelCall(source, item_name, agent)
+
     def _parse_return(self) -> Tuple[str, bool]:
         self._expect_identifier("return")
         name = self._expect_kind("identifier").value
-        filters_falsey = False
-        if self._accept_symbol("."):
-            self._expect_identifier("filter")
-            self._expect_symbol("(")
-            self._expect_identifier("Boolean")
-            self._expect_symbol(")")
-            filters_falsey = True
+        filters_falsey = self._parse_optional_boolean_filter()
         self._accept_symbol(";")
         return name, filters_falsey
+
+    def _parse_optional_boolean_filter(self) -> bool:
+        if not self._accept_symbol("."):
+            return False
+        self._expect_identifier("filter")
+        self._expect_symbol("(")
+        self._expect_identifier("Boolean")
+        self._expect_symbol(")")
+        return True
 
     def _parse_value(self, depth: int = 0) -> Any:
         if depth > MAX_CLAUDE_WORKFLOW_DEPTH:
@@ -441,6 +561,9 @@ class _Parser:
 
     def _current(self) -> Token:
         return self.tokens[self.index]
+
+    def _peek_token(self, distance: int = 1) -> Token:
+        return self.tokens[min(self.index + distance, len(self.tokens) - 1)]
 
     def _at(self, kind: str) -> bool:
         return self._current().kind == kind
@@ -500,28 +623,46 @@ def _compile_program(program: Program, source: Path) -> Dict:
         description = ""
     if not isinstance(description, str):
         raise ValidationError("%s meta.description must be a string when present" % source)
-    unsupported_meta = sorted(set(program.meta) - {"name", "description"})
+    unsupported_meta = sorted(set(program.meta) - {"name", "description", "phases"})
     if unsupported_meta:
         raise ValidationError(
             "%s Claude-style meta contains unsupported field(s): %s"
             % (source, ", ".join(unsupported_meta))
         )
 
+    constants = {binding.name: binding.value for binding in program.constants}
+    phase_ids, phases_declared = _declared_phase_ids(program.meta.get("phases"), source)
     bindings = {binding.name: binding for binding in program.bindings}
     consumed_properties: Dict[str, str] = {}
     direct_agents = sum(isinstance(binding.expression, AgentCall) for binding in program.bindings)
-    pipelines = sum(isinstance(binding.expression, PipelineCall) for binding in program.bindings)
+    map_calls = sum(
+        isinstance(binding.expression, (PipelineCall, ParallelCall))
+        for binding in program.bindings
+    )
     if direct_agents >= MAX_CLAUDE_WORKFLOW_AGENTS:
-        raise ValidationError("%s Claude-style workflow leaves no capacity for pipeline agents" % source)
-    per_pipeline_items = (
-        (MAX_CLAUDE_WORKFLOW_AGENTS - direct_agents) // pipelines if pipelines else 0
+        raise ValidationError("%s Claude-style workflow leaves no capacity for mapped agents" % source)
+    per_map_items = (
+        (MAX_CLAUDE_WORKFLOW_AGENTS - direct_agents) // map_calls if map_calls else 0
     )
 
     for binding in program.bindings:
         expression = binding.expression
-        if not isinstance(expression, PipelineCall):
+        if binding.filters_falsey and binding.name != program.return_name:
+            raise ValidationError(
+                "%s filter(Boolean) on %s cannot feed a later binding"
+                % (source, binding.name)
+            )
+        if binding.filters_falsey and not isinstance(expression, (PipelineCall, ParallelCall)):
+            raise ValidationError(
+                "%s filter(Boolean) may be used only on a pipeline or parallel result"
+                % source
+            )
+        if not isinstance(expression, (PipelineCall, ParallelCall)):
             continue
         reference = expression.source
+        if isinstance(reference, Reference) and len(reference.parts) == 1:
+            if reference.parts[0] in constants:
+                continue
         if isinstance(reference, Reference) and len(reference.parts) == 2:
             owner, property_name = reference.parts
             if owner == "args":
@@ -529,7 +670,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
             owner_binding = bindings.get(owner)
             if owner_binding is None or not isinstance(owner_binding.expression, AgentCall):
                 raise ValidationError(
-                    "%s pipeline %s source must reference args or a prior agent result"
+                    "%s mapped binding %s source must reference args, a static constant, or a prior agent result"
                     % (source, binding.name)
                 )
             previous = consumed_properties.get(owner)
@@ -546,8 +687,18 @@ def _compile_program(program: Program, source: Path) -> Dict:
         expression = binding.expression
         dependencies = [prior_step] if prior_step is not None else []
         if isinstance(expression, AgentCall):
-            options = _agent_options(expression.options, source, binding.name)
-            prompt = _agent_prompt(expression.prompt, source, binding.name)
+            options = _agent_options(
+                expression.options,
+                source,
+                binding.name,
+                constants=constants,
+            )
+            prompt = _agent_prompt(
+                expression.prompt,
+                source,
+                binding.name,
+                constants=constants,
+            )
             property_name = consumed_properties.get(binding.name)
             if property_name is not None:
                 _validate_string_array_schema(options.get("schema"), property_name, source, binding.name)
@@ -562,28 +713,42 @@ def _compile_program(program: Program, source: Path) -> Dict:
             if options.get("schema") is not None:
                 step["output_schema"] = _normalize_output_schema(options["schema"])
         else:
-            if per_pipeline_items < 1:
+            if per_map_items < 1:
                 raise ValidationError("%s Claude-style workflow exceeds its 1,000-agent cap" % source)
             options = _agent_options(
                 expression.agent.options,
                 source,
                 binding.name,
                 label_reference=expression.item_name,
+                constants=constants,
             )
-            prompt_template = _pipeline_prompt(
-                expression.agent.prompt,
-                expression.item_name,
-                source,
-                binding.name,
-            )
-            item_source, source_dependency = _pipeline_source(
-                expression.source,
-                binding.name,
-                bindings,
-                seen_bindings,
-                per_pipeline_items,
-                source,
-            )
+            if isinstance(expression, PipelineCall):
+                prompt_template = _pipeline_prompt(
+                    expression.agent.prompt,
+                    expression.item_name,
+                    source,
+                    binding.name,
+                    constants=constants,
+                )
+                item_source, source_dependency = _pipeline_source(
+                    expression.source,
+                    binding.name,
+                    bindings,
+                    seen_bindings,
+                    per_map_items,
+                    source,
+                    constants=constants,
+                )
+            else:
+                prompt_template, item_source, source_dependency = _parallel_map(
+                    expression,
+                    binding.name,
+                    bindings,
+                    seen_bindings,
+                    per_map_items,
+                    source,
+                    constants,
+                )
             if source_dependency is not None and source_dependency not in dependencies:
                 dependencies.append(source_dependency)
             step = {
@@ -593,13 +758,21 @@ def _compile_program(program: Program, source: Path) -> Dict:
                 "sandbox": "read-only",
                 "prompt_template": prompt_template,
                 "capture_dir": "claude-workflow/%s" % binding.name,
-                "max_items": per_pipeline_items,
+                "max_items": per_map_items,
                 "max_workers": MAX_CLAUDE_WORKFLOW_WORKERS,
                 "preserve_duplicate_items": True,
             }
             if options.get("schema") is not None:
                 step["output_schema"] = _normalize_output_schema(options["schema"])
             step.update(item_source)
+        phase_name = _effective_phase_name(binding, options.get("phase"), source)
+        if phase_name is not None:
+            step["phase"] = _resolve_phase_id(
+                phase_name,
+                phase_ids,
+                phases_declared,
+                source,
+            )
         if dependencies:
             step["depends_on"] = dependencies
         steps.append(step)
@@ -607,8 +780,11 @@ def _compile_program(program: Program, source: Path) -> Dict:
         seen_bindings.add(binding.name)
 
     returned = bindings[program.return_name].expression
-    if program.filters_falsey and not isinstance(returned, PipelineCall):
-        raise ValidationError("%s filter(Boolean) may be used only on a pipeline result" % source)
+    filters_falsey = program.filters_falsey or bindings[program.return_name].filters_falsey
+    if filters_falsey and not isinstance(returned, (PipelineCall, ParallelCall)):
+        raise ValidationError(
+            "%s filter(Boolean) may be used only on a pipeline or parallel result" % source
+        )
     result_step = {
         "id": "claude-result",
         "kind": "collect_results",
@@ -618,7 +794,7 @@ def _compile_program(program: Program, source: Path) -> Dict:
         "output_limit_bytes": MAX_CLAUDE_WORKFLOW_RESULT_BYTES,
         "depends_on": [program.return_name],
     }
-    if program.filters_falsey:
+    if filters_falsey:
         result_step["filter_falsey"] = True
     steps.append(result_step)
     return {
@@ -627,8 +803,8 @@ def _compile_program(program: Program, source: Path) -> Dict:
         "description": description,
         "mode": "read_only",
         "result_artifact": CLAUDE_WORKFLOW_RESULT_ARTIFACT,
-        "max_workers": MAX_CLAUDE_WORKFLOW_WORKERS if pipelines else 1,
-        "max_items": per_pipeline_items if pipelines else MAX_CLAUDE_WORKFLOW_AGENTS,
+        "max_workers": MAX_CLAUDE_WORKFLOW_WORKERS if map_calls else 1,
+        "max_items": per_map_items if map_calls else MAX_CLAUDE_WORKFLOW_AGENTS,
         "steps": steps,
     }
 
@@ -638,8 +814,10 @@ def _agent_options(
     source: Path,
     binding_name: str,
     label_reference: Optional[str] = None,
+    constants: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    unsupported = sorted(set(options) - {"label", "schema"})
+    constants = constants or {}
+    unsupported = sorted(set(options) - {"label", "phase", "schema"})
     if unsupported:
         raise ValidationError(
             "%s %s agent options contain unsupported field(s): %s"
@@ -655,9 +833,12 @@ def _agent_options(
         elif isinstance(label, Template):
             references.extend(part for part in label.parts if isinstance(part, Reference))
         for reference in references:
-            if reference.parts == (label_reference,) and label_reference is not None:
+            if label_reference is not None and reference.parts[0] == label_reference:
                 continue
             if len(reference.parts) == 2 and reference.parts[0] == "args":
+                continue
+            if reference.parts[0] in constants:
+                _resolve_static_reference(reference, constants, source, binding_name)
                 continue
             raise ValidationError(
                 "%s %s agent label may reference only args.NAME%s"
@@ -667,18 +848,45 @@ def _agent_options(
                     " or %s" % label_reference if label_reference is not None else "",
                 )
             )
-    if "schema" in options and (
-        not isinstance(options["schema"], dict) or _contains_expression(options["schema"])
-    ):
-        raise ValidationError("%s %s agent schema must be a static object literal" % (source, binding_name))
-    return options
+    normalized = dict(options)
+    if "schema" in options:
+        schema = options["schema"]
+        if isinstance(schema, Reference):
+            schema = _resolve_static_reference(schema, constants, source, binding_name)
+        if not isinstance(schema, dict) or _contains_expression(schema):
+            raise ValidationError(
+                "%s %s agent schema must be a static object literal or constant"
+                % (source, binding_name)
+            )
+        normalized["schema"] = json.loads(json.dumps(schema, allow_nan=False))
+    if "phase" in options:
+        phase = options["phase"]
+        if isinstance(phase, Reference):
+            phase = _resolve_static_reference(phase, constants, source, binding_name)
+        if not isinstance(phase, str) or not phase.strip():
+            raise ValidationError(
+                "%s %s agent phase must be static non-empty text"
+                % (source, binding_name)
+            )
+        normalized["phase"] = phase
+    return normalized
 
 
-def _agent_prompt(value: Any, source: Path, binding_name: str) -> str:
+def _agent_prompt(
+    value: Any,
+    source: Path,
+    binding_name: str,
+    constants: Optional[Dict[str, Any]] = None,
+) -> str:
+    constants = constants or {}
     if isinstance(value, str):
         return value
     if isinstance(value, Reference) and len(value.parts) == 2 and value.parts[0] == "args":
         return "{{args.%s}}" % value.parts[1]
+    if isinstance(value, Reference) and value.parts[0] in constants:
+        resolved = _resolve_static_reference(value, constants, source, binding_name)
+        if isinstance(resolved, str):
+            return resolved
     if isinstance(value, Template):
         output = []
         for part in value.parts:
@@ -686,16 +894,34 @@ def _agent_prompt(value: Any, source: Path, binding_name: str) -> str:
                 output.append(part)
             elif len(part.parts) == 2 and part.parts[0] == "args":
                 output.append("{{args.%s}}" % part.parts[1])
+            elif part.parts[0] in constants:
+                output.append(
+                    _static_js_text(
+                        _resolve_static_reference(part, constants, source, binding_name),
+                        source,
+                        binding_name,
+                    )
+                )
             else:
                 raise ValidationError(
-                    "%s %s agent prompt templates may interpolate only args.NAME"
+                    "%s %s agent prompt templates may interpolate only args.NAME or static constants"
                     % (source, binding_name)
                 )
         return "".join(output)
-    raise ValidationError("%s %s agent prompt must be text or args.NAME" % (source, binding_name))
+    raise ValidationError(
+        "%s %s agent prompt must be text, args.NAME, or a text constant"
+        % (source, binding_name)
+    )
 
 
-def _pipeline_prompt(value: Any, item_name: str, source: Path, binding_name: str) -> str:
+def _pipeline_prompt(
+    value: Any,
+    item_name: str,
+    source: Path,
+    binding_name: str,
+    constants: Optional[Dict[str, Any]] = None,
+) -> str:
+    constants = constants or {}
     if not isinstance(value, Template):
         raise ValidationError(
             "%s %s pipeline agent prompt must be a template literal using ${%s}"
@@ -709,9 +935,18 @@ def _pipeline_prompt(value: Any, item_name: str, source: Path, binding_name: str
         elif part.parts == (item_name,):
             output.append("{item}")
             item_references += 1
+        elif len(part.parts) == 2 and part.parts[0] == "args":
+            output.append("{{args.%s}}" % part.parts[1])
+        elif part.parts[0] in constants:
+            text = _static_js_text(
+                _resolve_static_reference(part, constants, source, binding_name),
+                source,
+                binding_name,
+            )
+            output.append(_escape_format_text(text))
         else:
             raise ValidationError(
-                "%s %s pipeline prompt may interpolate only its %s callback parameter"
+                "%s %s pipeline prompt may interpolate only its %s callback parameter, args.NAME, or static constants"
                 % (source, binding_name, item_name)
             )
     if item_references == 0:
@@ -722,6 +957,159 @@ def _pipeline_prompt(value: Any, item_name: str, source: Path, binding_name: str
     return "".join(output)
 
 
+def _parallel_map(
+    expression: ParallelCall,
+    binding_name: str,
+    bindings: Dict[str, Binding],
+    seen_bindings: set,
+    max_items: int,
+    source: Path,
+    constants: Dict[str, Any],
+) -> Tuple[str, Dict[str, Any], Optional[str]]:
+    static_items = None
+    if isinstance(expression.source, list):
+        static_items = expression.source
+    elif (
+        isinstance(expression.source, Reference)
+        and len(expression.source.parts) == 1
+        and expression.source.parts[0] in constants
+    ):
+        static_items = constants[expression.source.parts[0]]
+
+    if static_items is not None:
+        if not isinstance(static_items, list) or not static_items:
+            raise ValidationError(
+                "%s %s parallel static source must be a non-empty array"
+                % (source, binding_name)
+            )
+        if len(static_items) > max_items:
+            raise ValidationError(
+                "%s %s parallel static source exceeds its agent budget"
+                % (source, binding_name)
+            )
+        prompts = [
+            _parallel_static_prompt(
+                expression.agent.prompt,
+                expression.item_name,
+                item,
+                constants,
+                source,
+                binding_name,
+            )
+            for item in static_items
+        ]
+        return (
+            "{item}",
+            {"items": prompts, "item_semantics": "opaque"},
+            None,
+        )
+
+    prompt_template = _pipeline_prompt(
+        expression.agent.prompt,
+        expression.item_name,
+        source,
+        binding_name,
+        constants=constants,
+    )
+    item_source, dependency = _pipeline_source(
+        expression.source,
+        binding_name,
+        bindings,
+        seen_bindings,
+        max_items,
+        source,
+        constants=constants,
+    )
+    if "items" in item_source:
+        item_source["item_semantics"] = "opaque"
+    return prompt_template, item_source, dependency
+
+
+def _parallel_static_prompt(
+    value: Any,
+    item_name: str,
+    item: Any,
+    constants: Dict[str, Any],
+    source: Path,
+    binding_name: str,
+) -> str:
+    if isinstance(value, str):
+        output = value
+    elif isinstance(value, Reference):
+        output = _static_js_text(
+            _parallel_reference_value(
+                value,
+                item_name,
+                item,
+                constants,
+                source,
+                binding_name,
+            ),
+            source,
+            binding_name,
+        )
+    elif isinstance(value, Template):
+        parts = []
+        for part in value.parts:
+            if isinstance(part, str):
+                parts.append(part)
+            else:
+                parts.append(
+                    _static_js_text(
+                        _parallel_reference_value(
+                            part,
+                            item_name,
+                            item,
+                            constants,
+                            source,
+                            binding_name,
+                        ),
+                        source,
+                        binding_name,
+                    )
+                )
+        output = "".join(parts)
+    else:
+        raise ValidationError(
+            "%s %s parallel agent prompt must resolve to text"
+            % (source, binding_name)
+        )
+    if not output.strip():
+        raise ValidationError(
+            "%s %s parallel agent prompt must resolve to non-empty text"
+            % (source, binding_name)
+        )
+    return output
+
+
+def _parallel_reference_value(
+    reference: Reference,
+    item_name: str,
+    item: Any,
+    constants: Dict[str, Any],
+    source: Path,
+    binding_name: str,
+) -> Any:
+    if reference.parts[0] == item_name:
+        current = item
+        for part in reference.parts[1:]:
+            if not isinstance(current, dict) or part not in current:
+                raise ValidationError(
+                    "%s %s parallel item has no static property %s"
+                    % (source, binding_name, ".".join(reference.parts[1:]))
+                )
+            current = current[part]
+        return current
+    if len(reference.parts) == 2 and reference.parts[0] == "args":
+        return "{{args.%s}}" % reference.parts[1]
+    if reference.parts[0] in constants:
+        return _resolve_static_reference(reference, constants, source, binding_name)
+    raise ValidationError(
+        "%s %s parallel prompt may reference only %s, args.NAME, or static constants"
+        % (source, binding_name, item_name)
+    )
+
+
 def _pipeline_source(
     value: Any,
     binding_name: str,
@@ -729,7 +1117,11 @@ def _pipeline_source(
     seen_bindings: set,
     max_items: int,
     source: Path,
+    constants: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], Optional[str]]:
+    constants = constants or {}
+    if isinstance(value, Reference) and len(value.parts) == 1 and value.parts[0] in constants:
+        value = constants[value.parts[0]]
     if isinstance(value, list):
         if not value or not all(isinstance(item, str) and item for item in value):
             raise ValidationError("%s %s pipeline literal source must be a non-empty string array" % (source, binding_name))
@@ -749,7 +1141,10 @@ def _pipeline_source(
         raise ValidationError("%s %s pipeline source references unknown agent %s" % (source, binding_name, owner))
     if owner not in seen_bindings:
         raise ValidationError("%s %s pipeline source must reference a prior agent" % (source, binding_name))
-    _validate_string_array_schema(owner_binding.expression.options.get("schema"), property_name, source, owner)
+    schema = owner_binding.expression.options.get("schema")
+    if isinstance(schema, Reference):
+        schema = _resolve_static_reference(schema, constants, source, owner)
+    _validate_string_array_schema(schema, property_name, source, owner)
     pointer = "/" + property_name.replace("~", "~0").replace("/", "~1")
     return {
         "items_artifact": _agent_capture(owner, structured=True),
@@ -775,6 +1170,148 @@ def _validate_string_array_schema(schema: Any, property_name: str, source: Path,
             "%s agent %s must declare %s as an array-of-strings schema property"
             % (source, binding_name, property_name)
         )
+
+
+def _declared_phase_ids(value: Any, source: Path) -> Tuple[Dict[str, str], bool]:
+    if value is None:
+        return {}, False
+    if not isinstance(value, list) or not value or len(value) > MAX_CLAUDE_WORKFLOW_PHASES:
+        raise ValidationError(
+            "%s meta.phases must be a non-empty array of at most %d phases"
+            % (source, MAX_CLAUDE_WORKFLOW_PHASES)
+        )
+    result: Dict[str, str] = {}
+    ids = set()
+    for index, phase in enumerate(value, start=1):
+        if not isinstance(phase, dict) or set(phase) - {"title", "detail"}:
+            raise ValidationError(
+                "%s meta.phases[%d] must contain only title and optional detail"
+                % (source, index - 1)
+            )
+        title = phase.get("title")
+        detail = phase.get("detail", "")
+        if not isinstance(title, str) or not title.strip() or len(title) > 128:
+            raise ValidationError(
+                "%s meta.phases[%d].title must be non-empty text of at most 128 characters"
+                % (source, index - 1)
+            )
+        if not isinstance(detail, str) or len(detail) > 1024:
+            raise ValidationError(
+                "%s meta.phases[%d].detail must be text of at most 1024 characters"
+                % (source, index - 1)
+            )
+        if title in result:
+            raise ValidationError("%s meta.phases repeats title %s" % (source, title))
+        phase_id = _phase_identifier(title, source)
+        if phase_id in ids:
+            raise ValidationError(
+                "%s meta.phases titles collapse to the same Conductor phase id %s"
+                % (source, phase_id)
+            )
+        result[title] = phase_id
+        ids.add(phase_id)
+    return result, True
+
+
+def _effective_phase_name(
+    binding: Binding,
+    option_phase: Optional[str],
+    source: Path,
+) -> Optional[str]:
+    if binding.phase is not None and option_phase is not None and binding.phase != option_phase:
+        raise ValidationError(
+            "%s %s phase marker %r conflicts with agent option phase %r"
+            % (source, binding.name, binding.phase, option_phase)
+        )
+    return option_phase if option_phase is not None else binding.phase
+
+
+def _resolve_phase_id(
+    title: str,
+    phase_ids: Dict[str, str],
+    phases_declared: bool,
+    source: Path,
+) -> str:
+    if title in phase_ids:
+        return phase_ids[title]
+    if phases_declared:
+        raise ValidationError(
+            "%s phase %r is not declared in meta.phases" % (source, title)
+        )
+    phase_id = _phase_identifier(title, source)
+    if phase_id in phase_ids.values():
+        raise ValidationError(
+            "%s phase titles collapse to the same Conductor phase id %s"
+            % (source, phase_id)
+        )
+    phase_ids[title] = phase_id
+    return phase_id
+
+
+def _phase_identifier(title: str, source: Path) -> str:
+    if SAFE_ID.fullmatch(title):
+        return title
+    value = re.sub(r"[^A-Za-z0-9_.-]+", "-", title).strip("-.")
+    if not value or not SAFE_ID.fullmatch(value):
+        raise ValidationError("%s phase title %r cannot form a safe identifier" % (source, title))
+    return value
+
+
+def _normalize_static_literal(value: Any) -> Any:
+    if isinstance(value, Template):
+        if any(not isinstance(part, str) for part in value.parts):
+            raise ValidationError("template contains an interpolation")
+        return "".join(value.parts)
+    if isinstance(value, Reference):
+        raise ValidationError("literal contains a reference")
+    if isinstance(value, list):
+        return [_normalize_static_literal(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_static_literal(item) for key, item in value.items()}
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    raise ValidationError("unsupported static literal")
+
+
+def _resolve_static_reference(
+    reference: Reference,
+    constants: Dict[str, Any],
+    source: Path,
+    binding_name: str,
+) -> Any:
+    if not reference.parts or reference.parts[0] not in constants:
+        raise ValidationError(
+            "%s %s references unknown static constant %s"
+            % (source, binding_name, reference.parts[0] if reference.parts else "")
+        )
+    current = constants[reference.parts[0]]
+    for part in reference.parts[1:]:
+        if not isinstance(current, dict) or part not in current:
+            raise ValidationError(
+                "%s %s static constant has no property %s"
+                % (source, binding_name, ".".join(reference.parts[1:]))
+            )
+        current = current[part]
+    return current
+
+
+def _static_js_text(value: Any, source: Path, binding_name: str) -> str:
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return json.dumps(value, allow_nan=False)
+    raise ValidationError(
+        "%s %s prompt interpolation must resolve to a scalar"
+        % (source, binding_name)
+    )
+
+
+def _escape_format_text(value: str) -> str:
+    return value.replace("{", "{{").replace("}", "}}")
 
 
 def _normalize_output_schema(value: Dict[str, Any]) -> Dict[str, Any]:

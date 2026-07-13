@@ -635,7 +635,11 @@ from .model_orchestrator import (
     RUN_RECEIPT_FIELDS,
     RUN_STATUSES as MODEL_WORKFLOW_RUN_STATUSES,
 )
-from .packet_items import MAX_JSON_POINTER_CHARS, MAX_PACKET_ITEM_CHARS
+from .packet_items import (
+    MAX_JSON_POINTER_CHARS,
+    MAX_OPAQUE_PACKET_ITEM_CHARS,
+    MAX_PACKET_ITEM_CHARS,
+)
 from .routines import (
     BUDGET_KEYS as ROUTINE_BUDGET_KEYS,
     CRON_EXPRESSION_SHAPE_PATTERN,
@@ -7097,7 +7101,14 @@ def _agent_map_step_schema() -> Dict:
                 "type": "array",
                 "minItems": 1,
                 "maxItems": MAX_AGENT_ITEMS,
-                "items": _packet_item(),
+                "items": _opaque_packet_item(),
+            },
+            "item_semantics": {
+                "enum": ["workspace_path", "opaque"],
+                "description": (
+                    "Treat items as workspace-relative paths (default) or bounded opaque text. "
+                    "Opaque semantics require inline items."
+                ),
             },
             "items_file": _relative_path(),
             "items_artifact": _relative_path(),
@@ -7139,7 +7150,23 @@ def _agent_map_step_schema() -> Dict:
         {
             "if": {"required": ["items_pointer"]},
             "then": {"required": ["items_artifact"]},
-        }
+        },
+        {
+            "if": {
+                "not": {
+                    "properties": {"item_semantics": {"const": "opaque"}},
+                    "required": ["item_semantics"],
+                }
+            },
+            "then": {"properties": {"items": {"items": _packet_item()}}},
+        },
+        {
+            "if": {
+                "properties": {"item_semantics": {"const": "opaque"}},
+                "required": ["item_semantics"],
+            },
+            "then": {"required": ["items"]},
+        },
     ]
     return schema
 
@@ -8314,6 +8341,18 @@ def _packet_item() -> Dict:
             "Single-line packet item that is not blank, absolute, or parent-escaping. "
             "Python validation also strips surrounding whitespace, de-duplicates items, "
             "sanitizes task-boundary markers, and rejects secret-like values."
+        ),
+    }
+
+
+def _opaque_packet_item() -> Dict:
+    return {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": MAX_OPAQUE_PACKET_ITEM_CHARS,
+        "description": (
+            "Bounded opaque packet text. Python validation also rejects blank values, "
+            "NUL characters, task-boundary markers, and secret-like values."
         ),
     }
 

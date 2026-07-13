@@ -1513,6 +1513,20 @@
       "success_contains": "claude-result [collect_results"
     },
     {
+      "id": "claude-parallel-phase-validate",
+      "description": "A real static Claude parallel-map and phase script validates without JavaScript evaluation or a provider launch.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "validate-saved-workflows", "benchmark-suites/claude-parallel-phase-smoke.js", "--workspace", "."],
+      "success_contains": "(claude-parallel-phase-smoke, project)"
+    },
+    {
+      "id": "claude-parallel-phase-inspect",
+      "description": "Inspection exposes the compiled true-parallel map, normalized phase, and terminal collector without evaluating JavaScript.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-parallel-phase-smoke.js", "--workspace", "."],
+      "success_contains": "findings [agent_map, risk=low, workers=16, phase=Code-Review, items=opaque, structured-output]"
+    },
+    {
       "id": "structured-agent-map-validate",
       "description": "A workflow with schema-bound output and RFC 6901 agent-map input validates without launching a provider.",
       "risk": "low",

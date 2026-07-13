@@ -168,6 +168,214 @@ return reviews.filter(Boolean)
             'Review {item}; return JSON like {{"ok": true}}.',
         )
 
+    def test_compiles_static_parallel_map_with_phases_and_schema_constants(self):
+        source = """\
+export const meta = {
+  name: 'parallel-review',
+  phases: [{ title: 'Code Review', detail: 'Independent review' }],
+}
+const TOPICS = [
+  { key: 'correctness', prompt: 'Review correctness.' },
+  { key: 'security', prompt: 'Review security.' },
+]
+const RESULT_SCHEMA = {
+  type: 'object',
+  properties: { finding: { type: 'string' } },
+  required: ['finding'],
+}
+phase('Code Review')
+const reviews = (await parallel(
+  TOPICS.map((topic) => () => agent(
+    `${topic.prompt}\nReturn one finding.`,
+    { label: `review:${topic.key}`, phase: 'Code Review', schema: RESULT_SCHEMA },
+  )),
+)).filter(Boolean)
+return reviews
+"""
+        meta, workflow = self.compile(source)
+        validate_workflow(workflow)
+
+        self.assertEqual(meta["phases"][0]["title"], "Code Review")
+        reviews, result = workflow["steps"]
+        self.assertEqual(reviews["kind"], "agent_map")
+        self.assertEqual(reviews["item_semantics"], "opaque")
+        self.assertEqual(reviews["prompt_template"], "{item}")
+        self.assertEqual(
+            reviews["items"],
+            [
+                "Review correctness.\nReturn one finding.",
+                "Review security.\nReturn one finding.",
+            ],
+        )
+        self.assertEqual(reviews["phase"], "Code-Review")
+        self.assertFalse(reviews["output_schema"]["additionalProperties"])
+        self.assertEqual(reviews["max_workers"], 16)
+        self.assertTrue(result["filter_falsey"])
+
+    def test_parallel_args_render_as_opaque_items(self):
+        source = """\
+export const meta = { name: 'parallel-topics' }
+const reviews = await parallel(args.topics.map(topic => () => agent(`Review ${topic}.`)))
+return reviews
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            path = workspace / "review.js"
+            path.write_text(source, encoding="utf-8")
+            saved = load_saved_workflow(path, workspace=workspace)
+            rendered = apply_saved_workflow_args(
+                saved,
+                {"topics": ["auth/session behavior", "release readiness"]},
+            )
+
+        step = rendered.workflow["steps"][0]
+        self.assertEqual(step["items"], ["auth/session behavior", "release readiness"])
+        self.assertEqual(step["item_semantics"], "opaque")
+        self.assertEqual(step["prompt_template"], "Review {item}.")
+
+        prior = """\
+export const meta = { name: 'parallel-prior' }
+const FILES_SCHEMA = {
+  type: 'object', required: ['files'],
+  properties: { files: { type: 'array', items: { type: 'string' } } },
+}
+const found = await agent('List files', { schema: FILES_SCHEMA })
+const reviews = await parallel(found.files.map(file => () => agent(`Review ${file}.`)))
+return reviews
+"""
+        _, prior_workflow = self.compile(prior)
+        prior_step = prior_workflow["steps"][1]
+        self.assertEqual(prior_step["items_artifact"], "claude-workflow/found.json")
+        self.assertEqual(prior_step["items_pointer"], "/files")
+        self.assertNotIn("item_semantics", prior_step)
+
+    def test_parallel_phase_and_static_subset_rejections_are_explicit(self):
+        cases = [
+            (
+                """\
+export const meta = { name: 'phase-conflict', phases: [{ title: 'Review' }, { title: 'Verify' }] }
+const ITEMS = ['one']
+phase('Review')
+const results = await parallel(ITEMS.map(item => () => agent(`${item}`, { phase: 'Verify' })))
+return results
+""",
+                "phase marker.+conflicts",
+            ),
+            (
+                """\
+export const meta = { name: 'unknown-phase', phases: [{ title: 'Review' }] }
+const report = await agent('Report', { phase: 'Verify' })
+return report
+""",
+                "not declared",
+            ),
+            (
+                """\
+export const meta = { name: 'phase-collision', phases: [{ title: 'Code Review' }, { title: 'Code-Review' }] }
+const report = await agent('Report')
+return report
+""",
+                "collapse to the same",
+            ),
+            (
+                """\
+export const meta = { name: 'unsafe-constant' }
+const VALUE = process.env
+const report = await agent('Report')
+return report
+""",
+                "static constants must contain only",
+            ),
+            (
+                """\
+export const meta = { name: 'filtered-intermediate' }
+const ITEMS = ['one']
+const reviews = (await parallel(ITEMS.map(item => () => agent(`${item}`)))).filter(Boolean)
+const report = await agent('Report')
+return report
+""",
+                r"filter\(Boolean\).+cannot feed",
+            ),
+            (
+                """\
+export const meta = { name: 'unsupported-agent-type' }
+const ITEMS = ['one']
+const reviews = await parallel(ITEMS.map(item => () => agent(`${item}`, { agentType: 'worker' })))
+return reviews
+""",
+                "unsupported field.+agentType",
+            ),
+        ]
+        for source, detail in cases:
+            with self.subTest(detail=detail):
+                self.assert_rejected(source, detail)
+
+    def test_opaque_agent_map_hashes_text_without_workspace_resolution(self):
+        step = {
+            "id": "reviews",
+            "kind": "agent_map",
+            "items": ["Review auth/session behavior.\nReturn JSON."],
+            "item_semantics": "opaque",
+            "prompt_template": "{item}",
+        }
+        workflow = {
+            "schema": "conductor.workflow.v1",
+            "name": "opaque-items",
+            "mode": "read_only",
+            "steps": [step],
+        }
+        validate_workflow(workflow)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runner = WorkflowRunner(
+                workflow,
+                root,
+                root / "runs",
+                RuntimePolicy(),
+                dry_run=True,
+                run_id="opaque",
+            )
+            with patch.object(
+                runner,
+                "_workspace_item_fingerprint",
+                side_effect=AssertionError("opaque text reached the filesystem"),
+            ):
+                source = runner._agent_packet_source_fingerprint(step, step["items"])
+
+        self.assertEqual(source["state"], "opaque")
+        self.assertEqual(source["size"], len(step["items"][0].encode("utf-8")))
+        self.assertEqual(len(source["sha256"]), 64)
+        self.assertNotIn(step["items"][0], json.dumps(source))
+
+    def test_opaque_agent_map_requires_inline_items_and_is_exported(self):
+        workflow = {
+            "schema": "conductor.workflow.v1",
+            "name": "bad-opaque",
+            "mode": "read_only",
+            "steps": [
+                {
+                    "id": "reviews",
+                    "kind": "agent_map",
+                    "items_file": "topics.txt",
+                    "item_semantics": "opaque",
+                    "prompt_template": "Review {item}",
+                }
+            ],
+        }
+        with self.assertRaisesRegex(ValidationError, "opaque item semantics require inline items"):
+            validate_workflow(workflow)
+
+        schema = get_schema("workflow")
+        agent_map = next(
+            item
+            for item in schema["properties"]["steps"]["items"]["oneOf"]
+            if item["properties"]["kind"]["const"] == "agent_map"
+        )
+        self.assertEqual(
+            agent_map["properties"]["item_semantics"]["enum"],
+            ["workspace_path", "opaque"],
+        )
+
     def test_agent_prompt_accepts_args_reference_and_template(self):
         direct = """\
 export const meta = { name: 'research' }

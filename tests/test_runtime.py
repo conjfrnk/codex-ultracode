@@ -372,7 +372,7 @@ from conductor_runtime.parity_campaign_run import (
     _runtime_release_compatible,
     run_parity_campaign_trial,
 )
-from conductor_runtime.packet_items import MAX_PACKET_ITEM_CHARS
+from conductor_runtime.packet_items import MAX_OPAQUE_PACKET_ITEM_CHARS, MAX_PACKET_ITEM_CHARS
 from conductor_runtime.paths import default_benchmarks_dir, default_dashboard_path, default_goals_dir, default_runs_dir
 from conductor_runtime.planner import MAX_PACKET_ITEMS, build_workflow_plan
 from conductor_runtime.provider_telemetry import (
@@ -1558,9 +1558,12 @@ class RuntimeWorkflowTests(unittest.TestCase):
             saved_dir = Path(tmp) / ".claude" / "workflows"
             saved_dir.mkdir(parents=True)
             (saved_dir / "packaged-result.js").write_text(
-                "export const meta = { name: 'packaged-result' }\n"
-                "const report = await agent('Return a report')\n"
-                "return report\n",
+                "export const meta = { name: 'packaged-result', phases: [{ title: 'Review' }] }\n"
+                "const TOPICS = [{ key: 'correctness', prompt: 'Review correctness.' }]\n"
+                "const RESULT_SCHEMA = { type: 'object', properties: { finding: { type: 'string' } }, required: ['finding'] }\n"
+                "phase('Review')\n"
+                "const reports = (await parallel(TOPICS.map(topic => () => agent(`${topic.prompt} Return one finding.`, { label: `review:${topic.key}`, phase: 'Review', schema: RESULT_SCHEMA })))).filter(Boolean)\n"
+                "return reports\n",
                 encoding="utf-8",
             )
             packaged_saved = subprocess.run(
@@ -1576,6 +1579,7 @@ class RuntimeWorkflowTests(unittest.TestCase):
                     "packaged-result-dry-run",
                     "--dry-run",
                     "--allow-agent",
+                    "--allow-parallel",
                 ],
                 cwd=str(tmp),
                 stdout=subprocess.PIPE,
@@ -1594,6 +1598,9 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 ).read_text(encoding="utf-8")
             )
             self.assertEqual(packaged_workflow["steps"][-1]["kind"], "collect_results")
+            self.assertEqual(packaged_workflow["steps"][0]["kind"], "agent_map")
+            self.assertEqual(packaged_workflow["steps"][0]["item_semantics"], "opaque")
+            self.assertEqual(packaged_workflow["steps"][0]["phase"], "Review")
             self.assertEqual(
                 packaged_workflow["result_artifact"],
                 "claude-workflow/result.json",
@@ -2138,7 +2145,9 @@ class RuntimeWorkflowTests(unittest.TestCase):
         self.assertNotIn("type", shell_schema["properties"]["description"])
 
         agent_map_schema = next(schema for schema in step_schemas if schema["properties"]["kind"]["const"] == "agent_map")
-        item_schema = agent_map_schema["properties"]["items"]["items"]
+        opaque_item_schema = agent_map_schema["properties"]["items"]["items"]
+        self.assertEqual(opaque_item_schema["maxLength"], MAX_OPAQUE_PACKET_ITEM_CHARS)
+        item_schema = agent_map_schema["allOf"][1]["then"]["properties"]["items"]["items"]
         item_pattern = re.compile(item_schema["pattern"])
         self.assertEqual(item_schema["maxLength"], MAX_PACKET_ITEM_CHARS)
         self.assertRegex("src/file.py", item_pattern)
@@ -15717,6 +15726,39 @@ class RuntimeWorkflowTests(unittest.TestCase):
             self.assertEqual(second.workspace_fingerprint_calls.count("alpha"), 1)
             self.assertEqual(second.workspace_fingerprint_calls.count("beta"), 3)
             self.assertEqual(len(second.workspace_fingerprint_calls), 4)
+
+    def test_opaque_agent_map_execution_never_fingerprints_workspace_paths(self):
+        workflow = workflow_with_steps(
+            [
+                {
+                    "id": "packet",
+                    "kind": "agent_map",
+                    "risk": "medium",
+                    "items": [
+                        "Review auth/session behavior.\nReturn one finding.",
+                        "Review release readiness.",
+                    ],
+                    "item_semantics": "opaque",
+                    "prompt_template": "{item}",
+                    "capture_dir": "packets",
+                    "max_items": 5,
+                }
+            ]
+        )
+        workflow["max_workers"] = 1
+        validate_workflow(workflow)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runner = CountingAgentMapRunner(
+                workflow=workflow,
+                workspace=root,
+                base_run_dir=root / "runs",
+                policy=RuntimePolicy(allow_agent=True, approvals={"packet"}),
+            )
+            runner.execute()
+
+            self.assertEqual(runner.workspace_fingerprint_calls, [])
+            self.assertEqual(len(runner.agent_calls), 2)
 
     def test_agent_map_cache_writes_are_batched_and_skipped_for_all_hits(self):
         workflow = workflow_with_steps(

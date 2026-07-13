@@ -7378,7 +7378,7 @@ class WorkflowRunner:
                 return
             output_path = self.run.resolve_artifact_path(output_relative)
             try:
-                current_source = self._workspace_agent_packet_fingerprint(source_items)
+                current_source = self._agent_packet_source_fingerprint(step, source_items)
                 if _sha256_json(current_source) != _sha256_json(item_source):
                     return
                 if not output_path.is_file():
@@ -7471,6 +7471,7 @@ class WorkflowRunner:
 
     def _verify_agent_map_packet_terminal_artifacts(
         self,
+        step: Dict,
         terminal: Dict,
         source_items,
     ) -> None:
@@ -7481,7 +7482,7 @@ class WorkflowRunner:
             terminal["output_redacted_sha256"],
         }:
             raise ValidationError("agent_map packet terminal output changed")
-        current_source = self._workspace_agent_packet_fingerprint(source_items)
+        current_source = self._agent_packet_source_fingerprint(step, source_items)
         if _sha256_json(current_source) != terminal["item_source_sha256"]:
             raise ValidationError("agent_map packet terminal item source changed")
 
@@ -7537,7 +7538,7 @@ class WorkflowRunner:
             terminal["launch_pending_count"],
         )
         source_items = tuple(source_items) or (item,)
-        item_source = self._workspace_agent_packet_fingerprint(source_items)
+        item_source = self._agent_packet_source_fingerprint(step, source_items)
         base_prompt = self._agent_prompt(
             step,
             step["prompt_template"].format(item=item, index=index),
@@ -7580,7 +7581,7 @@ class WorkflowRunner:
             max_tokens=launch_budget["max_tokens"],
         )
         validate_agent_map_packet_terminal(terminal, step=step, expected=expected)
-        self._verify_agent_map_packet_terminal_artifacts(terminal, source_items)
+        self._verify_agent_map_packet_terminal_artifacts(step, terminal, source_items)
         output_path = self.run.resolve_artifact_path(terminal["output"])
         recovered_provider_step = {
             key: value
@@ -7674,7 +7675,7 @@ class WorkflowRunner:
             launch_budget = self._agent_map_budget(step, launch_pending_count)
             if launch_budget["max_tokens"] != invocation_token_cap:
                 raise ValidationError("agent_map packet launch token authorization changed")
-            item_source = self._workspace_agent_packet_fingerprint(source_items)
+            item_source = self._agent_packet_source_fingerprint(step, source_items)
             rendered_prompt = step["prompt_template"].format(item=item, index=index)
             base_prompt = self._agent_prompt(step, rendered_prompt)
             command_step = {
@@ -7827,7 +7828,7 @@ class WorkflowRunner:
                 status = "failed"
                 detail = "exit code %s" % result.returncode
                 raise StepExecutionError("packet %s exited with code %s" % (packet_label, result.returncode))
-            current_item_source = self._workspace_agent_packet_fingerprint(source_items)
+            current_item_source = self._agent_packet_source_fingerprint(step, source_items)
             if current_item_source != item_source:
                 if output_path.is_file():
                     self._redact_bounded_agent_output(
@@ -7846,6 +7847,7 @@ class WorkflowRunner:
                 return AgentItemResult(cache_entry=None, telemetry=parse_provider_jsonl(result.stdout, "codex"))
             if terminal is not None:
                 self._verify_agent_map_packet_terminal_artifacts(
+                    step,
                     terminal,
                     source_items,
                 )
@@ -8322,12 +8324,14 @@ class WorkflowRunner:
     def _agent_items(self, step: Dict, allow_missing: bool = False):
         max_items = int(step.get("max_items", self.workflow.get("max_items", 1000)))
         preserve_duplicates = step.get("preserve_duplicate_items", False)
+        item_semantics = step.get("item_semantics", "workspace_path")
         if "items" in step:
             items = clean_packet_items(
                 step["items"],
                 "agent_map step %s items" % step["id"],
                 max_items,
                 preserve_duplicates=preserve_duplicates,
+                item_semantics=item_semantics,
             )
         elif "items_file" in step:
             reject_symlink_path(self.workspace / step["items_file"], "agent_map step %s items_file" % step["id"])
@@ -8339,6 +8343,7 @@ class WorkflowRunner:
                 "agent_map step %s items_file" % step["id"],
                 max_items,
                 preserve_duplicates=preserve_duplicates,
+                item_semantics=item_semantics,
             )
         elif "items_artifact" in step:
             require_no_path_escape(step["items_artifact"])
@@ -8357,6 +8362,7 @@ class WorkflowRunner:
                     max_items,
                     step["items_pointer"],
                     preserve_duplicates=preserve_duplicates,
+                    item_semantics=item_semantics,
                 )
             else:
                 items = read_packet_items_file(
@@ -8364,6 +8370,7 @@ class WorkflowRunner:
                     label,
                     max_items,
                     preserve_duplicates=preserve_duplicates,
+                    item_semantics=item_semantics,
                 )
         else:
             raise ValidationError("agent_map step %s has no item source" % step["id"])
@@ -8557,7 +8564,7 @@ class WorkflowRunner:
         source_items=(),
     ) -> Optional[AgentCacheLookup]:
         source_items = tuple(source_items) or (item,)
-        item_source = self._workspace_agent_packet_fingerprint(source_items)
+        item_source = self._agent_packet_source_fingerprint(step, source_items)
         if not _item_source_cacheable(item_source):
             return None
         base_prompt = self._agent_prompt(
@@ -8914,7 +8921,10 @@ class WorkflowRunner:
         if prompt is None:
             prompt = self._agent_prompt(step, step["prompt_template"].format(item=item, index=index))
         if item_source is None:
-            item_source = self._workspace_agent_packet_fingerprint(self._agent_packet_source_items(step, item))
+            item_source = self._agent_packet_source_fingerprint(
+                step,
+                self._agent_packet_source_items(step, item),
+            )
         if cache_context is None:
             cache_context = self._agent_cache_context(step)
         payload = {
@@ -9066,6 +9076,22 @@ class WorkflowRunner:
                 for source_item in source_items
             ],
         }
+
+    def _agent_packet_source_fingerprint(self, step: Dict, source_items) -> Dict:
+        source_items = tuple(source_items)
+        if step.get("item_semantics", "workspace_path") != "opaque":
+            return self._workspace_agent_packet_fingerprint(source_items)
+
+        records = [
+            {
+                "sha256": _sha256_text(item),
+                "size": len(item.encode("utf-8")),
+            }
+            for item in source_items
+        ]
+        if len(records) == 1:
+            return {"state": "opaque", **records[0]}
+        return {"state": "opaque-packet", "items": records}
 
     def _validate_agent_output(self, output_relative: str) -> None:
         reject_symlink_path(self.run.artifacts_dir / output_relative, "agent_map output")
@@ -13863,6 +13889,22 @@ def _item_source_cacheable(item_source: Dict) -> bool:
     state = item_source.get("state")
     if state in {"missing", "file", "directory"}:
         return True
+    if state == "opaque":
+        return (
+            _is_sha256(item_source.get("sha256"))
+            and isinstance(item_source.get("size"), int)
+            and not isinstance(item_source.get("size"), bool)
+            and item_source["size"] >= 0
+        )
+    if state == "opaque-packet":
+        return bool(item_source.get("items")) and all(
+            isinstance(entry, dict)
+            and _is_sha256(entry.get("sha256"))
+            and isinstance(entry.get("size"), int)
+            and not isinstance(entry.get("size"), bool)
+            and entry["size"] >= 0
+            for entry in item_source["items"]
+        )
     if state != "packet" or not isinstance(item_source.get("items"), list) or not item_source["items"]:
         return False
     return all(

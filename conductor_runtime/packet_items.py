@@ -8,6 +8,7 @@ from .security import read_regular_text_file_no_follow, reject_symlink_path, req
 
 
 MAX_PACKET_ITEM_CHARS = 512
+MAX_OPAQUE_PACKET_ITEM_CHARS = 64 * 1024
 MAX_PACKET_ITEM_FILE_BYTES = 1024 * 1024
 MAX_JSON_POINTER_CHARS = 4096
 MAX_JSON_POINTER_SEGMENTS = 64
@@ -27,16 +28,38 @@ def clean_packet_item(item: str, label: str) -> str:
     return _sanitize_untrusted_text(redact_text(cleaned))
 
 
+def clean_opaque_packet_item(item: str, label: str) -> str:
+    if not isinstance(item, str) or not item.strip():
+        raise ValidationError("%s values must be non-empty strings" % label)
+    if "\0" in item:
+        raise ValidationError("%s values must not contain NUL characters" % label)
+    cleaned = item
+    if len(cleaned) > MAX_OPAQUE_PACKET_ITEM_CHARS:
+        raise ValidationError(
+            "%s values must be at most %d characters"
+            % (label, MAX_OPAQUE_PACKET_ITEM_CHARS)
+        )
+    if contains_secret_like(cleaned):
+        raise ValidationError("%s values must not contain secret-like values" % label)
+    return _sanitize_untrusted_text(redact_text(cleaned))
+
+
 def clean_packet_items(
     items: Iterable[str],
     label: str,
     max_items: int,
     preserve_duplicates: bool = False,
+    item_semantics: str = "workspace_path",
 ) -> List[str]:
     cleaned_items = []
     seen = set()
     for item in items:
-        cleaned = clean_packet_item(item, label)
+        if item_semantics == "workspace_path":
+            cleaned = clean_packet_item(item, label)
+        elif item_semantics == "opaque":
+            cleaned = clean_opaque_packet_item(item, label)
+        else:
+            raise ValidationError("%s item semantics are invalid" % label)
         if preserve_duplicates or cleaned not in seen:
             cleaned_items.append(cleaned)
             seen.add(cleaned)
@@ -52,6 +75,7 @@ def read_packet_items_file(
     label: str,
     max_items: int,
     preserve_duplicates: bool = False,
+    item_semantics: str = "workspace_path",
 ) -> List[str]:
     reject_symlink_path(path, label)
     text = read_regular_text_file_no_follow(path, label, MAX_PACKET_ITEM_FILE_BYTES)
@@ -63,7 +87,13 @@ def read_packet_items_file(
         raw_items.append(value)
         if len(raw_items) > max_items:
             raise ValidationError("%s can be supplied at most %d times" % (label, max_items))
-    return clean_packet_items(raw_items, label, max_items, preserve_duplicates=preserve_duplicates)
+    return clean_packet_items(
+        raw_items,
+        label,
+        max_items,
+        preserve_duplicates=preserve_duplicates,
+        item_semantics=item_semantics,
+    )
 
 
 def read_packet_items_json_file(
@@ -72,6 +102,7 @@ def read_packet_items_json_file(
     max_items: int,
     pointer: str,
     preserve_duplicates: bool = False,
+    item_semantics: str = "workspace_path",
 ) -> List[str]:
     reject_symlink_path(path, label)
     text = read_regular_text_file_no_follow(path, label, MAX_PACKET_ITEM_FILE_BYTES)
@@ -86,7 +117,13 @@ def read_packet_items_json_file(
     value = resolve_json_pointer(document, pointer, label)
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValidationError("%s JSON pointer must resolve to a string array" % label)
-    return clean_packet_items(value, label, max_items, preserve_duplicates=preserve_duplicates)
+    return clean_packet_items(
+        value,
+        label,
+        max_items,
+        preserve_duplicates=preserve_duplicates,
+        item_semantics=item_semantics,
+    )
 
 
 def validate_json_pointer(pointer: str, label: str) -> str:

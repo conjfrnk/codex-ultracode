@@ -349,6 +349,16 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
         items = step.get("items")
         items_file = step.get("items_file")
         items_artifact = step.get("items_artifact")
+        item_semantics = step.get("item_semantics", "workspace_path")
+        if item_semantics not in {"workspace_path", "opaque"}:
+            raise ValidationError(
+                "agent_map step %s item_semantics must be workspace_path or opaque"
+                % step_id
+            )
+        if item_semantics == "opaque" and items is None:
+            raise ValidationError(
+                "agent_map step %s opaque item semantics require inline items" % step_id
+            )
         preserve_duplicates = step.get("preserve_duplicate_items", False)
         if not isinstance(preserve_duplicates, bool):
             raise ValidationError("agent_map step %s preserve_duplicate_items must be boolean" % step_id)
@@ -363,6 +373,7 @@ def validate_step(step: Dict, seen: set, workflow: Dict = None) -> None:
                 "agent_map step %s items" % step_id,
                 MAX_AGENT_ITEMS,
                 preserve_duplicates=preserve_duplicates,
+                item_semantics=item_semantics,
             )
             packetize_agent_items(cleaned_items, step.get("max_packets"))
         if items_file is not None:
@@ -1186,6 +1197,12 @@ def workflow_summary(workflow: Dict) -> str:
                         "reply_timeout_seconds",
                         0,
                     )
+        if step.get("kind") == "agent_map" and step.get("max_workers") is not None:
+            profile += ", workers=%s" % step["max_workers"]
+        if step.get("phase") is not None:
+            profile += ", phase=%s" % redact_text(step["phase"])
+        if step.get("kind") == "agent_map" and step.get("item_semantics") == "opaque":
+            profile += ", items=opaque"
         if step.get("native_agents"):
             max_tokens = effective.get("max_tokens", workflow.get("agent_max_tokens"))
             profile += ", native-agents=max-%s/depth-1" % step["native_agents"]["max_threads"]
