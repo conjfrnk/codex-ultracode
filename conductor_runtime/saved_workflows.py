@@ -28,6 +28,7 @@ ARG_PLACEHOLDER = re.compile(r"\{\{\s*args\.([a-zA-Z0-9][a-zA-Z0-9_.-]*)\s*\}\}"
 class SavedWorkflow:
     command_name: str
     description: str
+    when_to_use: str
     path: Path
     workflow: Dict
     scope: str = "project"
@@ -116,6 +117,13 @@ def load_saved_workflow(
         raise ValidationError("%s meta.description must be a string when present" % source)
     if contains_secret_like(description):
         raise ValidationError("%s meta.description must not contain secret-like values" % source)
+    when_to_use = meta.get("whenToUse", "")
+    if when_to_use is None:
+        when_to_use = ""
+    if not isinstance(when_to_use, str):
+        raise ValidationError("%s meta.whenToUse must be a string when present" % source)
+    if contains_secret_like(when_to_use):
+        raise ValidationError("%s meta.whenToUse must not contain secret-like values" % source)
     validate_workflow(_workflow_template_for_validation(workflow), source=str(source))
     loaded = dict(workflow)
     loaded["_source_path"] = str(source)
@@ -123,6 +131,7 @@ def load_saved_workflow(
     return SavedWorkflow(
         command_name=command_name,
         description=description,
+        when_to_use=when_to_use,
         path=source,
         workflow=loaded,
         scope=scope,
@@ -225,6 +234,7 @@ def apply_saved_workflow_args(saved: SavedWorkflow, args: Dict[str, Any]) -> Sav
     return SavedWorkflow(
         command_name=saved.command_name,
         description=saved.description,
+        when_to_use=saved.when_to_use,
         path=saved.path,
         workflow=loaded,
         scope=saved.scope,

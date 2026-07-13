@@ -1201,6 +1201,8 @@ def workflow_summary(workflow: Dict) -> str:
             profile += ", workers=%s" % step["max_workers"]
         if step.get("phase") is not None:
             profile += ", phase=%s" % redact_text(step["phase"])
+        if effective.get("effort") is not None:
+            profile += ", effort=%s" % redact_text(effective["effort"])
         if step.get("kind") == "agent_map" and step.get("item_semantics") == "opaque":
             profile += ", items=opaque"
         if step.get("native_agents"):

@@ -917,6 +917,11 @@ def build_parser() -> argparse.ArgumentParser:
     validate_saved = subparsers.add_parser("validate-saved-workflows", help="Validate safe saved workflow scripts.")
     validate_saved.add_argument("saved_workflows", nargs="*", help="Saved workflow command names or workspace-relative paths.")
     validate_saved.add_argument("--workspace", type=Path, default=Path("."))
+    validate_saved.add_argument(
+        "--keep-going",
+        action="store_true",
+        help="Report every invalid saved workflow instead of stopping at the first error.",
+    )
     _add_saved_workflow_scope_args(validate_saved)
 
     validate_model_receipt = subparsers.add_parser(
@@ -4241,8 +4246,19 @@ def _agent_memory_dir_for_cli(args) -> Path:
 def _validate_saved_workflows(args) -> int:
     if args.saved_workflows:
         saved_workflows = []
+        invalid = 0
         for identifier in args.saved_workflows:
-            saved = _resolve_saved_workflow_for_cli(identifier, args)
+            try:
+                saved = _resolve_saved_workflow_for_cli(identifier, args)
+            except ConductorError as exc:
+                if not args.keep_going:
+                    raise
+                invalid += 1
+                print(
+                    "INVALID: %s (%s)"
+                    % (redact_text(identifier), redact_text(str(exc)))
+                )
+                continue
             saved_workflows.append(saved)
         _reject_duplicate_saved_workflows(saved_workflows)
         for saved in saved_workflows:
@@ -4250,20 +4266,32 @@ def _validate_saved_workflows(args) -> int:
                 "OK: %s (%s, %s)"
                 % (redact_text(str(saved.path)), redact_text(saved.command_name), redact_text(saved.scope))
             )
-        return 0
+        return 2 if invalid else 0
     entries = iter_saved_workflow_entries(args.workspace, **_saved_workflow_scope_kwargs(args))
     if not entries:
         raise ValidationError("no saved workflow scripts found")
     saved_workflows = []
+    invalid = 0
     for entry in entries:
-        saved_workflows.append(load_saved_workflow(entry.path, scope=entry.scope, rank=entry.rank))
+        try:
+            saved_workflows.append(
+                load_saved_workflow(entry.path, scope=entry.scope, rank=entry.rank)
+            )
+        except ConductorError as exc:
+            if not args.keep_going:
+                raise
+            invalid += 1
+            print(
+                "INVALID: %s (%s)"
+                % (redact_text(str(entry.path)), redact_text(str(exc)))
+            )
     _reject_duplicate_saved_workflows(saved_workflows)
     for saved in saved_workflows:
         print(
             "OK: %s (%s, %s)"
             % (redact_text(str(saved.path)), redact_text(saved.command_name), redact_text(saved.scope))
         )
-    return 0
+    return 2 if invalid else 0
 
 
 def _validate_model_workflow_receipt(args) -> int:
@@ -5207,6 +5235,8 @@ def _inspect_saved_workflow(args) -> int:
     print("command: %s" % redact_text(saved.command_name))
     print("scope: %s" % redact_text(saved.scope))
     print("description: %s" % redact_text(saved.description))
+    if saved.when_to_use:
+        print("when to use: %s" % redact_text(saved.when_to_use))
     print(workflow_summary(saved.workflow))
     return 0
 

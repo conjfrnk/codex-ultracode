@@ -1521,10 +1521,17 @@
     },
     {
       "id": "claude-parallel-phase-inspect",
-      "description": "Inspection exposes the compiled true-parallel map, normalized phase, and terminal collector without evaluating JavaScript.",
+      "description": "Inspection exposes discovery metadata plus the compiled true-parallel map, normalized phase, ultra effort, and terminal collector without evaluating JavaScript.",
       "risk": "low",
       "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-parallel-phase-smoke.js", "--workspace", "."],
-      "success_contains": "findings [agent_map, risk=low, workers=16, phase=Code-Review, items=opaque, structured-output]"
+      "success_contains": "findings [agent_map, risk=low, workers=16, phase=Code-Review, effort=ultra, items=opaque, structured-output]"
+    },
+    {
+      "id": "claude-saved-workflow-discovery-metadata",
+      "description": "Saved-workflow inspection preserves Claude whenToUse discovery guidance without evaluating the script or launching a provider.",
+      "risk": "low",
+      "command": ["python3", "-B", "-m", "conductor_runtime", "inspect-saved-workflow", "benchmark-suites/claude-parallel-phase-smoke.js", "--workspace", "."],
+      "success_contains": "when to use: Use for a bounded parallel review smoke test"
     },
     {
       "id": "structured-agent-map-validate",

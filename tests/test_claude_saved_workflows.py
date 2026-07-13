@@ -393,6 +393,119 @@ return report
         _, workflow = self.compile(templated)
         self.assertEqual(workflow["steps"][0]["prompt"], "Research: {{args.question}}")
 
+    def test_compiles_text_concatenation_effort_and_discovery_metadata(self):
+        source = """\
+export const meta = {
+  name: 'targeted-review',
+  description: 'Review ' + 'one target',
+  whenToUse: 'Use for ' + 'a focused review',
+}
+const PREFIX = 'Review '
+const report = await agent(PREFIX + args.target + '.', {
+  label: 'review:' + args.target,
+  effort: 'max',
+})
+return report
+"""
+        meta, workflow = self.compile(source)
+        validate_workflow(workflow)
+
+        self.assertEqual(meta["description"], "Review one target")
+        self.assertEqual(meta["whenToUse"], "Use for a focused review")
+        step = workflow["steps"][0]
+        self.assertEqual(step["prompt"], "Review {{args.target}}.")
+        self.assertEqual(step["effort"], "ultra")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "targeted-review.js"
+            path.write_text(source, encoding="utf-8")
+            saved = load_saved_workflow(path, workspace=root)
+
+        self.assertEqual(saved.when_to_use, "Use for a focused review")
+
+        secret_metadata = source.replace(
+            "Use for ' + 'a focused review",
+            "api_key=super-secret-value",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "secret-metadata.js"
+            path.write_text(secret_metadata, encoding="utf-8")
+            with self.assertRaisesRegex(ValidationError, "whenToUse must not contain secret-like"):
+                load_saved_workflow(path, workspace=root)
+
+    def test_compiles_pipeline_and_static_parallel_text_concatenation(self):
+        pipeline_source = """\
+export const meta = { name: 'pipeline-concat' }
+const LEVEL = 'xhigh'
+const reviews = await pipeline(args.files, file => agent(
+  'Review ' + file + ' for ' + args.focus + '.',
+  { label: 'review:' + file, effort: LEVEL },
+))
+return reviews
+"""
+        _, pipeline_workflow = self.compile(pipeline_source)
+        pipeline_step = pipeline_workflow["steps"][0]
+        self.assertEqual(
+            pipeline_step["prompt_template"],
+            "Review {item} for {{args.focus}}.",
+        )
+        self.assertEqual(pipeline_step["effort"], "xhigh")
+
+        parallel_source = """\
+export const meta = { name: 'parallel-concat' }
+const TOPICS = [
+  { key: 'security', prompt: 'Review security' },
+  { key: 'correctness', prompt: 'Review correctness' },
+]
+const reviews = await parallel(TOPICS.map(topic => () => agent(
+  topic.prompt + '. Key: ' + topic.key,
+  { label: 'review:' + topic.key, effort: 'high' },
+)))
+return reviews
+"""
+        _, parallel_workflow = self.compile(parallel_source)
+        parallel_step = parallel_workflow["steps"][0]
+        self.assertEqual(
+            parallel_step["items"],
+            [
+                "Review security. Key: security",
+                "Review correctness. Key: correctness",
+            ],
+        )
+        self.assertEqual(parallel_step["effort"], "high")
+
+    def test_text_concatenation_and_effort_remain_bounded(self):
+        arithmetic = """\
+export const meta = { name: 'arithmetic' }
+const VALUE = 1 + 2
+const report = await agent('Report')
+return report
+"""
+        self.assert_rejected(arithmetic, "static constants must contain only")
+
+        prompt_arithmetic = """\
+export const meta = { name: 'prompt-arithmetic' }
+const report = await agent(1 + 2)
+return report
+"""
+        self.assert_rejected(prompt_arithmetic, "prompt text may reference only")
+
+        dynamic_effort = """\
+export const meta = { name: 'dynamic-effort' }
+const report = await agent('Report', { effort: args.effort })
+return report
+"""
+        self.assert_rejected(dynamic_effort, "references unknown static constant args")
+
+        invalid_effort = """\
+export const meta = { name: 'invalid-effort' }
+const report = await agent('Report', { effort: 'extreme' })
+return report
+"""
+        self.assert_rejected(invalid_effort, "effort must be low, medium, high, xhigh, max, or ultra")
+
     def test_multiple_pipelines_share_total_agent_budget(self):
         source = """\
 export const meta = { name: 'two-pass' }
@@ -903,6 +1016,41 @@ return report
                 )
             self.assertEqual(code, 2)
             self.assertIn("--print-result requires real workflow execution", stderr.getvalue())
+
+    def test_cli_keep_going_reports_complete_nonexecuting_corpus(self):
+        valid = """\
+export const meta = { name: 'valid', whenToUse: 'Focused audits' }
+const report = await agent('Review ' + args.target, { effort: 'high' })
+return report
+"""
+        invalid = """\
+export const meta = { name: 'invalid' }
+if (args.enabled) { await agent('Review') }
+const report = await agent('Fallback')
+return report
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workflow_dir = root / ".claude" / "workflows"
+            workflow_dir.mkdir(parents=True)
+            (workflow_dir / "valid.js").write_text(valid, encoding="utf-8")
+            (workflow_dir / "invalid.js").write_text(invalid, encoding="utf-8")
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "validate-saved-workflows",
+                        "--workspace",
+                        str(root),
+                        "--keep-going",
+                    ]
+                )
+
+        self.assertEqual(code, 2)
+        self.assertIn("OK:", stdout.getvalue())
+        self.assertIn("valid", stdout.getvalue())
+        self.assertIn("INVALID:", stdout.getvalue())
+        self.assertIn("invalid.js", stdout.getvalue())
 
 
 if __name__ == "__main__":

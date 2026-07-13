@@ -20,6 +20,7 @@ MAX_CLAUDE_WORKFLOW_AGENTS = 1000
 MAX_CLAUDE_WORKFLOW_WORKERS = 16
 MAX_CLAUDE_WORKFLOW_RESULT_BYTES = 10 * 1024 * 1024
 CLAUDE_WORKFLOW_RESULT_ARTIFACT = "claude-workflow/result.json"
+CLAUDE_AGENT_EFFORTS = {"low", "medium", "high", "xhigh", "max", "ultra"}
 _JS_IDENTIFIER = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
 _JS_REFERENCE = re.compile(
     r"^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$"
@@ -46,6 +47,11 @@ class Reference:
 @dataclass(frozen=True)
 class Template:
     parts: Tuple[Union[str, Reference], ...]
+
+
+@dataclass(frozen=True)
+class Concat:
+    parts: Tuple[Any, ...]
 
 
 @dataclass(frozen=True)
@@ -131,7 +137,7 @@ class _Scanner:
             elif self.text.startswith("=>", self.index):
                 self.tokens.append(Token("symbol", "=>", offset))
                 self.index += 2
-            elif char in "{}[](),:;.=":
+            elif char in "{}[](),:;.=+":
                 self.tokens.append(Token("symbol", char, offset))
                 self.index += 1
             else:
@@ -506,6 +512,21 @@ class _Parser:
         return True
 
     def _parse_value(self, depth: int = 0) -> Any:
+        value = self._parse_value_atom(depth)
+        if not self._accept_symbol("+"):
+            return value
+        parts = list(value.parts) if isinstance(value, Concat) else [value]
+        while True:
+            part = self._parse_value_atom(depth)
+            if isinstance(part, Concat):
+                parts.extend(part.parts)
+            else:
+                parts.append(part)
+            if not self._accept_symbol("+"):
+                break
+        return Concat(tuple(parts))
+
+    def _parse_value_atom(self, depth: int = 0) -> Any:
         if depth > MAX_CLAUDE_WORKFLOW_DEPTH:
             self._fail("literal nesting is too deep")
         token = self._current()
@@ -623,7 +644,14 @@ def _compile_program(program: Program, source: Path) -> Dict:
         description = ""
     if not isinstance(description, str):
         raise ValidationError("%s meta.description must be a string when present" % source)
-    unsupported_meta = sorted(set(program.meta) - {"name", "description", "phases"})
+    when_to_use = program.meta.get("whenToUse", "")
+    if when_to_use is None:
+        when_to_use = ""
+    if not isinstance(when_to_use, str):
+        raise ValidationError("%s meta.whenToUse must be a string when present" % source)
+    unsupported_meta = sorted(
+        set(program.meta) - {"name", "description", "whenToUse", "phases"}
+    )
     if unsupported_meta:
         raise ValidationError(
             "%s Claude-style meta contains unsupported field(s): %s"
@@ -712,6 +740,8 @@ def _compile_program(program: Program, source: Path) -> Dict:
             }
             if options.get("schema") is not None:
                 step["output_schema"] = _normalize_output_schema(options["schema"])
+            if options.get("effort") is not None:
+                step["effort"] = options["effort"]
         else:
             if per_map_items < 1:
                 raise ValidationError("%s Claude-style workflow exceeds its 1,000-agent cap" % source)
@@ -764,6 +794,8 @@ def _compile_program(program: Program, source: Path) -> Dict:
             }
             if options.get("schema") is not None:
                 step["output_schema"] = _normalize_output_schema(options["schema"])
+            if options.get("effort") is not None:
+                step["effort"] = options["effort"]
             step.update(item_source)
         phase_name = _effective_phase_name(binding, options.get("phase"), source)
         if phase_name is not None:
@@ -817,7 +849,7 @@ def _agent_options(
     constants: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     constants = constants or {}
-    unsupported = sorted(set(options) - {"label", "phase", "schema"})
+    unsupported = sorted(set(options) - {"label", "phase", "schema", "effort"})
     if unsupported:
         raise ValidationError(
             "%s %s agent options contain unsupported field(s): %s"
@@ -825,13 +857,17 @@ def _agent_options(
         )
     if "label" in options:
         label = options["label"]
-        if not isinstance(label, (str, Template, Reference)):
+        if not isinstance(label, (str, Template, Concat, Reference)):
             raise ValidationError("%s %s agent label must be static text or a reference" % (source, binding_name))
-        references = []
-        if isinstance(label, Reference):
-            references.append(label)
-        elif isinstance(label, Template):
-            references.extend(part for part in label.parts if isinstance(part, Reference))
+        if any(
+            not isinstance(part, (str, Reference))
+            for part in _text_expression_parts(label)
+        ):
+            raise ValidationError(
+                "%s %s agent label text may contain only text and references"
+                % (source, binding_name)
+            )
+        references = _expression_references(label)
         for reference in references:
             if label_reference is not None and reference.parts[0] == label_reference:
                 continue
@@ -869,6 +905,16 @@ def _agent_options(
                 % (source, binding_name)
             )
         normalized["phase"] = phase
+    if "effort" in options:
+        effort = options["effort"]
+        if isinstance(effort, Reference):
+            effort = _resolve_static_reference(effort, constants, source, binding_name)
+        if not isinstance(effort, str) or effort not in CLAUDE_AGENT_EFFORTS:
+            raise ValidationError(
+                "%s %s agent effort must be low, medium, high, xhigh, max, or ultra"
+                % (source, binding_name)
+            )
+        normalized["effort"] = "ultra" if effort == "max" else effort
     return normalized
 
 
@@ -879,39 +925,35 @@ def _agent_prompt(
     constants: Optional[Dict[str, Any]] = None,
 ) -> str:
     constants = constants or {}
-    if isinstance(value, str):
-        return value
-    if isinstance(value, Reference) and len(value.parts) == 2 and value.parts[0] == "args":
-        return "{{args.%s}}" % value.parts[1]
-    if isinstance(value, Reference) and value.parts[0] in constants:
-        resolved = _resolve_static_reference(value, constants, source, binding_name)
-        if isinstance(resolved, str):
-            return resolved
-    if isinstance(value, Template):
-        output = []
-        for part in value.parts:
-            if isinstance(part, str):
-                output.append(part)
-            elif len(part.parts) == 2 and part.parts[0] == "args":
-                output.append("{{args.%s}}" % part.parts[1])
-            elif part.parts[0] in constants:
-                output.append(
-                    _static_js_text(
-                        _resolve_static_reference(part, constants, source, binding_name),
-                        source,
-                        binding_name,
-                    )
+    if not isinstance(value, (str, Reference, Template, Concat)):
+        raise ValidationError(
+            "%s %s agent prompt must be text, args.NAME, or a text constant"
+            % (source, binding_name)
+        )
+    output = []
+    for part in _text_expression_parts(value):
+        if isinstance(part, str):
+            output.append(part)
+        elif (
+            isinstance(part, Reference)
+            and len(part.parts) == 2
+            and part.parts[0] == "args"
+        ):
+            output.append("{{args.%s}}" % part.parts[1])
+        elif isinstance(part, Reference) and part.parts[0] in constants:
+            output.append(
+                _static_js_text(
+                    _resolve_static_reference(part, constants, source, binding_name),
+                    source,
+                    binding_name,
                 )
-            else:
-                raise ValidationError(
-                    "%s %s agent prompt templates may interpolate only args.NAME or static constants"
-                    % (source, binding_name)
-                )
-        return "".join(output)
-    raise ValidationError(
-        "%s %s agent prompt must be text, args.NAME, or a text constant"
-        % (source, binding_name)
-    )
+            )
+        else:
+            raise ValidationError(
+                "%s %s agent prompt text may reference only args.NAME or static constants"
+                % (source, binding_name)
+            )
+    return "".join(output)
 
 
 def _pipeline_prompt(
@@ -922,22 +964,26 @@ def _pipeline_prompt(
     constants: Optional[Dict[str, Any]] = None,
 ) -> str:
     constants = constants or {}
-    if not isinstance(value, Template):
+    if not isinstance(value, (Template, Concat)):
         raise ValidationError(
-            "%s %s pipeline agent prompt must be a template literal using ${%s}"
+            "%s %s pipeline agent prompt must use a template or text concatenation containing %s"
             % (source, binding_name, item_name)
         )
     output = []
     item_references = 0
-    for part in value.parts:
+    for part in _text_expression_parts(value):
         if isinstance(part, str):
             output.append(part.replace("{", "{{").replace("}", "}}"))
-        elif part.parts == (item_name,):
+        elif isinstance(part, Reference) and part.parts == (item_name,):
             output.append("{item}")
             item_references += 1
-        elif len(part.parts) == 2 and part.parts[0] == "args":
+        elif (
+            isinstance(part, Reference)
+            and len(part.parts) == 2
+            and part.parts[0] == "args"
+        ):
             output.append("{{args.%s}}" % part.parts[1])
-        elif part.parts[0] in constants:
+        elif isinstance(part, Reference) and part.parts[0] in constants:
             text = _static_js_text(
                 _resolve_static_reference(part, constants, source, binding_name),
                 source,
@@ -1048,12 +1094,12 @@ def _parallel_static_prompt(
             source,
             binding_name,
         )
-    elif isinstance(value, Template):
+    elif isinstance(value, (Template, Concat)):
         parts = []
-        for part in value.parts:
+        for part in _text_expression_parts(value):
             if isinstance(part, str):
                 parts.append(part)
-            else:
+            elif isinstance(part, Reference):
                 parts.append(
                     _static_js_text(
                         _parallel_reference_value(
@@ -1067,6 +1113,11 @@ def _parallel_static_prompt(
                         source,
                         binding_name,
                     )
+                )
+            else:
+                raise ValidationError(
+                    "%s %s parallel agent prompt text may contain only text and references"
+                    % (source, binding_name)
                 )
         output = "".join(parts)
     else:
@@ -1258,6 +1309,11 @@ def _phase_identifier(title: str, source: Path) -> str:
 
 
 def _normalize_static_literal(value: Any) -> Any:
+    if isinstance(value, Concat):
+        normalized = [_normalize_static_literal(part) for part in value.parts]
+        if not normalized or not all(isinstance(part, str) for part in normalized):
+            raise ValidationError("static concatenation must contain only text")
+        return "".join(normalized)
     if isinstance(value, Template):
         if any(not isinstance(part, str) for part in value.parts):
             raise ValidationError("template contains an interpolation")
@@ -1337,13 +1393,32 @@ def _agent_capture(binding_name: str, structured: bool = False) -> str:
 
 
 def _contains_expression(value: Any) -> bool:
-    if isinstance(value, (Reference, Template)):
+    if isinstance(value, (Reference, Template, Concat)):
         return True
     if isinstance(value, list):
         return any(_contains_expression(item) for item in value)
     if isinstance(value, dict):
         return any(_contains_expression(item) for item in value.values())
     return False
+
+
+def _text_expression_parts(value: Any) -> List[Any]:
+    if isinstance(value, Template):
+        return list(value.parts)
+    if isinstance(value, Concat):
+        parts: List[Any] = []
+        for part in value.parts:
+            parts.extend(_text_expression_parts(part))
+        return parts
+    return [value]
+
+
+def _expression_references(value: Any) -> List[Reference]:
+    return [
+        part
+        for part in _text_expression_parts(value)
+        if isinstance(part, Reference)
+    ]
 
 
 def _diagnostic(text: str, source: Path, offset: int, message: str) -> str:

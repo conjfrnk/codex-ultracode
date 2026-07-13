@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.169.0
+
+- Extended the dependency-free Claude saved-workflow compiler with bounded `+` text composition for direct, pipeline, and static-parallel prompts plus labels. Text operands remain inert syntax; numeric arithmetic, calls, mutation, helpers, and general expressions remain rejected rather than evaluated.
+- Preserved static `meta.whenToUse` discovery guidance through loading and inspection, and added static per-agent `effort` for direct and mapped calls. Shared `low`/`medium`/`high`/`xhigh` values pass through, while Claude `max` maps to Codex `ultra`; dynamic effort, model, custom-agent, and worktree options remain explicit gaps.
+- Added `validate-saved-workflows --keep-going` for complete non-executing corpus diagnostics, effort visibility in workflow inspection, adversarial compiler/CLI coverage, and a real packaged parallel fixture that proves concatenation, discovery metadata, and the `ultra` execution binding without a provider call.
+- Shipped and actively installed exact `0.169.0`. All 1,032 warning-strict tests, repository-wide Ruff, 19 workflows, 3 saved scripts, 92 release-owned strict JSON files, local/Skill/archive/install/marketplace/doctor/state audits, four byte-identical builds, and seven final 185/185 matrices pass. The guarded installer immediately returns `already-installed` without approval on an identical rerun, the Codex companion host is healthy, and real Codex marketplace ingestion reports plugin `0.169.0` enabled with cached runtime bytes matching the release artifact. Runtime, bundle, marketplace, release-manifest, Skill-archive, and Skill-tree SHA-256 values are `c433b27ee3b998c83d7342965c0b95f0164aba80174ca16cfcd1639eef03a0e9`, `19ac59bde0c31bee9d2d1f534319fcf17c4ac1e190593f253e4ffcef99a35c26`, `6b2b0ed0dfaf71646d61084e6d3e4fbae5f1dc895846a427aa679bfbb213e05d`, `5732502998a39d0d3e1126de54ac25aa8268579ea94eedecb87cf354be92540e`, `1e8582abc5b5ec9b43ae158cf8de04c0b2350bdf15384ea0cf2719d1b63f7f9f`, and `cd8c896352b034eddf1a09f9831abe8578642d576fa3873886c3ece07e7ba4a1`. No model/provider, paid Codex, or Claude call was used to implement, package, install, or verify this release.
+
 ## 0.168.0
 
 - Added dependency-free static compilation for common Claude `phase()` and `parallel(SOURCE.map(item => () => agent(...)))` workflows. JSON-compatible constants, static object-property prompt interpolation, schema constants, declared phase metadata/options, dynamic argument sources, and terminal `.filter(Boolean)` now compile into the existing audited runtime without evaluating JavaScript.

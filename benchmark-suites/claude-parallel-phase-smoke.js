@@ -1,6 +1,7 @@
 export const meta = {
   name: 'claude-parallel-phase-smoke',
-  description: 'Validate static Claude parallel and phase compatibility',
+  description: 'Validate static Claude ' + 'parallel and phase compatibility',
+  whenToUse: 'Use for a bounded ' + 'parallel review smoke test',
   phases: [{ title: 'Code Review', detail: 'Independent bounded review fan-out' }],
 }
 
@@ -18,8 +19,13 @@ const FINDING_SCHEMA = {
 phase('Code Review')
 const findings = (await parallel(
   TOPICS.map(topic => () => agent(
-    `${topic.prompt}\nReturn one concrete finding.`,
-    { label: `review:${topic.key}`, phase: 'Code Review', schema: FINDING_SCHEMA },
+    topic.prompt + '\nReturn one concrete finding.',
+    {
+      label: 'review:' + topic.key,
+      phase: 'Code Review',
+      schema: FINDING_SCHEMA,
+      effort: 'max',
+    },
   )),
 )).filter(Boolean)
 
