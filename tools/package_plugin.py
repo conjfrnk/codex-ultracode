@@ -37,22 +37,22 @@ def plugin_manifest(version: str):
     return {
         "name": PLUGIN_NAME,
         "version": version,
-        "description": "Secure Codex-native workflow orchestration with a dependency-free local runtime.",
+        "description": "Lightweight model-first Codex orchestration with verified staged writes.",
         "author": {"name": "Codex Conductor Project"},
         "license": "MIT",
         "keywords": ["codex", "orchestration", "workflows", "verification"],
         "skills": "./skills/",
         "interface": {
             "displayName": "Codex Conductor",
-            "shortDescription": "Secure, resumable Codex workflow orchestration.",
+            "shortDescription": "Lightweight, verified Codex workflow orchestration.",
             "longDescription": (
-                "Plan, execute, resume, verify, and audit complex Codex coding workflows with "
-                "explicit safety gates and external state."
+                "Execute directly by default, or opt into bounded map-to-synthesis workflows, "
+                "with explicit safety gates, verification, recovery, and external state."
             ),
             "developerName": "Codex Conductor Project",
             "category": "Productivity",
             "capabilities": ["Interactive", "Write"],
-            "defaultPrompt": "Use Codex Conductor to plan and execute this repository task safely.",
+            "defaultPrompt": "Use Codex Conductor to execute this repository task with bounded verification.",
         },
     }
 

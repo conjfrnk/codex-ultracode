@@ -2,7 +2,7 @@
 
 Git history is the authoritative archive for releases before `0.172.0`.
 
-## Unreleased
+## 0.173.0
 
 - Replaced the monolithic default runtime with a small model-first core.
 - Kept direct execution as the default and made planning, goals, and bounded

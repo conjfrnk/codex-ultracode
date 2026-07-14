@@ -180,7 +180,7 @@ uvx --offline ruff check .
 python3 tools/measure_runtime.py --output after.json
 ```
 
-The release process also verifies reproducible packaging, isolated installation, active installation, and archive contents.
+The release process also verifies reproducible packaging, isolated installation, active installation, and archive contents. See [`RELEASE_REPORT.md`](RELEASE_REPORT.md) for the measured `0.173.0` result.
 
 ## License
 

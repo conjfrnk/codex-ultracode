@@ -6,65 +6,40 @@
   },
   "runtime": {
     "path": "conductor-runtime.pyz",
-    "sha256": "3c21cc8c79f21d892d4c729b873e1d17641fc6f4ee3edbd5d9c7092eecb38708",
-    "size_bytes": 895962
+    "sha256": "995f1113066fb3c4ff414b7b68de6e27941ad0b0cb67e5c5c9e6f1b6f8e23027",
+    "size_bytes": 47409
   },
   "schema": "conductor.release_bundle.v1",
   "skill": {
     "files": [
       {
         "path": "SKILL.md",
-        "sha256": "bb4ff0e46e346079900ae8d3cce3d7698905b5911798bf94c6fcd2f589d13c06",
-        "size_bytes": 5528
+        "sha256": "7fef4f20abce0b499e4f1562968b92915a5c9417f1bd41a85e3d1ed4b91c99cd",
+        "size_bytes": 3532
       },
       {
         "path": "agents/openai.yaml",
-        "sha256": "1333f6a975cb560bb1f3a40bc306beebe28521857779a3a92a22a421d129cec1",
-        "size_bytes": 342
-      },
-      {
-        "path": "references/delegation-contract.md",
-        "sha256": "c3b63abab311bcaf6a350058be0370304b349e38a4d803d7b8f3a7bf823545bd",
-        "size_bytes": 2359
-      },
-      {
-        "path": "references/final-review.md",
-        "sha256": "efc40dfaaaca66ff7ffd88f7dada08ec3b9b34f194af17bcf70ca1e8b9c6bd0b",
-        "size_bytes": 740
-      },
-      {
-        "path": "references/mode-selection.md",
-        "sha256": "306413b2e6f3edfb7d18dbbdc5c7929eee2b2ab02730a3d0120b9c743a19bdc9",
-        "size_bytes": 3703
-      },
-      {
-        "path": "references/response-templates.md",
-        "sha256": "9322f47e62372d6cb24737c812f962b0872483828859f0a216c830bb248e950e",
-        "size_bytes": 1272
+        "sha256": "9ff4ab7f7bac7ea2b62ef4441aa6c5f0e90108f2c0c42ad508d36b89734a87f7",
+        "size_bytes": 318
       },
       {
         "path": "references/runtime.md",
-        "sha256": "6ce538cdecd1d6691b2a295d8d0abd0261341395a4235da74a49d71c8ef2bd46",
-        "size_bytes": 59842
+        "sha256": "bb055aeb21c763a5e101b354786c4e07bfab303ce92e5675505aef781acd6c53",
+        "size_bytes": 2651
       },
       {
         "path": "references/security-gates.md",
-        "sha256": "bcef944e5468dd06558a16d00758d8065e99e6901a8c5c5f9b3e916fb11ff2c9",
-        "size_bytes": 2977
+        "sha256": "c16ec190ce7b61ac4530f235fa0b9eff8f413835efba2e668f9275126e927c1d",
+        "size_bytes": 1004
       },
       {
         "path": "references/verification-contract.md",
-        "sha256": "21d4fe612ff9d1a329ca89747b51164d42e7aa285b483638ea9fb8af0cae8d1c",
-        "size_bytes": 858
-      },
-      {
-        "path": "references/workflow-artifacts.md",
-        "sha256": "f31e2992f4f8b31fa90364d1d79926aa3cb91ab8d6a1ae7868459eee0dc3f93c",
-        "size_bytes": 2508
+        "sha256": "eab8fe3ee254ab717f047073c70278b7c36573d34a8db104dac00a930d3199d3",
+        "size_bytes": 812
       }
     ],
     "path": "codex-conductor",
-    "tree_sha256": "cd8c896352b034eddf1a09f9831abe8578642d576fa3873886c3ece07e7ba4a1"
+    "tree_sha256": "53177fa39b4855ecbe414f37f54bf02f1ebc608b9ae0fde0cccd2f9304441534"
   },
-  "version": "0.172.0"
+  "version": "0.173.0"
 }
