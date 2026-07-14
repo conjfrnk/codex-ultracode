@@ -18,13 +18,9 @@ def check_required_skill_files():
     required = [
         root / "SKILL.md",
         root / "agents" / "openai.yaml",
-        root / "references" / "mode-selection.md",
+        root / "references" / "runtime.md",
         root / "references" / "security-gates.md",
-        root / "references" / "workflow-artifacts.md",
-        root / "references" / "delegation-contract.md",
         root / "references" / "verification-contract.md",
-        root / "references" / "final-review.md",
-        root / "references" / "response-templates.md",
     ]
     missing = [path for path in required if not path.is_file()]
     if missing:
@@ -128,9 +124,8 @@ def check_openai_policy():
         fail(
             "agents/openai.yaml sets policy.allow_implicit_invocation: false. "
             "codex-conductor ships with implicit invocation enabled by design "
-            "(see PROJECT_SPEC.md Amendments) with a narrowed trigger description "
-            "to offset over-triggering risk; update this check deliberately if that "
-            "decision changes."
+            "with a narrowed trigger description to offset over-triggering risk; "
+            "update this check deliberately if that decision changes."
         )
 
 

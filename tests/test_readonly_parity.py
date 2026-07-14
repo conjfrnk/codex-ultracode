@@ -8,17 +8,17 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.benchmark import (
+from conductor_extras.runtime.benchmark import (
     load_parity_tasks,
     parity_prompt_environment,
     render_parity_task_contract,
 )
-from conductor_runtime.legacy_cli import main as cli_main
-from conductor_runtime.claude_live import analyze_claude_output
-from conductor_runtime.build_identity import current_runtime_build_sha256
+from conductor_extras.cli import main as cli_main
+from conductor_extras.runtime.claude_live import analyze_claude_output
+from conductor_extras.runtime.build_identity import current_runtime_build_sha256
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.model_planner import plan_direct_model_workflow
-from conductor_runtime.readonly_parity_campaign import (
+from conductor_extras.runtime.model_planner import plan_direct_model_workflow
+from conductor_extras.runtime.readonly_parity_campaign import (
     READONLY_PARITY_CAMPAIGN_SCHEMA,
     READONLY_PARITY_CAMPAIGN_SCHEMA_V1,
     _pairwise_summary,
@@ -28,14 +28,14 @@ from conductor_runtime.readonly_parity_campaign import (
     validate_readonly_parity_campaign,
     write_readonly_parity_campaign,
 )
-from conductor_runtime.readonly_parity_run import (
+from conductor_extras.runtime.readonly_parity_run import (
     READONLY_PARITY_ARM_APPROVAL,
     run_readonly_parity_arm,
 )
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy, assess_command
-from conductor_runtime.runner import ProcessResult
-from conductor_runtime.staged_workspace import snapshot_workspace
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy, assess_command
+from conductor_extras.runtime.runner import ProcessResult
+from conductor_extras.runtime.staged_workspace import snapshot_workspace
 from tools.evaluate_readonly_diagnostic import (
     EVALUATOR_IDENTITY_V1,
     READONLY_DIAGNOSTIC_EVALUATION_SCHEMA,
@@ -234,7 +234,7 @@ class ReadonlyParityTests(unittest.TestCase):
             campaign_path = Path(temporary) / "campaign.json"
             write_readonly_parity_campaign(campaign, campaign_path)
             cohort = campaign["cohorts"][0]
-            with patch("conductor_runtime.readonly_parity_run.shutil.which") as provider_discovery:
+            with patch("conductor_extras.runtime.readonly_parity_run.shutil.which") as provider_discovery:
                 serial_plan = run_readonly_parity_arm(
                     campaign_path=campaign_path,
                     parity_tasks_path=PRODUCT_TASKS_PATH,
@@ -473,7 +473,7 @@ class ReadonlyParityTests(unittest.TestCase):
                 "python3",
                 "-B",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "run-readonly-parity-arm",
                 "campaign.json",
                 "tasks.json",
@@ -511,9 +511,9 @@ class ReadonlyParityTests(unittest.TestCase):
                     approvals=approvals,
                 )
                 with (
-                    patch("conductor_runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/codex"),
+                    patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/codex"),
                     patch(
-                        "conductor_runtime.readonly_parity_run.run_model_workflow",
+                        "conductor_extras.runtime.readonly_parity_run.run_model_workflow",
                         side_effect=RuntimeError("stop before provider execution"),
                     ) as workflow_runner,
                 ):
@@ -616,8 +616,8 @@ class ReadonlyParityTests(unittest.TestCase):
             campaign_path = Path(temporary) / "campaign.json"
             write_readonly_parity_campaign(campaign, campaign_path)
             with (
-                patch("conductor_runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"),
-                patch("conductor_runtime.readonly_parity_run.run_claude_readonly_task", return_value=report),
+                patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"),
+                patch("conductor_extras.runtime.readonly_parity_run.run_claude_readonly_task", return_value=report),
             ):
                 result = run_readonly_parity_arm(
                     campaign_path=campaign_path,
@@ -645,9 +645,9 @@ class ReadonlyParityTests(unittest.TestCase):
             campaign_path = Path(temporary) / "campaign.json"
             write_readonly_parity_campaign(campaign, campaign_path)
             with (
-                patch("conductor_runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"),
+                patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"),
                 patch(
-                    "conductor_runtime.readonly_parity_run.run_claude_readonly_task",
+                    "conductor_extras.runtime.readonly_parity_run.run_claude_readonly_task",
                     return_value=legacy_report,
                 ),
             ):
@@ -776,11 +776,11 @@ class ReadonlyParityTests(unittest.TestCase):
             write_readonly_parity_campaign(campaign, campaign_path)
             with (
                 patch(
-                    "conductor_runtime.readonly_parity_run.shutil.which",
+                    "conductor_extras.runtime.readonly_parity_run.shutil.which",
                     return_value="/usr/bin/claude",
                 ),
                 patch(
-                    "conductor_runtime.readonly_parity_run.run_claude_readonly_task",
+                    "conductor_extras.runtime.readonly_parity_run.run_claude_readonly_task",
                     return_value=report,
                 ),
             ):
@@ -811,10 +811,10 @@ class ReadonlyParityTests(unittest.TestCase):
             write_readonly_parity_campaign(campaign, campaign_path)
             with (
                 patch(
-                    "conductor_runtime.readonly_parity_run.current_runtime_build_sha256",
+                    "conductor_extras.runtime.readonly_parity_run.current_runtime_build_sha256",
                     return_value="0" * 64,
                 ),
-                patch("conductor_runtime.readonly_parity_run.shutil.which") as provider_discovery,
+                patch("conductor_extras.runtime.readonly_parity_run.shutil.which") as provider_discovery,
             ):
                 with self.assertRaisesRegex(ValidationError, "requires exact runtime build"):
                     run_readonly_parity_arm(
@@ -838,9 +838,9 @@ class ReadonlyParityTests(unittest.TestCase):
             campaign_path = Path(temporary) / "campaign.json"
             write_readonly_parity_campaign(campaign, campaign_path)
             with (
-                patch("conductor_runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"),
+                patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"),
                 patch(
-                    "conductor_runtime.readonly_parity_run.run_claude_readonly_task",
+                    "conductor_extras.runtime.readonly_parity_run.run_claude_readonly_task",
                     side_effect=RuntimeError("simulated hard interruption"),
                 ),
             ):
@@ -852,7 +852,7 @@ class ReadonlyParityTests(unittest.TestCase):
                         system="claude-sonnet",
                         policy=policy,
                     )
-            with patch("conductor_runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"):
+            with patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value="/usr/bin/claude"):
                 with self.assertRaisesRegex(ValidationError, "outcome is unknown"):
                     run_readonly_parity_arm(
                         campaign_path=campaign_path,
@@ -910,9 +910,9 @@ class ReadonlyParityTests(unittest.TestCase):
                 return ProcessResult(0, stream, "")
 
             with (
-                patch("conductor_runtime.readonly_parity_run.shutil.which", return_value=str(fake_codex)),
+                patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value=str(fake_codex)),
                 patch(
-                    "conductor_runtime.runner.run_process",
+                    "conductor_extras.runtime.runner.run_process",
                     side_effect=fake_codex_process,
                 ),
             ):
@@ -940,8 +940,8 @@ class ReadonlyParityTests(unittest.TestCase):
                 },
             )
             with (
-                patch("conductor_runtime.readonly_parity_run.shutil.which", return_value=str(fake_codex)),
-                patch("conductor_runtime.runner.run_process", side_effect=fake_codex_process),
+                patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value=str(fake_codex)),
+                patch("conductor_extras.runtime.runner.run_process", side_effect=fake_codex_process),
             ):
                 native_result = run_readonly_parity_arm(
                     campaign_path=campaign_path,
@@ -1019,13 +1019,13 @@ class ReadonlyParityTests(unittest.TestCase):
             campaign_path = root / "campaign.json"
             write_readonly_parity_campaign(campaign, campaign_path)
             with (
-                patch("conductor_runtime.readonly_parity_run.shutil.which", return_value=str(fake_codex)),
+                patch("conductor_extras.runtime.readonly_parity_run.shutil.which", return_value=str(fake_codex)),
                 patch(
-                    "conductor_runtime.runner.run_process",
+                    "conductor_extras.runtime.runner.run_process",
                     return_value=ProcessResult(1, stream, message),
                 ),
                 patch(
-                    "conductor_runtime.readonly_parity_run.reconcile_codex_session_usage",
+                    "conductor_extras.runtime.readonly_parity_run.reconcile_codex_session_usage",
                     return_value=usage,
                 ),
             ):

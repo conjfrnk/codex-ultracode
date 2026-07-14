@@ -9,26 +9,26 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-from . import __version__
-from .artifacts import RunArtifacts
-from .agent_map_packet_terminal import (
+from conductor_runtime import __version__
+from conductor_extras.runtime.artifacts import RunArtifacts
+from conductor_extras.runtime.agent_map_packet_terminal import (
     agent_map_packet_terminal_summary,
     load_agent_map_packet_terminal,
 )
-from .codex_step_terminal import (
+from conductor_extras.runtime.codex_step_terminal import (
     codex_step_terminal_summary,
     load_codex_step_terminal,
 )
-from .codex_progress import codex_progress_summary, load_codex_progress
-from .codex_hook_preflight import restricted_codex_version_range
-from .desktop_notification import (
+from conductor_extras.runtime.codex_progress import codex_progress_summary, load_codex_progress
+from conductor_extras.runtime.codex_hook_preflight import restricted_codex_version_range
+from conductor_extras.runtime.desktop_notification import (
     RUN_NOTIFICATION_STATUSES,
     desktop_notification_status_for_execution,
     load_desktop_notification_receipt,
     send_artifact_desktop_notification,
     send_run_desktop_notification,
 )
-from .agent_profiles import (
+from conductor_extras.runtime.agent_profiles import (
     AGENT_PROFILE_SCHEMA,
     MAX_AGENT_PROFILE_INSTRUCTIONS_BYTES,
     agent_profile_prompt_summary,
@@ -39,7 +39,7 @@ from .agent_profiles import (
     validate_agent_profile,
     write_agent_profile,
 )
-from .agent_memory import (
+from conductor_extras.runtime.agent_memory import (
     AGENT_MEMORY_SELECTIONS,
     AGENT_MEMORY_WRITE_APPROVAL,
     MAX_AGENT_MEMORY_ENTRY_BYTES,
@@ -51,25 +51,25 @@ from .agent_memory import (
     load_agent_memory_file,
     remove_agent_memory_entry,
 )
-from .agent_team import (
+from conductor_extras.runtime.agent_team import (
     agent_team_interruption_summary,
     agent_team_state_summary,
     load_agent_team_interruption,
     load_agent_team_state,
 )
-from .agent_team_operator import (
+from conductor_extras.runtime.agent_team_operator import (
     agent_team_operator_inbox_summary,
     load_agent_team_operator_inbox,
 )
-from .agent_team_chat import (
+from conductor_extras.runtime.agent_team_chat import (
     agent_team_operator_chat_summary,
     load_agent_team_operator_chat,
 )
-from .agent_team_transcript import (
+from conductor_extras.runtime.agent_team_transcript import (
     agent_team_transcript_summary,
     load_agent_team_transcript,
 )
-from .agent_team_merge import (
+from conductor_extras.runtime.agent_team_merge import (
     agent_team_merge_intent_summary,
     agent_team_merge_recovery_summary,
     agent_team_merge_summary,
@@ -79,25 +79,25 @@ from .agent_team_merge import (
     load_agent_team_merge_recovery,
     load_agent_team_merge_transaction,
 )
-from .agent_team_quality_retry import (
+from conductor_extras.runtime.agent_team_quality_retry import (
     agent_team_quality_retry_summary,
     load_agent_team_quality_retry,
 )
-from .agent_team_turn_completion import (
+from conductor_extras.runtime.agent_team_turn_completion import (
     agent_team_turn_completion_summary,
     load_agent_team_turn_completion,
 )
-from .agent_team_turn_terminal import (
+from conductor_extras.runtime.agent_team_turn_terminal import (
     agent_team_turn_terminal_summary,
     load_agent_team_turn_terminal,
 )
-from .agent_team_plan_approval import (
+from conductor_extras.runtime.agent_team_plan_approval import (
     agent_team_plan_approval_summary,
     load_agent_team_plan,
     load_agent_team_plan_approval,
     load_agent_team_plan_review,
 )
-from .auto_orchestrator import (
+from conductor_extras.runtime.auto_orchestrator import (
     AUTO_REASONING_EFFORT,
     AUTO_REASONING_EFFORTS,
     AUTO_STRATEGIES,
@@ -106,23 +106,23 @@ from .auto_orchestrator import (
     run_auto_orchestration,
     summarize_auto_orchestration,
 )
-from .auto_topology_campaign import (
+from conductor_extras.runtime.auto_topology_campaign import (
     AUTO_TOPOLOGIES,
     auto_topology_campaign_status,
     build_auto_topology_campaign,
     load_auto_topology_campaign,
     write_auto_topology_campaign,
 )
-from .auto_topology_run import run_auto_topology_arm
-from .readonly_parity_campaign import (
+from conductor_extras.runtime.auto_topology_run import run_auto_topology_arm
+from conductor_extras.runtime.readonly_parity_campaign import (
     READONLY_PARITY_SYSTEMS,
     build_readonly_parity_campaign,
     load_readonly_parity_campaign,
     readonly_parity_campaign_status,
     write_readonly_parity_campaign,
 )
-from .readonly_parity_run import run_readonly_parity_arm
-from .benchmark import (
+from conductor_extras.runtime.readonly_parity_run import run_readonly_parity_arm
+from conductor_extras.runtime.benchmark import (
     BUDGET_CAP_ENFORCEMENT_LEVELS,
     DEFAULT_LIVE_PARITY_RUN_ID,
     build_live_parity_runbook,
@@ -139,19 +139,19 @@ from .benchmark import (
     write_live_parity_runbook,
     write_run_manifest,
 )
-from .benchmark_quality import (
+from conductor_extras.runtime.benchmark_quality import (
     load_benchmark_quality_evidence,
     load_benchmark_score_input,
     score_benchmark_report,
 )
-from .background_run import (
+from conductor_extras.runtime.background_run import (
     load_background_run,
     runtime_self_command,
     run_background_worker,
     start_background_run,
     wait_for_background_run,
 )
-from .background_goal import (
+from conductor_extras.runtime.background_goal import (
     background_model_goal_liveness,
     latest_background_model_goal,
     load_background_model_goal,
@@ -160,7 +160,7 @@ from .background_goal import (
     terminate_background_model_goal,
     wait_for_background_model_goal,
 )
-from .background_supervisor import (
+from conductor_extras.runtime.background_supervisor import (
     background_routine_supervisor_liveness,
     background_routine_supervisor_routines_dir,
     latest_background_routine_supervisor,
@@ -170,18 +170,18 @@ from .background_supervisor import (
     terminate_background_routine_supervisor,
     wait_for_background_routine_supervisor,
 )
-from .cloud_tasks import apply_cloud_task, cloud_task_status, review_cloud_task, submit_cloud_task
-from .claude_live import (
+from conductor_extras.runtime.cloud_tasks import apply_cloud_task, cloud_task_status, review_cloud_task, submit_cloud_task
+from conductor_extras.runtime.claude_live import (
     CLAUDE_PAID_RUN_APPROVAL,
     load_claude_provider_evidence,
     run_claude_readonly_task,
 )
-from .claude_staged import (
+from conductor_extras.runtime.claude_staged import (
     CLAUDE_STAGED_WRITE_APPROVAL,
     load_claude_staged_evidence,
     run_claude_staged_task,
 )
-from .codex_live import (
+from conductor_extras.runtime.codex_live import (
     CODEX_DEFAULT_SERVICE_TIER,
     CODEX_LIVE_RUN_APPROVAL,
     CODEX_REASONING_EFFORTS,
@@ -190,28 +190,28 @@ from .codex_live import (
     load_codex_provider_evidence,
     run_codex_readonly_task,
 )
-from .codex_config import (
+from conductor_extras.runtime.codex_config import (
     CODEX_PROFILE_TOOL_POLICIES,
     DEFAULT_CODEX_NATIVE_AGENT_THREADS,
     MAX_CODEX_NATIVE_AGENT_THREADS,
     MIN_CODEX_NATIVE_AGENT_THREADS,
 )
-from .codex_staged import (
+from conductor_extras.runtime.codex_staged import (
     CODEX_STAGED_WRITE_APPROVAL,
     load_codex_staged_evidence,
     run_codex_staged_task,
 )
-from .codex_staged_repair import (
+from conductor_extras.runtime.codex_staged_repair import (
     CODEX_STAGED_REPAIR_STATE_SCHEMA,
     load_codex_staged_repair_evidence,
     load_codex_staged_repair_state,
     run_codex_staged_repair,
 )
-from .staged_delivery import (
+from conductor_extras.runtime.staged_delivery import (
     verified_repair_stage_delivery as _verified_repair_stage_delivery,
     verified_stage_delivery as _verified_stage_delivery,
 )
-from .staged_apply import (
+from conductor_extras.runtime.staged_apply import (
     STAGED_APPLY_APPROVAL,
     STAGED_APPLY_DELETE_APPROVAL,
     apply_verified_stage,
@@ -219,7 +219,7 @@ from .staged_apply import (
     load_staged_apply_receipt,
     preflight_new_verified_stage_apply,
 )
-from .dashboard import (
+from conductor_extras.runtime.dashboard import (
     DEFAULT_MAX_AUTO,
     DEFAULT_MAX_GOALS,
     DEFAULT_MAX_REPORTS,
@@ -231,23 +231,23 @@ from .dashboard import (
     summarize_runner,
     write_dashboard,
 )
-from .errors import ConductorError, ValidationError
-from .evidence import (
+from conductor_runtime.errors import ConductorError, ValidationError
+from conductor_extras.runtime.evidence import (
     build_evidence_bundle,
     collect_evidence_report_records,
     load_evidence_bundle,
     require_claim_eligible,
     write_evidence_bundle,
 )
-from .goal_loop import (
+from conductor_extras.runtime.goal_loop import (
     iter_goal_state_paths,
     load_check_prompt_file,
     load_goal_state,
     parse_check_command_json,
     run_goal_loop,
 )
-from .live_server import DEFAULT_LIVE_HOST, DEFAULT_LIVE_PORT, serve_live_dashboard
-from .model_planner import (
+from conductor_extras.runtime.live_server import DEFAULT_LIVE_HOST, DEFAULT_LIVE_PORT, serve_live_dashboard
+from conductor_extras.runtime.model_planner import (
     DEFAULT_MODEL_WORKFLOW_REASONING_EFFORT,
     MAX_MODEL_WORKFLOW_ITEMS,
     MAX_MODEL_WORKFLOW_STEPS,  # noqa: F401 - compatibility re-export
@@ -256,24 +256,24 @@ from .model_planner import (
     load_model_workflow_receipt,
     plan_model_workflow,
 )
-from .model_orchestrator import (
+from conductor_extras.runtime.model_orchestrator import (
     default_model_workflow_run_receipt,
     load_model_workflow_run_receipt,
     run_model_workflow,
     run_reviewed_model_workflow,
 )
-from .model_goal_loop import run_model_goal_loop
-from .agent_packets import BALANCED_AGENT_MAP_MAX_PACKETS
-from .parity_campaign import (
+from conductor_extras.runtime.model_goal_loop import run_model_goal_loop
+from conductor_extras.runtime.agent_packets import BALANCED_AGENT_MAP_MAX_PACKETS
+from conductor_extras.runtime.parity_campaign import (
     PARITY_CAMPAIGN_SYSTEMS,
     build_parity_campaign,
     load_parity_campaign,
     write_parity_campaign,
 )
-from .parity_campaign_status import campaign_status
-from .parity_campaign_run import run_parity_campaign_trial
-from .planner import MAX_PACKET_ITEMS, MAX_TASK_CHARS, PLAN_KINDS, PLAN_PROFILES, build_workflow_plan, write_workflow_plan
-from .paths import (
+from conductor_extras.runtime.parity_campaign_status import campaign_status
+from conductor_extras.runtime.parity_campaign_run import run_parity_campaign_trial
+from conductor_extras.runtime.planner import MAX_PACKET_ITEMS, MAX_TASK_CHARS, PLAN_KINDS, PLAN_PROFILES, build_workflow_plan, write_workflow_plan
+from conductor_extras.runtime.paths import (
     default_agent_memory_dir,
     default_benchmarks_dir,
     default_cloud_dir,
@@ -285,10 +285,10 @@ from .paths import (
     default_routines_dir,
     default_runs_dir,
 )
-from .prepared_run import prepare_run
-from .redaction import redact_json_value, redact_terminal_text, redact_text
-from .runner import DEFAULT_OUTPUT_LIMIT_BYTES, WorkflowRunner
-from .run_console import (
+from conductor_extras.runtime.prepared_run import prepare_run
+from conductor_runtime.redaction import redact_json_value, redact_terminal_text, redact_text
+from conductor_extras.runtime.runner import DEFAULT_OUTPUT_LIMIT_BYTES, WorkflowRunner
+from conductor_extras.runtime.run_console import (
     RUN_CONSOLE_MAX_REFRESH_MS,
     RUN_CONSOLE_MAX_TIMEOUT_SECONDS,
     RUN_CONSOLE_MAX_WIDTH,
@@ -298,7 +298,7 @@ from .run_console import (
     render_run_console,
     run_console_is_terminal,
 )
-from .run_control import (
+from conductor_extras.runtime.run_control import (
     list_team_inbox,
     list_team_plans,
     list_team_questions,
@@ -325,7 +325,7 @@ from .run_control import (
     stop_run,
     terminate_run,
 )
-from .team_console import (
+from conductor_extras.runtime.team_console import (
     TEAM_CONSOLE_DEFAULT_MESSAGE_CHARS,
     TEAM_CONSOLE_LAYOUTS,
     TEAM_CONSOLE_MAX_DISPLAY_EVENTS,
@@ -341,7 +341,7 @@ from .team_console import (
     team_console_is_terminal,
     validate_team_console_snapshot,
 )
-from .routines import (
+from conductor_extras.runtime.routines import (
     build_routine_manifest,
     build_schedule,
     iter_routine_manifest_paths,
@@ -349,7 +349,7 @@ from .routines import (
     routine_list_record,
     write_routine_manifest,
 )
-from .routine_supervisor import (
+from conductor_extras.runtime.routine_supervisor import (
     execute_routine_manifest,
     load_routine_controls,
     load_routine_controls_file,
@@ -361,7 +361,7 @@ from .routine_supervisor import (
     supervise_routines,
     update_routine_schedule,
 )
-from .routine_service import (
+from conductor_extras.runtime.routine_service import (
     ROUTINE_SERVICE_INSTALL_APPROVAL,
     ROUTINE_SERVICE_UNINSTALL_APPROVAL,  # noqa: F401 - compatibility re-export
     ROUTINE_SERVICE_UPDATE_APPROVAL,
@@ -373,7 +373,7 @@ from .routine_service import (
     status_routine_service,
     uninstall_routine_service,
 )
-from .saved_workflows import (
+from conductor_extras.runtime.saved_workflows import (
     apply_saved_workflow_args,
     iter_saved_workflow_entries,
     load_saved_workflow,
@@ -384,9 +384,9 @@ from .saved_workflows import (
     write_saved_workflow_json,
     write_saved_workflow_script,
 )
-from .schemas import SCHEMA_VERSION as SCHEMA_EXPORT_SCHEMA, schema_json, schema_types
-from .session_trace_import import aggregate_session_trace_usage, load_session_trace_import
-from .security import (
+from conductor_extras.runtime.schemas import SCHEMA_VERSION as SCHEMA_EXPORT_SCHEMA, schema_json, schema_types
+from conductor_extras.runtime.session_trace_import import aggregate_session_trace_usage, load_session_trace_import
+from conductor_extras.runtime.security import (
     RuntimePolicy,
     read_regular_file_bytes_no_follow,
     read_regular_text_file_no_follow,
@@ -395,16 +395,16 @@ from .security import (
     write_new_text_file_no_follow,
     write_text_file_no_follow,
 )
-from .usage_import import load_usage_import
-from .workflow import (
+from conductor_extras.runtime.usage_import import load_usage_import
+from conductor_extras.runtime.workflow import (
     MAX_WORKFLOW_JSON_BYTES,
     iter_workflow_files,
     load_workflow,
     validate_workflow,
     workflow_summary,
 )
-from .staged_workspace import require_path_outside_workspace
-from .system_doctor import (
+from conductor_extras.runtime.staged_workspace import require_path_outside_workspace
+from conductor_extras.runtime.system_doctor import (
     CODEX_HOST_REPAIR_APPROVAL,
     inspect_codex_installation,
     repair_codex_host_link,

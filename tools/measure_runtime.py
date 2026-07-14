@@ -26,6 +26,7 @@ DEFAULT_ARCHIVE = PROJECT_ROOT / "dist" / "conductor-runtime.pyz"
 DEFAULT_ARTIFACTS = (
     "skill.zip",
     "conductor-runtime.pyz",
+    "conductor-extras.pyz",
     "release-manifest.json",
     "codex-conductor-marketplace.zip",
     "codex-conductor-bundle.zip",
@@ -34,6 +35,8 @@ METRIC_SENTINEL = "CONDUCTOR_IMPORT_METRIC="
 
 
 def _python_files(root: Path) -> List[Path]:
+    if root.is_file():
+        return [root] if root.suffix == ".py" else []
     return sorted(
         path
         for path in root.rglob("*.py")
@@ -285,9 +288,13 @@ def _run_timed(command: List[str], env: Dict[str, str], cwd: Path) -> Tuple[floa
 
 
 def _startup_metrics(package: str, runs: int) -> Dict:
+    command = [sys.executable, "-m", package, "--version"]
+    return _command_startup_metrics(command, runs)
+
+
+def _command_startup_metrics(command: List[str], runs: int) -> Dict:
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    command = [sys.executable, "-m", package, "--version"]
     samples = []
     for _ in range(runs):
         elapsed, completed = _run_timed(command, env, PROJECT_ROOT)
@@ -336,7 +343,7 @@ print(%r + json.dumps({"runtime_modules": runtime, "all_modules": len(sys.module
     }
 
 
-def _simple_plan_metrics(package: str, runs: int) -> Dict:
+def _simple_plan_metrics(command_prefix: List[str], runs: int, contract: str) -> Dict:
     samples = []
     receipts = []
     with tempfile.TemporaryDirectory(prefix="conductor-measure-") as tmp:
@@ -349,10 +356,7 @@ def _simple_plan_metrics(package: str, runs: int) -> Dict:
             env = os.environ.copy()
             env["PYTHONDONTWRITEBYTECODE"] = "1"
             env["CODEX_CONDUCTOR_HOME"] = str(state)
-            command = [
-                sys.executable,
-                "-m",
-                package,
+            command = command_prefix + [
                 "auto",
                 "--task",
                 "Fix one obvious typo in README.md.",
@@ -371,7 +375,7 @@ def _simple_plan_metrics(package: str, runs: int) -> Dict:
             samples.append(elapsed)
             receipts.append(receipt.stat().st_size if receipt.is_file() else 0)
     return {
-        "contract": "direct-plan-only-no-provider-v1",
+        "contract": contract,
         "provider_launches": 0,
         "receipt_size_bytes": {
             "minimum": min(receipts),
@@ -388,21 +392,46 @@ def build_report(args) -> Dict:
     if not package_root.is_dir() or not tests_root.is_dir() or not archive.is_file():
         raise ValueError("package, tests, and archive paths must exist")
     package_name = package_root.name
-    return {
+    optional_root = PROJECT_ROOT / "conductor_extras"
+    extras_archive = PROJECT_ROOT / "dist" / "conductor-extras.pyz"
+    report = {
         "schema": "conductor.runtime_measurement.v1",
         "python": sys.version.split()[0],
         "production": _source_metrics(package_root),
         "tests": _source_metrics(tests_root),
+        "core_tests": _source_metrics(tests_root / "test_core_runtime.py"),
         "imports": _graph_metrics(
             package_root,
             (f"{package_name}.__main__", f"{package_name}.cli"),
         ),
         "dynamic_startup_imports": _dynamic_import_metrics(package_name),
         "startup": _startup_metrics(package_name, args.runs),
-        "simple_task_overhead": _simple_plan_metrics(package_name, args.runs),
+        "simple_task_overhead": _simple_plan_metrics(
+            [sys.executable, "-m", package_name],
+            args.runs,
+            "source-direct-plan-only-no-provider-v2",
+        ),
+        "packaged_startup": _command_startup_metrics(
+            [sys.executable, str(archive), "--version"],
+            args.runs,
+        ),
+        "packaged_simple_task_overhead": _simple_plan_metrics(
+            [sys.executable, str(archive)],
+            args.runs,
+            "packaged-direct-plan-only-no-provider-v2",
+        ),
         "archive": _archive_metrics(archive),
         "artifacts": _artifact_metrics(PROJECT_ROOT / "dist"),
     }
+    if optional_root.is_dir():
+        report["optional_production"] = _source_metrics(optional_root)
+        report["optional_imports"] = _graph_metrics(
+            optional_root,
+            ("conductor_extras.__main__", "conductor_extras.cli"),
+        )
+    if extras_archive.is_file():
+        report["optional_archive"] = _archive_metrics(extras_archive)
+    return report
 
 
 def parse_args(argv=None):

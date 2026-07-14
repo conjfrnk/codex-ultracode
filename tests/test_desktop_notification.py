@@ -10,13 +10,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from conductor_runtime.artifacts import RunArtifacts
-import conductor_runtime.background_run as background_run
-import conductor_runtime.background_goal as background_goal
-import conductor_runtime.desktop_notification as desktop_notification
-import conductor_runtime.routine_supervisor as routine_supervisor
-from conductor_runtime.legacy_cli import main as cli_main
-from conductor_runtime.desktop_notification import (
+from conductor_extras.runtime.artifacts import RunArtifacts
+import conductor_extras.runtime.background_run as background_run
+import conductor_extras.runtime.background_goal as background_goal
+import conductor_extras.runtime.desktop_notification as desktop_notification
+import conductor_extras.runtime.routine_supervisor as routine_supervisor
+from conductor_extras.cli import main as cli_main
+from conductor_extras.runtime.desktop_notification import (
     DESKTOP_NOTIFICATION_FILENAME_TEMPLATE,
     desktop_notification_directory_for_artifact,
     desktop_notification_status_for_execution,
@@ -25,17 +25,17 @@ from conductor_runtime.desktop_notification import (
     send_run_desktop_notification,
     validate_desktop_notification_receipt,
 )
-from conductor_runtime.auto_orchestrator import run_auto_orchestration
-from conductor_runtime.model_orchestrator import (
+from conductor_extras.runtime.auto_orchestrator import run_auto_orchestration
+from conductor_extras.runtime.model_orchestrator import (
     MODEL_WORKFLOW_EXECUTE_APPROVAL,
     run_model_workflow,
 )
-from conductor_runtime.runner import ProcessResult
-from conductor_runtime.routines import routine_list_record, validate_routine_manifest
+from conductor_extras.runtime.runner import ProcessResult
+from conductor_extras.runtime.routines import routine_list_record, validate_routine_manifest
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.schemas import get_schema, schema_types
-from conductor_runtime.security import RuntimePolicy, assess_command
-from conductor_runtime.saved_workflows import write_saved_workflow_script
+from conductor_extras.runtime.schemas import get_schema, schema_types
+from conductor_extras.runtime.security import RuntimePolicy, assess_command
+from conductor_extras.runtime.saved_workflows import write_saved_workflow_script
 
 
 def _workflow(steps=None):
@@ -66,7 +66,7 @@ class DesktopNotificationTests(unittest.TestCase):
                 calls.append((command, kwargs))
                 return SimpleNamespace(returncode=0)
 
-            with patch("conductor_runtime.desktop_notification._usable_executable", return_value=True):
+            with patch("conductor_extras.runtime.desktop_notification._usable_executable", return_value=True):
                 receipt = send_run_desktop_notification(
                     run,
                     "completed",
@@ -103,7 +103,7 @@ class DesktopNotificationTests(unittest.TestCase):
                 calls.append(command)
                 return SimpleNamespace(returncode=0)
 
-            with patch("conductor_runtime.desktop_notification._usable_executable", return_value=True):
+            with patch("conductor_extras.runtime.desktop_notification._usable_executable", return_value=True):
                 first = send_run_desktop_notification(run, "completed", system_name="Darwin", execute=execute)
                 second = send_run_desktop_notification(run, "completed", system_name="Darwin", execute=execute)
 
@@ -119,7 +119,7 @@ class DesktopNotificationTests(unittest.TestCase):
                 calls.append(command)
                 return SimpleNamespace(returncode=0)
 
-            with patch("conductor_runtime.desktop_notification._usable_executable", return_value=True):
+            with patch("conductor_extras.runtime.desktop_notification._usable_executable", return_value=True):
                 blocked = send_run_desktop_notification(run, "blocked", system_name="Darwin", execute=execute)
                 completed = send_run_desktop_notification(run, "completed", system_name="Darwin", execute=execute)
 
@@ -146,7 +146,7 @@ class DesktopNotificationTests(unittest.TestCase):
             self.assertEqual(receipt["backend"], "unavailable")
 
     def test_linux_backend_uses_only_fixed_trusted_system_path(self):
-        with patch("conductor_runtime.desktop_notification._usable_executable", return_value=True) as usable:
+        with patch("conductor_extras.runtime.desktop_notification._usable_executable", return_value=True) as usable:
             backend, command = desktop_notification._notification_command("Linux", "blocked")
         self.assertEqual(backend, "linux-notify-send")
         self.assertEqual(command[0], "/usr/bin/notify-send")
@@ -165,7 +165,7 @@ class DesktopNotificationTests(unittest.TestCase):
             failed_run = self._create_run(root, "failed-command")
             timeout_run = self._create_run(root, "timed-out-command")
 
-            with patch("conductor_runtime.desktop_notification._usable_executable", return_value=True):
+            with patch("conductor_extras.runtime.desktop_notification._usable_executable", return_value=True):
                 failed = send_run_desktop_notification(
                     failed_run,
                     "failed",
@@ -243,7 +243,7 @@ class DesktopNotificationTests(unittest.TestCase):
                     execute=execute,
                 )
 
-            with patch("conductor_runtime.desktop_notification._usable_executable", return_value=True):
+            with patch("conductor_extras.runtime.desktop_notification._usable_executable", return_value=True):
                 thread = threading.Thread(target=first_sender)
                 thread.start()
                 self.assertTrue(entered.wait(2))
@@ -356,7 +356,7 @@ class DesktopNotificationTests(unittest.TestCase):
                 calls.append(command)
                 return SimpleNamespace(returncode=0)
 
-            with patch("conductor_runtime.desktop_notification._usable_executable", return_value=True):
+            with patch("conductor_extras.runtime.desktop_notification._usable_executable", return_value=True):
                 first = send_artifact_desktop_notification(
                     artifact,
                     "verifier_failed",
@@ -414,7 +414,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 [{"id": "record", "kind": "write_artifact", "output": "done.txt", "content": "done"}],
             )
             receipt = {"status": "delivered", "backend": "macos-osascript"}
-            with patch("conductor_runtime.legacy_cli.send_run_desktop_notification", return_value=receipt) as notify:
+            with patch("conductor_extras.cli.send_run_desktop_notification", return_value=receipt) as notify:
                 stdout = StringIO()
                 with redirect_stdout(stdout):
                     code = cli_main(
@@ -435,7 +435,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 self.assertEqual(notify.call_args.args[1], "completed")
                 self.assertIn("Desktop notification: delivered (macos-osascript)", stdout.getvalue())
 
-            with patch("conductor_runtime.legacy_cli.send_run_desktop_notification") as notify:
+            with patch("conductor_extras.cli.send_run_desktop_notification") as notify:
                 with redirect_stdout(StringIO()):
                     code = cli_main(
                         [
@@ -468,7 +468,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
             )
             receipt = {"status": "delivered", "backend": "macos-osascript"}
             stderr = StringIO()
-            with patch("conductor_runtime.legacy_cli.send_run_desktop_notification", return_value=receipt) as notify:
+            with patch("conductor_extras.cli.send_run_desktop_notification", return_value=receipt) as notify:
                 with redirect_stdout(StringIO()), redirect_stderr(stderr):
                     code = cli_main(
                         [
@@ -497,7 +497,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
             )
             stderr = StringIO()
             with patch(
-                "conductor_runtime.legacy_cli.send_run_desktop_notification",
+                "conductor_extras.cli.send_run_desktop_notification",
                 side_effect=RuntimeError("backend detail must not escape"),
             ):
                 with redirect_stdout(StringIO()), redirect_stderr(stderr):
@@ -578,7 +578,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 "python3",
                 "-B",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "validate-desktop-notification",
                 "receipt.json",
             ]
@@ -604,7 +604,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
                     metadata={"status": "active"},
                 )
 
-            with patch("conductor_runtime.legacy_cli.start_background_run", side_effect=fake_start):
+            with patch("conductor_extras.cli.start_background_run", side_effect=fake_start):
                 with redirect_stdout(StringIO()):
                     enabled = cli_main(
                         [
@@ -654,7 +654,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 "notify",
             )
             receipt = {"status": "delivered", "backend": "macos-osascript"}
-            with patch("conductor_runtime.legacy_cli.send_run_desktop_notification", return_value=receipt) as notify:
+            with patch("conductor_extras.cli.send_run_desktop_notification", return_value=receipt) as notify:
                 with redirect_stdout(StringIO()):
                     code = cli_main(
                         [
@@ -698,8 +698,8 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 goal_path=goal_path,
                 run_dirs=[],
             )
-            with patch("conductor_runtime.legacy_cli.run_goal_loop", return_value=fixed_result), patch(
-                "conductor_runtime.legacy_cli.send_artifact_desktop_notification",
+            with patch("conductor_extras.cli.run_goal_loop", return_value=fixed_result), patch(
+                "conductor_extras.cli.send_artifact_desktop_notification",
                 return_value=receipt,
             ) as notify:
                 with redirect_stdout(StringIO()):
@@ -728,8 +728,8 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 goal_path=goal_path,
                 run_dirs=[],
             )
-            with patch("conductor_runtime.legacy_cli.run_model_goal_loop", return_value=model_result), patch(
-                "conductor_runtime.legacy_cli.send_artifact_desktop_notification",
+            with patch("conductor_extras.cli.run_model_goal_loop", return_value=model_result), patch(
+                "conductor_extras.cli.send_artifact_desktop_notification",
                 return_value=receipt,
             ) as notify:
                 with redirect_stdout(StringIO()):
@@ -768,8 +768,8 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 error_class="",
             )
             receipt = {"status": "delivered", "backend": "macos-osascript"}
-            with patch("conductor_runtime.legacy_cli.run_model_workflow", return_value=result) as execute, patch(
-                "conductor_runtime.legacy_cli.send_run_desktop_notification",
+            with patch("conductor_extras.cli.run_model_workflow", return_value=result) as execute, patch(
+                "conductor_extras.cli.send_run_desktop_notification",
                 return_value=receipt,
             ) as notify:
                 with redirect_stdout(StringIO()):
@@ -790,7 +790,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
             self.assertEqual(notify.call_count, 1)
             self.assertEqual(notify.call_args.args[1], "completed")
 
-            with patch("conductor_runtime.legacy_cli.run_model_workflow") as execute:
+            with patch("conductor_extras.cli.run_model_workflow") as execute:
                 stderr = StringIO()
                 with redirect_stderr(stderr):
                     code = cli_main(
@@ -826,10 +826,10 @@ class DesktopNotificationCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with patch(
-                "conductor_runtime.model_planner.run_process",
+                "conductor_extras.runtime.model_planner.run_process",
                 side_effect=fake_planner,
             ), patch(
-                "conductor_runtime.model_orchestrator.start_prepared_background_run",
+                "conductor_extras.runtime.model_orchestrator.start_prepared_background_run",
                 return_value=SimpleNamespace(pid=12345),
             ) as start:
                 result = run_model_workflow(
@@ -871,10 +871,10 @@ class DesktopNotificationCliTests(unittest.TestCase):
             )
             receipt = {"status": "delivered", "backend": "macos-osascript"}
             with patch(
-                "conductor_runtime.legacy_cli.run_reviewed_model_workflow",
+                "conductor_extras.cli.run_reviewed_model_workflow",
                 return_value=result,
             ) as execute, patch(
-                "conductor_runtime.legacy_cli.send_run_desktop_notification",
+                "conductor_extras.cli.send_run_desktop_notification",
                 return_value=receipt,
             ) as notify:
                 with redirect_stdout(StringIO()):
@@ -907,9 +907,9 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 pid=12345,
             )
             with patch(
-                "conductor_runtime.legacy_cli.start_background_model_goal",
+                "conductor_extras.cli.start_background_model_goal",
                 return_value=background_result,
-            ) as start, patch("conductor_runtime.legacy_cli.send_artifact_desktop_notification") as notify:
+            ) as start, patch("conductor_extras.cli.send_artifact_desktop_notification") as notify:
                 with redirect_stdout(StringIO()):
                     code = cli_main(
                         [
@@ -949,8 +949,8 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 error_message="",
             )
             receipt = {"status": "delivered", "backend": "macos-osascript"}
-            with patch("conductor_runtime.legacy_cli.run_auto_orchestration", return_value=auto_result) as execute, patch(
-                "conductor_runtime.legacy_cli.send_artifact_desktop_notification",
+            with patch("conductor_extras.cli.run_auto_orchestration", return_value=auto_result) as execute, patch(
+                "conductor_extras.cli.send_artifact_desktop_notification",
                 return_value=receipt,
             ) as notify:
                 with redirect_stdout(StringIO()):
@@ -1001,7 +1001,7 @@ class DesktopNotificationCliTests(unittest.TestCase):
                 "error_class": "",
             }
             with patch(
-                "conductor_runtime.auto_orchestrator._run_auto_goal",
+                "conductor_extras.runtime.auto_orchestrator._run_auto_goal",
                 return_value=child_result,
             ) as run_goal:
                 result = run_auto_orchestration(
@@ -1090,8 +1090,8 @@ class DesktopNotificationCliTests(unittest.TestCase):
                     self.run.mark_run_status("completed")
                     return self.run
 
-            with patch("conductor_runtime.routine_supervisor.WorkflowRunner", FakeRunner), patch(
-                "conductor_runtime.routine_supervisor.send_run_desktop_notification",
+            with patch("conductor_extras.runtime.routine_supervisor.WorkflowRunner", FakeRunner), patch(
+                "conductor_extras.runtime.routine_supervisor.send_run_desktop_notification",
                 return_value={"status": "delivered", "backend": "macos-osascript"},
             ) as notify:
                 result = routine_supervisor._execute_routine_in_process(
@@ -1134,7 +1134,7 @@ class DesktopNotificationBackgroundWorkerTests(unittest.TestCase):
             background_goal.validate_background_model_goal(equals_form)
 
     def test_internal_model_goal_worker_dispatch_propagates_flag(self):
-        with patch("conductor_runtime.legacy_cli.run_background_model_goal_worker", return_value=0) as worker:
+        with patch("conductor_extras.cli.run_background_model_goal_worker", return_value=0) as worker:
             code = cli_main(
                 [
                     "_background-model-goal-worker",
@@ -1191,34 +1191,34 @@ class DesktopNotificationBackgroundWorkerTests(unittest.TestCase):
             with ExitStack() as stack:
                 stack.enter_context(
                     patch(
-                        "conductor_runtime.background_goal.load_background_model_goal",
+                        "conductor_extras.runtime.background_goal.load_background_model_goal",
                         return_value=metadata,
                     )
                 )
                 stack.enter_context(
-                    patch("conductor_runtime.background_goal._read_payload", return_value=payload)
+                    patch("conductor_extras.runtime.background_goal._read_payload", return_value=payload)
                 )
-                stack.enter_context(patch("conductor_runtime.background_goal._validate_worker_identity"))
-                stack.enter_context(patch("conductor_runtime.background_goal._validate_payload_matches_metadata"))
+                stack.enter_context(patch("conductor_extras.runtime.background_goal._validate_worker_identity"))
+                stack.enter_context(patch("conductor_extras.runtime.background_goal._validate_payload_matches_metadata"))
                 stack.enter_context(
                     patch(
-                        "conductor_runtime.background_goal._policy_from_payload",
+                        "conductor_extras.runtime.background_goal._policy_from_payload",
                         return_value=RuntimePolicy(),
                     )
                 )
                 stack.enter_context(
-                    patch("conductor_runtime.background_goal._heartbeat_loop", return_value=None)
+                    patch("conductor_extras.runtime.background_goal._heartbeat_loop", return_value=None)
                 )
                 stack.enter_context(
                     patch(
-                        "conductor_runtime.background_goal.run_model_goal_loop",
+                        "conductor_extras.runtime.background_goal.run_model_goal_loop",
                         return_value=result,
                     )
                 )
-                stack.enter_context(patch("conductor_runtime.background_goal._replace_metadata"))
+                stack.enter_context(patch("conductor_extras.runtime.background_goal._replace_metadata"))
                 notify = stack.enter_context(
                     patch(
-                        "conductor_runtime.background_goal.send_artifact_desktop_notification",
+                        "conductor_extras.runtime.background_goal.send_artifact_desktop_notification",
                         return_value=receipt,
                     )
                 )
@@ -1292,26 +1292,26 @@ class DesktopNotificationBackgroundWorkerTests(unittest.TestCase):
                 return self.run
 
         with ExitStack() as stack:
-            stack.enter_context(patch("conductor_runtime.background_run.load_background_run", return_value=metadata))
-            stack.enter_context(patch("conductor_runtime.background_run._read_launch_payload", return_value=payload))
-            stack.enter_context(patch("conductor_runtime.background_run._validate_worker_identity"))
-            stack.enter_context(patch("conductor_runtime.background_run._validate_payload_matches_metadata"))
+            stack.enter_context(patch("conductor_extras.runtime.background_run.load_background_run", return_value=metadata))
+            stack.enter_context(patch("conductor_extras.runtime.background_run._read_launch_payload", return_value=payload))
+            stack.enter_context(patch("conductor_extras.runtime.background_run._validate_worker_identity"))
+            stack.enter_context(patch("conductor_extras.runtime.background_run._validate_payload_matches_metadata"))
             stack.enter_context(
-                patch("conductor_runtime.background_run._policy_from_payload", return_value=RuntimePolicy())
+                patch("conductor_extras.runtime.background_run._policy_from_payload", return_value=RuntimePolicy())
             )
-            stack.enter_context(patch("conductor_runtime.background_run.load_workflow", return_value=_workflow()))
-            stack.enter_context(patch("conductor_runtime.background_run.WorkflowRunner", FakeRunner))
-            stack.enter_context(patch("conductor_runtime.background_run._record_background_state"))
-            stack.enter_context(patch("conductor_runtime.background_run._write_background_metadata"))
+            stack.enter_context(patch("conductor_extras.runtime.background_run.load_workflow", return_value=_workflow()))
+            stack.enter_context(patch("conductor_extras.runtime.background_run.WorkflowRunner", FakeRunner))
+            stack.enter_context(patch("conductor_extras.runtime.background_run._record_background_state"))
+            stack.enter_context(patch("conductor_extras.runtime.background_run._write_background_metadata"))
             stack.enter_context(
                 patch(
-                    "conductor_runtime.background_run._finalize_completion_receipt",
+                    "conductor_extras.runtime.background_run._finalize_completion_receipt",
                     side_effect=completion_side_effect,
                 )
             )
             notifier = stack.enter_context(
                 patch(
-                    "conductor_runtime.background_run.send_run_desktop_notification",
+                    "conductor_extras.runtime.background_run.send_run_desktop_notification",
                     side_effect=notification_side_effect,
                     return_value={"status": "delivered", "backend": "macos-osascript"},
                 )

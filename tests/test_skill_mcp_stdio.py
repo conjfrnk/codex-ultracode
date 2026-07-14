@@ -11,27 +11,27 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from conductor_runtime.agent_profiles import (
+from conductor_extras.runtime.agent_profiles import (
     AGENT_PROFILE_SCHEMA,
     _read_agent_profile_skill_record,
     agent_profile_summary,
     effective_agent_step,
 )
-from conductor_runtime.agent_team import AGENT_TEAM_TURN_SCHEMA
-from conductor_runtime.agent_skill_mcp import codex_skill_mcp_config_arg
-from conductor_runtime.codex_checkpoint import (
+from conductor_extras.runtime.agent_team import AGENT_TEAM_TURN_SCHEMA
+from conductor_extras.runtime.agent_skill_mcp import codex_skill_mcp_config_arg
+from conductor_extras.runtime.codex_checkpoint import (
     load_codex_step_checkpoint,
     write_codex_step_checkpoint,
 )
-from conductor_runtime.codex_hook_preflight import (
+from conductor_extras.runtime.codex_hook_preflight import (
     SESSION_HOOK_KEY,
     hooks_state_config_arg,
 )
 from conductor_runtime.errors import PolicyError, ValidationError
-from conductor_runtime.run_control import recover_run
-from conductor_runtime.runner import ProcessResult, WorkflowRunner
-from conductor_runtime.security import RuntimePolicy, enforce_agent_policy
-from conductor_runtime.skill_mcp_stdio import SkillMcpStdioLaunch
+from conductor_extras.runtime.run_control import recover_run
+from conductor_extras.runtime.runner import ProcessResult, WorkflowRunner
+from conductor_extras.runtime.security import RuntimePolicy, enforce_agent_policy
+from conductor_extras.runtime.skill_mcp_stdio import SkillMcpStdioLaunch
 
 
 def _stdio_dependency(skill: str, args=None):
@@ -275,7 +275,7 @@ class SkillMcpStdioTests(unittest.TestCase):
             dependency = _stdio_dependency(skill, ["--root", "docs folder"])
             profile = _profile(skill, dependency)
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=_discovery(
                     root,
                     skill,
@@ -293,7 +293,7 @@ class SkillMcpStdioTests(unittest.TestCase):
 
             for command in ("scripts/other.py", "scripts/server.py && echo bad", "$SERVER"):
                 with self.subTest(command=command), mock.patch(
-                    "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                    "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                     return_value=_discovery(root, skill, command=command),
                 ), self.assertRaisesRegex(ValidationError, "stdio"):
                     WorkflowRunner(
@@ -305,7 +305,7 @@ class SkillMcpStdioTests(unittest.TestCase):
 
             (root / skill / "scripts" / "server.py").chmod(0o644)
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=_discovery(
                     root,
                     skill,
@@ -333,15 +333,15 @@ class SkillMcpStdioTests(unittest.TestCase):
             )
             patches = (
                 mock.patch(
-                    "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                    "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                     return_value=discovery,
                 ),
                 mock.patch(
-                    "conductor_runtime.runner.restricted_hook_python",
+                    "conductor_extras.runtime.runner.restricted_hook_python",
                     return_value="/usr/bin/python3",
                 ),
                 mock.patch(
-                    "conductor_runtime.runner.prepare_restricted_hook_state",
+                    "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                     return_value=_preflight(),
                 ),
             )
@@ -381,13 +381,13 @@ class SkillMcpStdioTests(unittest.TestCase):
             )
             self.assertEqual(recovered["resolution"], "resume-codex")
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=_preflight(),
             ):
                 resumed = _CaptureRunner(
@@ -422,13 +422,13 @@ class SkillMcpStdioTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=_preflight(),
             ):
                 mapped = _CaptureRunner(
@@ -491,13 +491,13 @@ class SkillMcpStdioTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=_preflight(),
             ):
                 team = _CaptureRunner(

@@ -6,20 +6,20 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.agent_packets import packetize_agent_items
-from conductor_runtime.claude_saved_workflows import compile_claude_saved_workflow
-from conductor_runtime.legacy_cli import main as cli_main
+from conductor_extras.runtime.agent_packets import packetize_agent_items
+from conductor_extras.runtime.claude_saved_workflows import compile_claude_saved_workflow
+from conductor_extras.cli import main as cli_main
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.packet_items import read_packet_items_json_file
-from conductor_runtime.runner import WorkflowRunner, _agent_output_relative, _agent_packet_label
-from conductor_runtime.saved_workflows import (
+from conductor_extras.runtime.packet_items import read_packet_items_json_file
+from conductor_extras.runtime.runner import WorkflowRunner, _agent_output_relative, _agent_packet_label
+from conductor_extras.runtime.saved_workflows import (
     apply_saved_workflow_args,
     load_saved_workflow,
     parse_saved_workflow_args,
 )
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy
-from conductor_runtime.workflow import validate_workflow
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy
+from conductor_extras.runtime.workflow import validate_workflow
 
 
 OFFICIAL_EXAMPLE = """\
@@ -1409,7 +1409,7 @@ return report
             workflow_dir.mkdir(parents=True)
             (workflow_dir / "report.js").write_text(source, encoding="utf-8")
             stdout = StringIO()
-            with patch("conductor_runtime.legacy_cli.WorkflowRunner", ResultFixtureRunner):
+            with patch("conductor_extras.cli.WorkflowRunner", ResultFixtureRunner):
                 with redirect_stdout(stdout):
                     code = cli_main(
                         [

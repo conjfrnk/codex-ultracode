@@ -479,7 +479,7 @@ def plan_model_workflow(
         ) from exc
     task_sha256 = _sha256_text(task_text)
     workflow["generated_by"] = {
-        "tool": "conductor_runtime plan-model-workflow",
+        "tool": "conductor_extras plan-model-workflow",
         "model_authored": True,
         "prompt_contract": MODEL_WORKFLOW_PROMPT_CONTRACT,
         "task_sha256": task_sha256,
@@ -680,7 +680,7 @@ def plan_direct_model_workflow(
         else DIRECT_MODEL_WORKFLOW_PROMPT_CONTRACT
     )
     workflow["generated_by"] = {
-        "tool": "conductor_runtime auto",
+        "tool": "conductor_extras auto",
         "model_authored": False,
         "planning_mode": (
             "deterministic-native-direct"

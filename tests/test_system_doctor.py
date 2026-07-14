@@ -7,10 +7,10 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.legacy_cli import main as cli_main
+from conductor_extras.cli import main as cli_main
 from conductor_runtime.errors import PolicyError, ValidationError
-from conductor_runtime.security import assess_command
-from conductor_runtime.system_doctor import (
+from conductor_extras.runtime.security import assess_command
+from conductor_extras.runtime.system_doctor import (
     CODEX_HOST_REPAIR_APPROVAL,
     inspect_codex_installation,
     repair_codex_host_link,
@@ -102,7 +102,7 @@ class SystemDoctorTests(unittest.TestCase):
             launcher, _source, _destination = self._installation(Path(tmp))
             stdout = StringIO()
             with patch(
-                "conductor_runtime.system_doctor.shutil.which",
+                "conductor_extras.runtime.system_doctor.shutil.which",
                 return_value=str(launcher),
             ), redirect_stdout(stdout):
                 code = cli_main(["doctor", "--json"])
@@ -111,13 +111,13 @@ class SystemDoctorTests(unittest.TestCase):
             self.assertEqual(payload["codex"]["status"], "codex-host-missing")
 
     def test_doctor_repair_is_not_classified_read_only(self):
-        read = assess_command(["python3", "-B", "-m", "conductor_runtime", "doctor"])
+        read = assess_command(["python3", "-B", "-m", "conductor_extras", "doctor"])
         repair = assess_command(
             [
                 "python3",
                 "-B",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "doctor",
                 "--repair-codex-host",
                 "--approve",

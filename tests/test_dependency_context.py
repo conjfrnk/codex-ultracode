@@ -6,29 +6,29 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.dashboard import (
+from conductor_extras.runtime.dashboard import (
     _step_agent_budget_text,
     _summarize_steps,
     collect_run_detail,
 )
-from conductor_runtime.diagnostics import diagnose_run_detail
+from conductor_extras.runtime.diagnostics import diagnose_run_detail
 from conductor_runtime.errors import StepExecutionError, ValidationError
-from conductor_runtime.goal_loop import (
+from conductor_extras.runtime.goal_loop import (
     authoritative_workflow_completion_step,
     load_satisfied_workflow_completion,
 )
-from conductor_runtime.model_verdict import parse_model_verdict
-from conductor_runtime.planner import build_workflow_plan
-from conductor_runtime.runner import (
+from conductor_extras.runtime.model_verdict import parse_model_verdict
+from conductor_extras.runtime.planner import build_workflow_plan
+from conductor_extras.runtime.runner import (
     CODEX_CONTEXT_BEGIN,
     CODEX_CONTEXT_END,
     MAX_CODEX_CONTEXT_BYTES,
     ProcessResult,
     WorkflowRunner,
 )
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy
-from conductor_runtime.workflow import (
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy
+from conductor_extras.runtime.workflow import (
     MAX_CODEX_CONTEXT_SOURCES,
     validate_workflow,
     workflow_fingerprint,
@@ -559,7 +559,7 @@ class DependencyContextTests(unittest.TestCase):
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(payload, encoding="utf-8")
             with patch(
-                "conductor_runtime.runner._file_hash_record",
+                "conductor_extras.runtime.runner._file_hash_record",
                 side_effect=AssertionError("completion verdict reopened for hashing"),
             ):
                 result = runner._completion_verdict_result(step, output_path)

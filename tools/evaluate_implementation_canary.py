@@ -15,10 +15,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from conductor_runtime.benchmark import load_benchmark_report
-from conductor_runtime.claude_staged import _prepare_verifier, _run_verifier
+from conductor_extras.runtime.benchmark import load_benchmark_report
+from conductor_extras.runtime.claude_staged import _prepare_verifier, _run_verifier
 from conductor_runtime.errors import ConductorError, ValidationError
-from conductor_runtime.staged_workspace import (
+from conductor_extras.runtime.staged_workspace import (
     build_workspace_patch,
     copy_workspace_to_stage,
     snapshot_workspace,

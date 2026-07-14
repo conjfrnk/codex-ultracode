@@ -6,19 +6,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.background_goal import _build_payload, _encode_payload, _read_payload
-from conductor_runtime.dashboard import _summarize_goal
+from conductor_extras.runtime.background_goal import _build_payload, _encode_payload, _read_payload
+from conductor_extras.runtime.dashboard import _summarize_goal
 from conductor_runtime.errors import PolicyError, ValidationError
-from conductor_runtime.goal_loop import load_goal_state
-from conductor_runtime.model_goal_loop import (
+from conductor_extras.runtime.goal_loop import load_goal_state
+from conductor_extras.runtime.model_goal_loop import (
     DYNAMIC_GOAL_INTERVAL_MODE,
     run_model_goal_loop,
     validate_model_goal_loop_request,
 )
-from conductor_runtime.model_orchestrator import MODEL_WORKFLOW_EXECUTE_APPROVAL
-from conductor_runtime.model_verdict import parse_dynamic_model_verdict
-from conductor_runtime.runner import ProcessResult
-from conductor_runtime.security import RuntimePolicy
+from conductor_extras.runtime.model_orchestrator import MODEL_WORKFLOW_EXECUTE_APPROVAL
+from conductor_extras.runtime.model_verdict import parse_dynamic_model_verdict
+from conductor_extras.runtime.runner import ProcessResult
+from conductor_extras.runtime.security import RuntimePolicy
 
 
 class DynamicGoalIntervalTests(unittest.TestCase):
@@ -153,9 +153,9 @@ class DynamicGoalIntervalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
-                    with patch("conductor_runtime.model_goal_loop.time.sleep") as sleeper:
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
+                    with patch("conductor_extras.runtime.model_goal_loop.time.sleep") as sleeper:
                         result = self._run(root)
             state = load_goal_state(result.goal_path)
             dashboard = _summarize_goal(
@@ -221,10 +221,10 @@ class DynamicGoalIntervalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
                     with patch(
-                        "conductor_runtime.model_goal_loop.time.sleep",
+                        "conductor_extras.runtime.model_goal_loop.time.sleep",
                         side_effect=KeyboardInterrupt,
                     ):
                         with self.assertRaises(KeyboardInterrupt):
@@ -240,7 +240,7 @@ class DynamicGoalIntervalTests(unittest.TestCase):
                         "waiting",
                     )
                     with patch(
-                        "conductor_runtime.model_goal_loop.time.sleep"
+                        "conductor_extras.runtime.model_goal_loop.time.sleep"
                     ) as resumed_sleep:
                         result = self._run(
                             root,
@@ -300,9 +300,9 @@ class DynamicGoalIntervalTests(unittest.TestCase):
                     }
                 ]
             )
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
-                    with patch("conductor_runtime.model_goal_loop.time.sleep") as sleeper:
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
+                    with patch("conductor_extras.runtime.model_goal_loop.time.sleep") as sleeper:
                         result = self._run(root)
             state = load_goal_state(result.goal_path)
 
@@ -359,13 +359,13 @@ class DynamicGoalIntervalTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
                     with patch(
-                        "conductor_runtime.model_goal_loop.run_process",
+                        "conductor_extras.runtime.model_goal_loop.run_process",
                         side_effect=fake_monitor,
                     ):
-                        with patch("conductor_runtime.model_goal_loop.time.sleep") as sleeper:
+                        with patch("conductor_extras.runtime.model_goal_loop.time.sleep") as sleeper:
                             result = self._run(
                                 root,
                                 monitor_command=["tail", "-f", "status.log"],
@@ -435,13 +435,13 @@ class DynamicGoalIntervalTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
                     with patch(
-                        "conductor_runtime.model_goal_loop.run_process",
+                        "conductor_extras.runtime.model_goal_loop.run_process",
                         side_effect=fake_monitor,
                     ):
-                        with patch("conductor_runtime.model_goal_loop.time.sleep") as sleeper:
+                        with patch("conductor_extras.runtime.model_goal_loop.time.sleep") as sleeper:
                             result = self._run(
                                 root,
                                 monitor_command=["tail", "-f", "status.log"],
@@ -481,8 +481,8 @@ class DynamicGoalIntervalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
                     result = self._run(
                         root,
                         monitor_command=["printf", "deployment complete\n"],
@@ -511,10 +511,10 @@ class DynamicGoalIntervalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
                     with patch(
-                        "conductor_runtime.model_goal_loop.run_process",
+                        "conductor_extras.runtime.model_goal_loop.run_process",
                         return_value=ProcessResult(2, "", "monitor failed\n"),
                     ):
                         with self.assertRaisesRegex(
@@ -560,10 +560,10 @@ class DynamicGoalIntervalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
                     with patch(
-                        "conductor_runtime.model_goal_loop.run_process",
+                        "conductor_extras.runtime.model_goal_loop.run_process",
                         side_effect=KeyboardInterrupt,
                     ):
                         with self.assertRaises(KeyboardInterrupt):
@@ -579,10 +579,10 @@ class DynamicGoalIntervalTests(unittest.TestCase):
                         "active",
                     )
                     with patch(
-                        "conductor_runtime.model_goal_loop.run_process"
+                        "conductor_extras.runtime.model_goal_loop.run_process"
                     ) as resumed_monitor:
                         with patch(
-                            "conductor_runtime.model_goal_loop.time.sleep"
+                            "conductor_extras.runtime.model_goal_loop.time.sleep"
                         ) as resumed_sleep:
                             result = self._run(
                                 root,
@@ -617,10 +617,10 @@ class DynamicGoalIntervalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=planner):
-                with patch("conductor_runtime.goal_loop.run_process", side_effect=verifier):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=planner):
+                with patch("conductor_extras.runtime.goal_loop.run_process", side_effect=verifier):
                     with patch(
-                        "conductor_runtime.model_goal_loop.run_process",
+                        "conductor_extras.runtime.model_goal_loop.run_process",
                         side_effect=KeyboardInterrupt,
                     ):
                         with self.assertRaises(KeyboardInterrupt):

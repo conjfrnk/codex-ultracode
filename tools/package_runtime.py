@@ -23,6 +23,14 @@ manifest_output = dist / "release-manifest.json"
 plugin_output = dist / "codex-conductor-marketplace.zip"
 installer_source = project_root / "tools" / "install_bundle.py"
 REPRODUCIBLE_MTIME = 315619200  # 1980-01-02 UTC, portable across local ZIP time zones.
+MAX_DEFAULT_RUNTIME_BYTES = 500 * 1024
+CORE_RUNTIME_FILES = (
+    "__init__.py",
+    "__main__.py",
+    "cli.py",
+    "errors.py",
+    "redaction.py",
+)
 
 
 def runtime_version() -> str:
@@ -55,21 +63,11 @@ for output in (runtime_output, bundle_output, manifest_output, plugin_output):
 
 with tempfile.TemporaryDirectory(prefix="conductor-zipapp-") as tmp:
     staging = Path(tmp)
-    shutil.copytree(
-        runtime_root,
-        staging / "conductor_runtime",
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-    )
-    (staging / "tools").mkdir()
-    shutil.copy2(project_root / "tools" / "__init__.py", staging / "tools" / "__init__.py")
-    shutil.copy2(
-        project_root / "tools" / "evaluate_implementation_canary.py",
-        staging / "tools" / "evaluate_implementation_canary.py",
-    )
-    shutil.copy2(
-        project_root / "tools" / "evaluate_readonly_diagnostic.py",
-        staging / "tools" / "evaluate_readonly_diagnostic.py",
-    )
+    package = staging / "conductor_runtime"
+    package.mkdir()
+    for relative in CORE_RUNTIME_FILES:
+        shutil.copy2(runtime_root / relative, package / relative)
+    shutil.copytree(runtime_root / "core", package / "core", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     (staging / "__main__.py").write_text(
         "from conductor_runtime.__main__ import entrypoint\n\nraise SystemExit(entrypoint())\n",
         encoding="utf-8",
@@ -82,6 +80,8 @@ with tempfile.TemporaryDirectory(prefix="conductor-zipapp-") as tmp:
         compressed=True,
     )
 os.utime(runtime_output, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME))
+if runtime_output.stat().st_size >= MAX_DEFAULT_RUNTIME_BYTES:
+    raise SystemExit("Package failed: default runtime exceeds 500 KiB")
 
 skill_manifest = build_skill_manifest(skill_root)
 runtime_size = runtime_output.stat().st_size
@@ -115,16 +115,9 @@ bundle_entries = [
     (runtime_output.name, runtime_output),
     ("install.py", installer_source),
     (manifest_output.name, manifest_output),
-    ("tools/evaluate_implementation_canary.py", project_root / "tools" / "evaluate_implementation_canary.py"),
-    ("tools/evaluate_readonly_diagnostic.py", project_root / "tools" / "evaluate_readonly_diagnostic.py"),
 ]
 for directory in [
     skill_root,
-    project_root / ".agents",
-    project_root / ".claude" / "workflows",
-    project_root / "conductor-workflows",
-    project_root / "benchmark-suites",
-    project_root / "docs",
 ]:
     bundle_entries.extend(
         (path.relative_to(project_root).as_posix(), path)

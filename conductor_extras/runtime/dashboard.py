@@ -130,7 +130,7 @@ STEP_HANDLE_PREFIX = "step-"
 AGENT_MAP_TRACE_SCHEMA = "conductor.agent_map_trace.v1"
 LAUNCH_MANIFEST_SCHEMA = "conductor.launch_manifest.v1"
 LAUNCH_COMMAND_MAX_CHARS = 1200
-LAUNCH_RESUME_PREFIX = ["python3", "-B", "-m", "conductor_runtime", "run"]
+LAUNCH_RESUME_PREFIX = ["python3", "-B", "-m", "conductor_extras", "run"]
 LAUNCH_RESUME_VALUE_OPTIONS = {"--workspace", "--runs-dir", "--resume", "--max-workers"}
 LAUNCH_RESUME_FLAGS = {
     "--allow-writes",
@@ -2834,7 +2834,7 @@ def _approval_id_for_step(step_id: str, meta: Dict) -> str:
 
 
 def _approval_command_hint(approval_id: str) -> str:
-    return "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR --approve %s" % APPROVAL_ID_PLACEHOLDER
+    return "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR --approve %s" % APPROVAL_ID_PLACEHOLDER
 
 
 def _step_detail(raw_detail, kind: str, status: str) -> str:
@@ -2937,7 +2937,7 @@ def _runtime_summary(workflow_steps, steps: List[Dict], run_status: str = "unkno
             operator_actions.append(item)
         elif status in {"pending", "unknown"} or (status == "planned" and run_status == "needs_resume"):
             item["category"] = "ready"
-            item["command"] = "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR"
+            item["command"] = "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR"
             ready.append(item)
         else:
             item["category"] = status
@@ -3014,7 +3014,7 @@ def _runtime_waiting_on(
 
 
 def _step_recovery_command(action: str, step_id: str, reason: str) -> str:
-    return "python3 -m conductor_runtime %s RUN_DIR %s --reason %s" % (
+    return "python3 -m conductor_extras %s RUN_DIR %s --reason %s" % (
         action,
         shlex.quote(redact_text(step_id)),
         shlex.quote(reason),
@@ -5441,7 +5441,7 @@ def _render_detail_approvals(approvals: Dict) -> str:
     for item in pending:
         if not isinstance(item, dict):
             continue
-        command = item.get("command") or "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>"
+        command = item.get("command") or "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>"
         rows.append(
             "<tr><td><code>%s</code></td><td>%s</td><td><code>%s</code></td><td><code>%s</code></td></tr>"
             % (

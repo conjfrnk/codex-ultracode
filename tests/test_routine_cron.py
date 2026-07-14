@@ -11,15 +11,15 @@ from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from conductor_runtime.legacy_cli import main as cli_main
+from conductor_extras.cli import main as cli_main
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.routine_supervisor import (
+from conductor_extras.runtime.routine_supervisor import (
     load_routine_controls,
     load_supervisor_state,
     routine_due_slot,
     run_due_routines,
 )
-from conductor_runtime.routine_service import (
+from conductor_extras.runtime.routine_service import (
     ROUTINE_SERVICE_INSTALL_APPROVAL,
     build_routine_service_grant,
     install_routine_service,
@@ -27,7 +27,7 @@ from conductor_runtime.routine_service import (
     routine_service_paths,
     run_routine_service_worker,
 )
-from conductor_runtime.routines import (
+from conductor_extras.runtime.routines import (
     CRON_EXPRESSION_SHAPE_PATTERN,
     MAX_CRON_EXPRESSION_CHARS,
     build_schedule,
@@ -36,8 +36,8 @@ from conductor_runtime.routines import (
     routine_list_record,
     validate_schedule,
 )
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy
 
 
 def _workflow():
@@ -275,7 +275,7 @@ class CronRoutineIntegrationTests(unittest.TestCase):
             _write_json(workflow_path, _workflow())
             runtime_path.write_bytes(b"#!/usr/bin/env python3\nPK\x03\x04packaged-runtime\n")
 
-            with patch("conductor_runtime.background_run.sys.argv", [str(runtime_path)]), redirect_stdout(StringIO()):
+            with patch("conductor_extras.runtime.background_run.sys.argv", [str(runtime_path)]), redirect_stdout(StringIO()):
                 self.assertEqual(
                     cli_main(
                         [

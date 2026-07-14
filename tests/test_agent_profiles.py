@@ -8,7 +8,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.agent_profiles import (
+from conductor_extras.runtime.agent_profiles import (
     AGENT_PROFILE_CONTEXT_BINDING_SCHEMA,
     AGENT_PROFILE_SCHEMA,
     AGENT_PROFILE_SKILL_BINDING_SCHEMA,
@@ -20,18 +20,18 @@ from conductor_runtime.agent_profiles import (
     load_agent_profile,
     validate_agent_profile,
 )
-from conductor_runtime.agent_team import initial_agent_team_state, team_member_effective_step
-from conductor_runtime.legacy_cli import main as cli_main
-from conductor_runtime.codex_config import CODEX_PROFILE_DISABLED_FEATURES
-from conductor_runtime.dashboard import collect_run_detail
+from conductor_extras.runtime.agent_team import initial_agent_team_state, team_member_effective_step
+from conductor_extras.cli import main as cli_main
+from conductor_extras.runtime.codex_config import CODEX_PROFILE_DISABLED_FEATURES
+from conductor_extras.runtime.dashboard import collect_run_detail
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.model_planner import validate_model_authored_workflow
-from conductor_runtime.routine_supervisor import _validate_current_target
-from conductor_runtime.routines import load_routine_manifest
-from conductor_runtime.runner import ProcessResult, WorkflowRunner
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy, assess_command
-from conductor_runtime.workflow import load_workflow, validate_workflow
+from conductor_extras.runtime.model_planner import validate_model_authored_workflow
+from conductor_extras.runtime.routine_supervisor import _validate_current_target
+from conductor_extras.runtime.routines import load_routine_manifest
+from conductor_extras.runtime.runner import ProcessResult, WorkflowRunner
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy, assess_command
+from conductor_extras.runtime.workflow import load_workflow, validate_workflow
 
 
 def agent_profile(**overrides):
@@ -978,7 +978,7 @@ class AgentProfileTests(unittest.TestCase):
 
             plain = workflow_with_profile()
             with patch(
-                "conductor_runtime.agent_profiles.bind_agent_profile_skills",
+                "conductor_extras.runtime.agent_profiles.bind_agent_profile_skills",
                 side_effect=AssertionError("omitted Skill path performed binding work"),
             ):
                 plain_runner = CapturingProfileRunner(
@@ -1164,12 +1164,12 @@ class AgentProfileTests(unittest.TestCase):
             self.assertIn("agent_profiles", workflow_schema["properties"])
 
             read_assessment = assess_command(
-                ["python3", "-m", "conductor_runtime", "validate-agent-profile", "profile.json"]
+                ["python3", "-m", "conductor_extras", "validate-agent-profile", "profile.json"]
             )
             self.assertFalse(read_assessment.writes)
             self.assertFalse(read_assessment.network)
             write_assessment = assess_command(
-                ["python3", "-m", "conductor_runtime", "write-agent-profile", "profile.json"]
+                ["python3", "-m", "conductor_extras", "write-agent-profile", "profile.json"]
             )
             self.assertTrue(write_assessment.writes)
             self.assertFalse(write_assessment.network)

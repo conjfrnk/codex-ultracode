@@ -423,7 +423,7 @@ def _is_safe_python_read(argv: List[str]) -> bool:
     if "-c" in args:
         return False
     rest = _python_args_after_interpreter_flags(args)
-    if rest[:2] == ["-m", "conductor_runtime"]:
+    if rest[:2] == ["-m", "conductor_extras"]:
         return _is_safe_conductor_runtime_read(rest[2:])
     if rest and rest[0] == "tools/run_local_audit.py":
         return True
@@ -435,7 +435,7 @@ def _python_conductor_cloud_subcommand(argv: List[str]) -> str:
     if executable not in {"python", "python3"} or "-c" in argv[1:]:
         return ""
     rest = _python_args_after_interpreter_flags(argv[1:])
-    if rest[:2] != ["-m", "conductor_runtime"] or len(rest) < 3:
+    if rest[:2] != ["-m", "conductor_extras"] or len(rest) < 3:
         return ""
     command = rest[2]
     if len(rest) == 4 and rest[3] in {"--help", "-h"}:
@@ -465,7 +465,7 @@ def _python_conductor_local_transaction_subcommand(argv: List[str]) -> str:
     if executable not in {"python", "python3"} or "-c" in argv[1:]:
         return ""
     rest = _python_args_after_interpreter_flags(argv[1:])
-    if rest[:2] != ["-m", "conductor_runtime"] or len(rest) < 3:
+    if rest[:2] != ["-m", "conductor_extras"] or len(rest) < 3:
         return ""
     if len(rest) == 4 and rest[3] in {"--help", "-h"}:
         return ""
@@ -481,37 +481,37 @@ def _is_safe_python_local_write(argv: List[str]) -> bool:
         return False
     rest = _python_args_after_interpreter_flags(args)
     if (
-        rest[:3] == ["-m", "conductor_runtime", "run-saved-workflow"]
+        rest[:3] == ["-m", "conductor_extras", "run-saved-workflow"]
         and "--dry-run" in rest[3:]
     ):
         return True
     return rest[:3] in [
-        ["-m", "conductor_runtime", "export-saved-workflow"],
-        ["-m", "conductor_runtime", "bind-agent-profile"],
-        ["-m", "conductor_runtime", "import-session-trace"],
-        ["-m", "conductor_runtime", "import-usage"],
-        ["-m", "conductor_runtime", "prepare-run"],
-        ["-m", "conductor_runtime", "queue-team-task"],
-        ["-m", "conductor_runtime", "reply-team-question"],
-        ["-m", "conductor_runtime", "review-team-plan"],
-        ["-m", "conductor_runtime", "pause-routine"],
-        ["-m", "conductor_runtime", "record-usage"],
-        ["-m", "conductor_runtime", "recover-run"],
-        ["-m", "conductor_runtime", "retry-packet"],
-        ["-m", "conductor_runtime", "resume-routine"],
-        ["-m", "conductor_runtime", "score-benchmark-report"],
-        ["-m", "conductor_runtime", "update-routine-schedule"],
-        ["-m", "conductor_runtime", "write-evidence-bundle"],
-        ["-m", "conductor_runtime", "write-agent-profile"],
-        ["-m", "conductor_runtime", "remember-agent-memory"],
-        ["-m", "conductor_runtime", "forget-agent-memory"],
-        ["-m", "conductor_runtime", "write-live-parity-runbook"],
-        ["-m", "conductor_runtime", "write-parity-campaign"],
-        ["-m", "conductor_runtime", "write-auto-topology-campaign"],
-        ["-m", "conductor_runtime", "write-readonly-parity-campaign"],
-        ["-m", "conductor_runtime", "write-run-manifest"],
-        ["-m", "conductor_runtime", "write-routine-manifest"],
-        ["-m", "conductor_runtime", "write-schema"],
+        ["-m", "conductor_extras", "export-saved-workflow"],
+        ["-m", "conductor_extras", "bind-agent-profile"],
+        ["-m", "conductor_extras", "import-session-trace"],
+        ["-m", "conductor_extras", "import-usage"],
+        ["-m", "conductor_extras", "prepare-run"],
+        ["-m", "conductor_extras", "queue-team-task"],
+        ["-m", "conductor_extras", "reply-team-question"],
+        ["-m", "conductor_extras", "review-team-plan"],
+        ["-m", "conductor_extras", "pause-routine"],
+        ["-m", "conductor_extras", "record-usage"],
+        ["-m", "conductor_extras", "recover-run"],
+        ["-m", "conductor_extras", "retry-packet"],
+        ["-m", "conductor_extras", "resume-routine"],
+        ["-m", "conductor_extras", "score-benchmark-report"],
+        ["-m", "conductor_extras", "update-routine-schedule"],
+        ["-m", "conductor_extras", "write-evidence-bundle"],
+        ["-m", "conductor_extras", "write-agent-profile"],
+        ["-m", "conductor_extras", "remember-agent-memory"],
+        ["-m", "conductor_extras", "forget-agent-memory"],
+        ["-m", "conductor_extras", "write-live-parity-runbook"],
+        ["-m", "conductor_extras", "write-parity-campaign"],
+        ["-m", "conductor_extras", "write-auto-topology-campaign"],
+        ["-m", "conductor_extras", "write-readonly-parity-campaign"],
+        ["-m", "conductor_extras", "write-run-manifest"],
+        ["-m", "conductor_extras", "write-routine-manifest"],
+        ["-m", "conductor_extras", "write-schema"],
     ]
 
 
@@ -648,7 +648,7 @@ def _uses_personal_saved_workflow_scope(argv: List[str]) -> bool:
     if executable not in {"python", "python3"}:
         return False
     rest = _python_args_after_interpreter_flags(argv[1:])
-    if rest[:2] != ["-m", "conductor_runtime"] or len(rest) < 3:
+    if rest[:2] != ["-m", "conductor_extras"] or len(rest) < 3:
         return False
     if rest[2] not in {
         "validate-saved-workflows",

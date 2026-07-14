@@ -2295,7 +2295,7 @@ def _render_controls(run, steps, return_to: str = "") -> str:
 
 def _render_manual_gate_guidance(step) -> str:
     approval_id = _string(step.get("approval_id") or "<approval-id>")
-    command = _string(step.get("approval_command") or "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>")
+    command = _string(step.get("approval_command") or "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>")
     return (
         '<div class="muted">'
         'Manual gate approval required: <code>%s</code>. '
@@ -2422,7 +2422,7 @@ def _render_live_detail_approvals(approvals: Dict) -> str:
     for item in pending:
         if not isinstance(item, dict):
             continue
-        command = _string(item.get("command") or "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>")
+        command = _string(item.get("command") or "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>")
         rows.append(
             "<tr><td><code>%s</code></td><td class=\"status-%s\">%s</td><td><code>%s</code></td><td><code>%s</code></td></tr>"
             % (

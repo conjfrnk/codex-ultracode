@@ -117,7 +117,7 @@ def diagnose_run_detail(detail: Dict) -> Dict:
                     if launch_command
                     else "Resume from the saved run directory after reviewing current artifacts."
                 ),
-                command=launch_command or "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR",
+                command=launch_command or "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR",
             )
         )
     elif status in _CONTROL_PENDING_STATUSES:
@@ -466,12 +466,12 @@ def _diagnose_steps(run_status: str, steps: List[Dict], issues: List[Dict]) -> N
             )
         elif terminal.get("status") == "provider-terminal-recovery-pending":
             step_id = _text(step.get("id") or "unknown")
-            command = "python3 -m conductor_runtime retry-step RUN_DIR %s --reason %s" % (
+            command = "python3 -m conductor_extras retry-step RUN_DIR %s --reason %s" % (
                 _shell_arg(step_id),
                 _shell_arg("recover locally completed Codex turn"),
             )
             if status == "running":
-                command = "python3 -m conductor_runtime recover-run RUN_DIR --retry-running --reason %s" % _shell_arg(
+                command = "python3 -m conductor_extras recover-run RUN_DIR --retry-running --reason %s" % _shell_arg(
                     "runner is inactive; recover locally completed Codex turn"
                 )
             issues.append(
@@ -549,7 +549,7 @@ def _diagnose_steps(run_status: str, steps: List[Dict], issues: List[Dict]) -> N
             approval_id = _text(step.get("approval_id") or "<approval-id>")
             command = _text(step.get("approval_command") or "")
             if not command:
-                command = "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>"
+                command = "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>"
             issues.append(
                 _issue(
                     "manual_gate_approval_required",
@@ -582,12 +582,12 @@ def _diagnose_steps(run_status: str, steps: List[Dict], issues: List[Dict]) -> N
                 return
             continue
         code = "step_%s" % status
-        command = "python3 -m conductor_runtime retry-step RUN_DIR %s --reason %s" % (
+        command = "python3 -m conductor_extras retry-step RUN_DIR %s --reason %s" % (
             _shell_arg(step_id),
             _shell_arg("diagnostic follow-up"),
         )
         if status == "blocked":
-            command = "python3 -m conductor_runtime reset-step RUN_DIR %s --reason %s" % (
+            command = "python3 -m conductor_extras reset-step RUN_DIR %s --reason %s" % (
                 _shell_arg(step_id),
                 _shell_arg("resolved blocker"),
             )
@@ -649,7 +649,7 @@ def _diagnose_runtime(runtime: Dict, status: str, issues: List[Dict]) -> None:
                     "Review runtime action guidance and resume from the CLI after the required approval. "
                     "The live control token does not grant manual-gate approval."
                 ),
-                command=command or "python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>",
+                command=command or "python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR --approve <approval-id>",
             )
         )
     if ready > 0 and status in {"needs_resume", "paused", "stopped"}:
@@ -659,7 +659,7 @@ def _diagnose_runtime(runtime: Dict, status: str, issues: List[Dict]) -> None:
                 "info",
                 "%d workflow step(s) are ready to run on resume." % ready,
                 recommendation="Resume only after reviewing current artifacts and diagnostics.",
-                command="python3 -m conductor_runtime run RUN_WORKFLOW --resume RUN_DIR",
+                command="python3 -m conductor_extras run RUN_WORKFLOW --resume RUN_DIR",
             )
         )
     if waiting > 0 and status not in {"completed", "planned"}:
@@ -700,7 +700,7 @@ def _diagnose_agent_maps(agent_maps: List[Dict], issues: List[Dict]) -> None:
                     recommendation=(
                         "Inspect packet artifacts, then reset this step if cache reuse should be bypassed."
                     ),
-                    command="python3 -m conductor_runtime reset-step RUN_DIR %s --reason %s"
+                    command="python3 -m conductor_extras reset-step RUN_DIR %s --reason %s"
                     % (_shell_arg(step_id), _shell_arg("discard invalid packet cache")),
                 )
             )
@@ -772,7 +772,7 @@ def _agent_packet_issue(group: Dict, packet: Dict) -> Optional[Dict]:
             "Agent packet %s for step %s has a cache entry but no output artifact." % (packet_index, step_id),
             detail="Item: %s." % item,
             recommendation="Retry only this packet while retaining compatible sibling results.",
-            command="python3 -m conductor_runtime retry-packet RUN_DIR %s %s --reason %s"
+            command="python3 -m conductor_extras retry-packet RUN_DIR %s %s --reason %s"
             % (_shell_arg(step_id), _shell_arg(packet_index), _shell_arg("cached packet output missing")),
         )
     if trace_status in _AGENT_TRACE_ACTION_STATUSES:
@@ -782,7 +782,7 @@ def _agent_packet_issue(group: Dict, packet: Dict) -> Optional[Dict]:
             "Agent packet %s for step %s recorded trace status %s." % (packet_index, step_id, trace_status),
             detail=_agent_packet_trace_detail(item, trace),
             recommendation="Review packet stdout/stderr, then retry only this packet.",
-            command="python3 -m conductor_runtime retry-packet RUN_DIR %s %s --reason %s"
+            command="python3 -m conductor_extras retry-packet RUN_DIR %s %s --reason %s"
             % (_shell_arg(step_id), _shell_arg(packet_index), _shell_arg("retry failed packet")),
         )
     if status in _AGENT_PACKET_ACTION_STATUSES:
@@ -871,7 +871,7 @@ def _interrupted_recovery_command(steps: List[Dict], reason: str) -> str:
             and checkpoint.get("status") == "active"
         )
     resolution = "--resume-codex" if resume_codex else "--retry-running"
-    return "python3 -m conductor_runtime recover-run RUN_DIR %s --reason %s" % (
+    return "python3 -m conductor_extras recover-run RUN_DIR %s --reason %s" % (
         resolution,
         _shell_arg(reason),
     )

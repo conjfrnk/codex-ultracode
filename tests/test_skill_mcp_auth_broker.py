@@ -6,9 +6,9 @@ import unittest
 from unittest import mock
 from urllib.parse import urlsplit
 
-from conductor_runtime.agent_skill_mcp import codex_skill_mcp_config_arg
+from conductor_extras.runtime.agent_skill_mcp import codex_skill_mcp_config_arg
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.skill_mcp_auth_broker import SkillMcpAuthBroker
+from conductor_extras.runtime.skill_mcp_auth_broker import SkillMcpAuthBroker
 
 
 class FakeResponse:
@@ -317,13 +317,13 @@ class SkillMcpAuthBrokerTests(unittest.TestCase):
             ]
         )
         with mock.patch(
-            "conductor_runtime.skill_mcp_auth_broker.MAX_SKILL_MCP_BROKER_REQUEST_BYTES",
+            "conductor_extras.runtime.skill_mcp_auth_broker.MAX_SKILL_MCP_BROKER_REQUEST_BYTES",
             8,
         ), mock.patch(
-            "conductor_runtime.skill_mcp_auth_broker.MAX_SKILL_MCP_BROKER_RESPONSE_BYTES",
+            "conductor_extras.runtime.skill_mcp_auth_broker.MAX_SKILL_MCP_BROKER_RESPONSE_BYTES",
             8,
         ), mock.patch(
-            "conductor_runtime.skill_mcp_auth_broker.MAX_SKILL_MCP_BROKER_RESPONSE_HEADER_BYTES",
+            "conductor_extras.runtime.skill_mcp_auth_broker.MAX_SKILL_MCP_BROKER_RESPONSE_HEADER_BYTES",
             32,
         ), SkillMcpAuthBroker(
             [auth_route()],

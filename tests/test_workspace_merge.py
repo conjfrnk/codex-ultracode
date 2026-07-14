@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.staged_workspace import (
+from conductor_extras.runtime.staged_workspace import (
     apply_workspace_delta_merge,
     copy_workspace_to_stage,
     plan_workspace_delta_merge,

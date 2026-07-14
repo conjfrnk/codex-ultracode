@@ -1,41 +1,15 @@
-# Verification Contract
+# Verification
 
-## Verification Hierarchy
+Prefer evidence in this order:
 
-Prefer project-native evidence:
+1. reproduce the reported failure;
+2. focused unit or integration tests;
+3. broader relevant tests;
+4. type checks, lint, and build;
+5. diff and static review.
 
-1. exact reproduction of bug or issue,
-2. relevant unit tests,
-3. relevant integration tests,
-4. type checks,
-5. linters,
-6. build commands,
-7. static review,
-8. manual reasoning.
+Run checks against the actual result being delivered. For staged work, verification runs against the stage and must not mutate it; source drift or verifier mutation invalidates evidence.
 
-## Evidence Rules
+Do not convert a provider-completed message into acceptance. Check exit status, bounded output, expected artifacts, and relevant behavior. A model verdict must satisfy its strict structured contract and cite evidence.
 
-Do not say a check passed unless it was run and passed.
-
-If checks could not be run, say why and provide the strongest available alternative.
-
-## Verification Matrix
-
-For implementation tasks, fill this mentally or in an artifact:
-
-| Claim | Check | Result | Evidence | Confidence |
-| --- | --- | --- | --- | --- |
-
-## Suggested Final Wording
-
-Good:
-
-`Ran npm test -- auth.test.ts; all 12 relevant tests passed.`
-
-Good:
-
-`I could not run the suite in this environment, so I reviewed the control flow and identified the exact call path affected.`
-
-Bad:
-
-`Everything works.`
+In the final response state what changed, checks actually run and their results, checks not run, and remaining risk. Avoid `everything works` or comparison claims unsupported by matched evidence.

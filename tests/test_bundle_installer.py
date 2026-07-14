@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.clock import utc_from_timestamp, utc_now
+from conductor_extras.runtime.clock import utc_from_timestamp, utc_now
 from tools.install_bundle import InstallError, _commit_replacements, build_skill_manifest
 
 

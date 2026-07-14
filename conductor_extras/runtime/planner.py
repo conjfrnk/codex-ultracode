@@ -389,7 +389,7 @@ def build_workflow_plan(
         "max_workers": max_workers,
         "steps": steps,
         "generated_by": {
-            "tool": "conductor_runtime plan-workflow",
+            "tool": "conductor_extras plan-workflow",
             "kind": selected_kind,
             "profile": profile,
             "include_agent": include_agent,
@@ -637,7 +637,7 @@ def _risk_register_artifact(kind: str, risk: str, write_capable: bool, auto_pack
         "| Over-broad fan-out | Medium | Dynamic file list is large | `agent_map` bounds source items, groups them under `max_packets`, and caps workers plus weighted rollout tokens |\n"
         "| Unsupported success claim | High | Final response claims completion without evidence | Verification and final-review steps must inspect actual evidence |\n"
         "| Unapproved writes | High | Implementation requested without approval | Write step is %s and runtime still requires `--allow-writes` plus approval token |\n"
-        "| Hidden background work | Medium | Workflow is mistaken for a daemon | Generated profile is a draft; execution is explicit through `conductor_runtime run` |\n\n"
+        "| Hidden background work | Medium | Workflow is mistaken for a daemon | Generated profile is a draft; execution is explicit through `conductor_extras run` |\n\n"
         "Kind: `%s`\n\n"
         "Risk: `%s`\n\n"
         "Packet source: %s.\n"

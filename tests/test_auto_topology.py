@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from conductor_runtime import __version__
-from conductor_runtime.auto_topology_campaign import (
+from conductor_extras.runtime.auto_topology_campaign import (
     AUTO_TOPOLOGY_CAMPAIGN_SCHEMA,
     AUTO_TOPOLOGY_CAMPAIGN_SCHEMA_V1,
     AUTO_TOPOLOGY_CAMPAIGN_SCHEMA_V2,
@@ -25,20 +25,20 @@ from conductor_runtime.auto_topology_campaign import (
     validate_auto_topology_campaign,
     write_auto_topology_campaign,
 )
-from conductor_runtime.auto_topology_run import (
+from conductor_extras.runtime.auto_topology_run import (
     AUTO_TOPOLOGY_ARM_APPROVAL,
     _receipt_duration_ms,
     run_auto_topology_arm,
 )
-from conductor_runtime.benchmark import load_parity_tasks
-from conductor_runtime.build_identity import current_runtime_build_sha256
-from conductor_runtime.legacy_cli import main as cli_main
+from conductor_extras.runtime.benchmark import load_parity_tasks
+from conductor_extras.runtime.build_identity import current_runtime_build_sha256
+from conductor_extras.cli import main as cli_main
 from conductor_runtime.errors import PolicyError, ValidationError
-from conductor_runtime.model_orchestrator import MODEL_WORKFLOW_EXECUTE_APPROVAL
-from conductor_runtime.model_planner import MODEL_WORKFLOW_WRITE_APPROVAL
-from conductor_runtime.runner import ProcessResult
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy, assess_command
+from conductor_extras.runtime.model_orchestrator import MODEL_WORKFLOW_EXECUTE_APPROVAL
+from conductor_extras.runtime.model_planner import MODEL_WORKFLOW_WRITE_APPROVAL
+from conductor_extras.runtime.runner import ProcessResult
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy, assess_command
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -218,7 +218,7 @@ class AutoTopologyCampaignTests(unittest.TestCase):
             self.assertEqual(plan["provider_launches"], 0)
             self.assertTrue(plan["runtime_release_compatible"])
             self.assertTrue(plan["runtime_build_compatible"])
-            with patch("conductor_runtime.auto_topology_run.run_auto_orchestration") as provider:
+            with patch("conductor_extras.runtime.auto_topology_run.run_auto_orchestration") as provider:
                 with self.assertRaisesRegex(ValidationError, "frozen auto topology campaign"):
                     run_auto_topology_arm(
                         campaign_path=campaign_path,
@@ -259,7 +259,7 @@ class AutoTopologyCampaignTests(unittest.TestCase):
                 },
             )
             with patch(
-                "conductor_runtime.auto_topology_run.run_auto_orchestration",
+                "conductor_extras.runtime.auto_topology_run.run_auto_orchestration",
                 side_effect=RuntimeError("captured full task contract"),
             ) as provider:
                 with self.assertRaisesRegex(RuntimeError, "captured full task contract"):
@@ -282,7 +282,7 @@ class AutoTopologyCampaignTests(unittest.TestCase):
             campaign_path = root / "campaign.json"
             write_auto_topology_campaign(campaign, campaign_path)
             cohort = campaign["cohorts"][0]
-            with patch("conductor_runtime.auto_topology_run.run_auto_orchestration") as provider:
+            with patch("conductor_extras.runtime.auto_topology_run.run_auto_orchestration") as provider:
                 with self.assertRaisesRegex(ValidationError, "execution contract"):
                     run_auto_topology_arm(
                         campaign_path=campaign_path,
@@ -312,7 +312,7 @@ class AutoTopologyCampaignTests(unittest.TestCase):
             )
             self.assertTrue(plan["runtime_release_compatible"])
             self.assertFalse(plan["runtime_build_compatible"])
-            with patch("conductor_runtime.auto_topology_run.run_auto_orchestration") as provider:
+            with patch("conductor_extras.runtime.auto_topology_run.run_auto_orchestration") as provider:
                 with self.assertRaisesRegex(ValidationError, "exact runtime build"):
                     run_auto_topology_arm(
                         campaign_path=campaign_path,
@@ -433,7 +433,7 @@ class AutoTopologyCampaignTests(unittest.TestCase):
             "python3",
             "-B",
             "-m",
-            "conductor_runtime",
+            "conductor_extras",
             "run-auto-topology-arm",
             "campaign.json",
             "tasks.json",
@@ -508,7 +508,7 @@ class AutoTopologyCampaignTests(unittest.TestCase):
             root = Path(temporary)
             campaign_path = root / "campaign.json"
             write_auto_topology_campaign(campaign, campaign_path)
-            with patch("conductor_runtime.model_planner.run_process", side_effect=failed_planner):
+            with patch("conductor_extras.runtime.model_planner.run_process", side_effect=failed_planner):
                 result = run_auto_topology_arm(
                     campaign_path=campaign_path,
                     parity_tasks_path=TASKS_PATH,
@@ -675,10 +675,10 @@ class AutoTopologyCampaignTests(unittest.TestCase):
                 item for item in campaign["cohorts"] if item["task_id"] == "slug-normalization"
             )
             with patch.dict(os.environ, {"CODEX_CONDUCTOR_HOME": str(root / "home")}, clear=False):
-                with patch("conductor_runtime.model_planner.run_process") as planner_process:
-                    with patch("conductor_runtime.runner.run_process", side_effect=fake_worker):
+                with patch("conductor_extras.runtime.model_planner.run_process") as planner_process:
+                    with patch("conductor_extras.runtime.runner.run_process", side_effect=fake_worker):
                         with patch(
-                            "conductor_runtime.goal_loop.run_process",
+                            "conductor_extras.runtime.goal_loop.run_process",
                             return_value=ProcessResult(0, "verified", ""),
                         ):
                             result = run_auto_topology_arm(
@@ -838,10 +838,10 @@ class AutoTopologyCampaignTests(unittest.TestCase):
             write_auto_topology_campaign(campaign, campaign_path)
             cohort = next(item for item in campaign["cohorts"] if item["task_id"] == "slug-normalization")
             with patch.dict(os.environ, {"CODEX_CONDUCTOR_HOME": str(root / "home")}, clear=False):
-                with patch("conductor_runtime.model_planner.run_process", side_effect=fake_planner):
-                    with patch("conductor_runtime.runner.run_process", side_effect=fake_worker):
+                with patch("conductor_extras.runtime.model_planner.run_process", side_effect=fake_planner):
+                    with patch("conductor_extras.runtime.runner.run_process", side_effect=fake_worker):
                         with patch(
-                            "conductor_runtime.goal_loop.run_process",
+                            "conductor_extras.runtime.goal_loop.run_process",
                             return_value=ProcessResult(0, "verified", ""),
                         ):
                             for topology in ["direct", "progressive", "plan-first"]:

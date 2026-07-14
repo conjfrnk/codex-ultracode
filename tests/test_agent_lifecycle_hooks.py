@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from conductor_runtime.agent_lifecycle_hooks import (
+from conductor_extras.runtime.agent_lifecycle_hooks import (
     AGENT_LIFECYCLE_HOOK_INPUT_FIELDS,
     AGENT_LIFECYCLE_HOOK_INPUT_SCHEMA,
     agent_lifecycle_hook_input_json,
@@ -13,7 +13,7 @@ from conductor_runtime.agent_lifecycle_hooks import (
     build_agent_lifecycle_stop_input,
     validate_agent_lifecycle_hook_input,
 )
-from conductor_runtime.agent_lifecycle_stop_gate import (
+from conductor_extras.runtime.agent_lifecycle_stop_gate import (
     AGENT_LIFECYCLE_STOP_GATE_SCHEMA,
     bind_agent_lifecycle_stop_gate_result,
     build_agent_lifecycle_stop_gate,
@@ -21,7 +21,7 @@ from conductor_runtime.agent_lifecycle_stop_gate import (
     complete_agent_lifecycle_stop_gate_hook,
     load_agent_lifecycle_stop_gate,
 )
-from conductor_runtime.direct_workspace_transaction import (
+from conductor_extras.runtime.direct_workspace_transaction import (
     DIRECT_WORKSPACE_TRANSACTION_SCHEMA,
     bind_direct_workspace_transaction_merge,
     build_direct_workspace_transaction,
@@ -29,7 +29,7 @@ from conductor_runtime.direct_workspace_transaction import (
     mark_direct_workspace_transaction_merged,
     validate_direct_workspace_transaction,
 )
-from conductor_runtime.agent_lifecycle_context import (
+from conductor_extras.runtime.agent_lifecycle_context import (
     AGENT_LIFECYCLE_CONTEXT_BEGIN,
     AGENT_LIFECYCLE_CONTEXT_END,
     AGENT_LIFECYCLE_CONTEXT_SCHEMA,
@@ -37,15 +37,15 @@ from conductor_runtime.agent_lifecycle_context import (
     verify_agent_lifecycle_context,
 )
 from conductor_runtime.errors import StepExecutionError, ValidationError
-from conductor_runtime.runner import ProcessResult, WorkflowRunner
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy
-from conductor_runtime.staged_workspace import (
+from conductor_extras.runtime.runner import ProcessResult, WorkflowRunner
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy
+from conductor_extras.runtime.staged_workspace import (
     plan_workspace_delta_merge,
     snapshot_workspace,
     workspace_snapshot_manifest,
 )
-from conductor_runtime.workflow import validate_workflow
+from conductor_extras.runtime.workflow import validate_workflow
 
 
 WORKFLOW_SHA256 = "a" * 64
@@ -1643,7 +1643,7 @@ class AgentLifecycleRunnerTests(unittest.TestCase):
             )
 
     def test_team_terminal_recovery_finishes_blocking_stop_without_provider_replay(self):
-        from conductor_runtime.run_control import retry_step
+        from conductor_extras.runtime.run_control import retry_step
         from tests.test_agent_team import (
             FakeTeamRunner,
             SimulatedHardCrash,
@@ -1720,13 +1720,13 @@ class AgentLifecycleRunnerTests(unittest.TestCase):
             )
 
     def test_team_completion_only_recovery_requires_passed_stop_gate(self):
-        from conductor_runtime.agent_team_turn_completion import (
+        from conductor_extras.runtime.agent_team_turn_completion import (
             list_agent_team_turn_completion_paths,
         )
-        from conductor_runtime.agent_team_turn_terminal import (
+        from conductor_extras.runtime.agent_team_turn_terminal import (
             list_agent_team_turn_terminal_paths,
         )
-        from conductor_runtime.run_control import retry_step
+        from conductor_extras.runtime.run_control import retry_step
         from tests.test_agent_team import (
             FakeTeamRunner,
             SimulatedHardCrash,

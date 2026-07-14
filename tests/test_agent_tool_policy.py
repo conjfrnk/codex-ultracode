@@ -9,22 +9,22 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
-from conductor_runtime.agent_profiles import (
+from conductor_extras.runtime.agent_profiles import (
     AGENT_PROFILE_SCHEMA,
     MAX_AGENT_PROFILE_SKILL_SCRIPT_RULES,
     agent_profile_summary,
     effective_agent_step,
     validate_agent_profile,
 )
-from conductor_runtime.agent_skill_mcp import (
+from conductor_extras.runtime.agent_skill_mcp import (
     MAX_AGENT_PROFILE_SKILL_MCP_AUTH_HEADERS,
     MAX_AGENT_PROFILE_SKILL_MCP_DEPENDENCIES,
     MAX_AGENT_PROFILE_SKILL_MCP_TOOLS,
     codex_skill_mcp_config_arg,
     resolve_skill_mcp_auth_secrets,
 )
-from conductor_runtime.agent_team import AGENT_TEAM_TURN_SCHEMA, initial_agent_team_state
-from conductor_runtime.agent_tool_policy import (
+from conductor_extras.runtime.agent_team import AGENT_TEAM_TURN_SCHEMA, initial_agent_team_state
+from conductor_extras.runtime.agent_tool_policy import (
     AGENT_COMMAND_POLICY_SCHEMA,
     AGENT_COMMAND_POLICY_SCHEMA_V2,
     build_pre_tool_hook_command,
@@ -33,25 +33,25 @@ from conductor_runtime.agent_tool_policy import (
     evaluate_pre_tool_use,
     parse_simple_shell_command,
 )
-from conductor_runtime.codex_hook_preflight import (
+from conductor_extras.runtime.codex_hook_preflight import (
     SESSION_HOOK_KEY,
     hooks_state_config_arg,
     prepare_restricted_hook_state,
     restricted_codex_executable,
 )
-from conductor_runtime.codex_checkpoint import (
+from conductor_extras.runtime.codex_checkpoint import (
     load_codex_step_checkpoint,
     write_codex_step_checkpoint,
 )
-from conductor_runtime.legacy_cli import main as cli_main
+from conductor_extras.cli import main as cli_main
 from conductor_runtime.errors import PolicyError, ValidationError
-from conductor_runtime.dashboard import collect_run_detail
-from conductor_runtime.runner import ProcessResult, WorkflowRunner
-from conductor_runtime.run_control import recover_run
-from conductor_runtime.routine_supervisor import _validate_current_target
-from conductor_runtime.routines import load_routine_manifest
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy, enforce_agent_policy
+from conductor_extras.runtime.dashboard import collect_run_detail
+from conductor_extras.runtime.runner import ProcessResult, WorkflowRunner
+from conductor_extras.runtime.run_control import recover_run
+from conductor_extras.runtime.routine_supervisor import _validate_current_target
+from conductor_extras.runtime.routines import load_routine_manifest
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy, enforce_agent_policy
 
 
 def restricted_profile(**overrides):
@@ -299,7 +299,7 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovered_mcp_skill(root, skill, name=name, url=url),
             ) as discover:
                 runner = WorkflowRunner(
@@ -355,10 +355,10 @@ class AgentToolPolicyTests(unittest.TestCase):
                 "managed_hooks": 0,
             }
             with mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 prepared = runner._prepare_restricted_agent_step(effective)
@@ -619,13 +619,13 @@ class AgentToolPolicyTests(unittest.TestCase):
                     "PRIVATE_DOCS_TOKEN_ALIAS": "prefix-%s-suffix" % secret,
                 },
             ), mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovered_mcp_skill(root, skill, name=name, url=url),
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 runner = ReflectingRestrictedRunner(
@@ -676,13 +676,13 @@ class AgentToolPolicyTests(unittest.TestCase):
             )
             self.assertEqual(recovered["resolution"], "resume-codex")
             with mock.patch.dict("os.environ", {"PRIVATE_DOCS_TOKEN": secret}), mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovered_mcp_skill(root, skill, name=name, url=url),
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 resumed_runner = FakeRestrictedRunner(
@@ -746,13 +746,13 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch.dict("os.environ", {"PRIVATE_DOCS_TOKEN": secret}), mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovered_mcp_skill(root, skill, name=name, url=url),
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 team_runner = FakeRestrictedRunner(
@@ -843,7 +843,7 @@ class AgentToolPolicyTests(unittest.TestCase):
                 (discovered_mcp_skill(root, skill, name="docs", url=valid["url"], command="npx server"), "exactly match"),
             ]:
                 with self.subTest(message=message), mock.patch(
-                    "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                    "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                     return_value=metadata,
                 ), self.assertRaisesRegex(ValidationError, message):
                     WorkflowRunner(
@@ -867,7 +867,7 @@ class AgentToolPolicyTests(unittest.TestCase):
                 "steps": [{"id": "x", "kind": "codex_exec", "agent_profile": profile["name"], "prompt": "x", "capture": "x.md"}],
             }
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata"
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata"
             ) as discover:
                 runner = WorkflowRunner(
                     workflow=workflow,
@@ -1103,10 +1103,10 @@ class AgentToolPolicyTests(unittest.TestCase):
 
             for version in ["0.143.0", "0.144.0", "0.144.1", "0.144.999"]:
                 with self.subTest(version=version), mock.patch(
-                    "conductor_runtime.codex_hook_preflight.shutil.which",
+                    "conductor_extras.runtime.codex_hook_preflight.shutil.which",
                     return_value=str(executable),
                 ), mock.patch(
-                    "conductor_runtime.codex_hook_preflight.subprocess.run",
+                    "conductor_extras.runtime.codex_hook_preflight.subprocess.run",
                     return_value=probe(version),
                 ):
                     path, observed = restricted_codex_executable(workspace)
@@ -1115,10 +1115,10 @@ class AgentToolPolicyTests(unittest.TestCase):
 
             for version in ["0.142.999", "0.145.0"]:
                 with self.subTest(version=version), mock.patch(
-                    "conductor_runtime.codex_hook_preflight.shutil.which",
+                    "conductor_extras.runtime.codex_hook_preflight.shutil.which",
                     return_value=str(executable),
                 ), mock.patch(
-                    "conductor_runtime.codex_hook_preflight.subprocess.run",
+                    "conductor_extras.runtime.codex_hook_preflight.subprocess.run",
                     return_value=probe(version),
                 ), self.assertRaisesRegex(
                     ValidationError,
@@ -1276,10 +1276,10 @@ class AgentToolPolicyTests(unittest.TestCase):
         verified_own = dict(own, trustStatus="trusted")
         verified_external = dict(external, enabled=False)
         with mock.patch(
-            "conductor_runtime.codex_hook_preflight.restricted_codex_executable",
+            "conductor_extras.runtime.codex_hook_preflight.restricted_codex_executable",
             return_value=("/usr/bin/true", "codex-cli 0.143.0"),
         ), mock.patch(
-            "conductor_runtime.codex_hook_preflight._discover_hooks",
+            "conductor_extras.runtime.codex_hook_preflight._discover_hooks",
             side_effect=[[own, external, managed], [verified_own, verified_external, managed]],
         ) as discover:
             result = prepare_restricted_hook_state(
@@ -1343,10 +1343,10 @@ class AgentToolPolicyTests(unittest.TestCase):
                 "managed_hooks": 1,
             }
             with mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 prepared = runner._prepare_restricted_agent_step(effective)
@@ -1404,10 +1404,10 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ) as prepare:
                 runner = FakeRestrictedRunner(
@@ -1428,7 +1428,7 @@ class AgentToolPolicyTests(unittest.TestCase):
             self.assertEqual(detail_step["agent_restricted_codex_version"], "codex-cli 0.143.0")
             self.assertEqual(detail_step["agent_restricted_managed_hooks"], 1)
             with mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state"
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state"
             ) as resume_prepare:
                 resumed = FakeRestrictedRunner(
                     workflow=single_workflow,
@@ -1462,10 +1462,10 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ) as prepare_map:
                 map_runner = FakeRestrictedRunner(
@@ -1534,10 +1534,10 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ) as prepare:
                 runner = FakeRestrictedRunner(
@@ -1555,7 +1555,7 @@ class AgentToolPolicyTests(unittest.TestCase):
                 detail["steps"][0]["agent_profile_skill_script_count"], 1
             )
             with mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state"
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state"
             ) as resume_prepare:
                 resumed = FakeRestrictedRunner(
                     workflow=direct_workflow,
@@ -1590,10 +1590,10 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 mapped = FakeRestrictedRunner(
@@ -1772,13 +1772,13 @@ class AgentToolPolicyTests(unittest.TestCase):
             )
             discovery = discovered_mcp_skill(root, skill, name=name, url=url)
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 runner = FakeRestrictedRunner(
@@ -1798,10 +1798,10 @@ class AgentToolPolicyTests(unittest.TestCase):
                 1,
             )
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ) as resume_discover, mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state"
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state"
             ) as resume_prepare:
                 resumed = FakeRestrictedRunner(
                     workflow=direct_workflow,
@@ -1836,13 +1836,13 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value="/usr/bin/python3",
             ), mock.patch(
-                "conductor_runtime.runner.prepare_restricted_hook_state",
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
                 return_value=preflight,
             ):
                 mapped = FakeRestrictedRunner(
@@ -1914,7 +1914,7 @@ class AgentToolPolicyTests(unittest.TestCase):
                 ],
             }
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ):
                 team_runner = FakeRestrictedRunner(
@@ -1942,7 +1942,7 @@ class AgentToolPolicyTests(unittest.TestCase):
             manifest_path = root / "skill-mcp-routine.json"
             workflow_path.write_text(json.dumps(direct_workflow), encoding="utf-8")
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ), redirect_stdout(StringIO()):
                 self.assertEqual(
@@ -1966,7 +1966,7 @@ class AgentToolPolicyTests(unittest.TestCase):
                     0,
                 )
             with mock.patch(
-                "conductor_runtime.agent_profiles.discover_codex_skill_metadata",
+                "conductor_extras.runtime.agent_profiles.discover_codex_skill_metadata",
                 return_value=discovery,
             ):
                 routine_target = _validate_current_target(

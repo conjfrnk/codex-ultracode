@@ -20,9 +20,9 @@ def current_runtime_build_sha256() -> str:
         )
         return hashlib.sha256(payload).hexdigest()
 
-    project_root = Path(__file__).resolve().parent.parent
-    runtime_root = project_root / "conductor_runtime"
-    candidates = list(runtime_root.rglob("*.py"))
+    project_root = Path(__file__).resolve().parents[2]
+    candidates = list((project_root / "conductor_extras").rglob("*.py"))
+    candidates.extend((project_root / "conductor_runtime").rglob("*.py"))
     candidates.extend(
         project_root / relative
         for relative in (

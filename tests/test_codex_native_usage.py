@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from conductor_runtime.codex_native_usage import (
+from conductor_extras.runtime.codex_native_usage import (
     MAX_NATIVE_USAGE_SESSIONS,
     NativeUsageUnavailable,
     empty_native_usage,

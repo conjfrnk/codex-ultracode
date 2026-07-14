@@ -8,7 +8,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.agent_memory import (
+from conductor_extras.runtime.agent_memory import (
     AGENT_MEMORY_SCHEMA,
     AGENT_MEMORY_WRITE_APPROVAL,
     MAX_AGENT_MEMORY_QUERY_BYTES,
@@ -20,7 +20,7 @@ from conductor_runtime.agent_memory import (
     remove_agent_memory_entry,
     select_agent_memory_snapshot,
 )
-from conductor_runtime.agent_profiles import (
+from conductor_extras.runtime.agent_profiles import (
     AGENT_PROFILE_MEMORY_BINDING_SCHEMA,
     AGENT_PROFILE_SCHEMA,
     AGENT_PROFILE_MEMORY_RECORD_FIELDS,
@@ -28,17 +28,17 @@ from conductor_runtime.agent_profiles import (
     agent_profile_prompt_section,
     effective_agent_step,
 )
-from conductor_runtime.legacy_cli import main as cli_main
-from conductor_runtime.dashboard import collect_run_detail
+from conductor_extras.cli import main as cli_main
+from conductor_extras.runtime.dashboard import collect_run_detail
 from conductor_runtime.errors import PolicyError, ValidationError
-from conductor_runtime.goal_loop import run_goal_loop
-from conductor_runtime.model_planner import validate_model_authored_workflow
-from conductor_runtime.routine_supervisor import _validate_current_target
-from conductor_runtime.routines import load_routine_manifest
-from conductor_runtime.runner import WorkflowRunner
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy, assess_command
-from conductor_runtime.workflow import validate_workflow, workflow_fingerprint
+from conductor_extras.runtime.goal_loop import run_goal_loop
+from conductor_extras.runtime.model_planner import validate_model_authored_workflow
+from conductor_extras.runtime.routine_supervisor import _validate_current_target
+from conductor_extras.runtime.routines import load_routine_manifest
+from conductor_extras.runtime.runner import WorkflowRunner
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy, assess_command
+from conductor_extras.runtime.workflow import validate_workflow, workflow_fingerprint
 
 
 def memory_profile(mode="read-write", **overrides):
@@ -747,12 +747,12 @@ class AgentMemoryTests(unittest.TestCase):
             )
 
             read = assess_command(
-                ["python3", "-m", "conductor_runtime", "inspect-agent-memory", "reviewer"]
+                ["python3", "-m", "conductor_extras", "inspect-agent-memory", "reviewer"]
             )
             self.assertFalse(read.writes)
             self.assertFalse(read.network)
             write = assess_command(
-                ["python3", "-m", "conductor_runtime", "remember-agent-memory", "reviewer"]
+                ["python3", "-m", "conductor_extras", "remember-agent-memory", "reviewer"]
             )
             self.assertTrue(write.writes)
             self.assertFalse(write.network)

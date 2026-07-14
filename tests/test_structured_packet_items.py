@@ -6,12 +6,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.dashboard import (
+from conductor_extras.runtime.dashboard import (
     DETAIL_AGENT_PACKET_LIMIT,
     _agent_map_items as dashboard_agent_map_items,
     _dashboard_agent_packet_label,
 )
-from conductor_runtime.packet_items import (
+from conductor_extras.runtime.packet_items import (
     MAX_JSON_PACKET_ITEM_DEPTH,
     MAX_JSON_PACKET_ITEM_NODES,
     clean_json_packet_item,
@@ -19,10 +19,10 @@ from conductor_runtime.packet_items import (
     read_packet_items_json_file,
     render_agent_map_prompt,
 )
-from conductor_runtime.runner import WorkflowRunner, _agent_packet_label
-from conductor_runtime.run_control import _packet_item_sha256_from_available_source
-from conductor_runtime.security import RuntimePolicy
-from conductor_runtime.workflow import validate_workflow
+from conductor_extras.runtime.runner import WorkflowRunner, _agent_packet_label
+from conductor_extras.runtime.run_control import _packet_item_sha256_from_available_source
+from conductor_extras.runtime.security import RuntimePolicy
+from conductor_extras.runtime.workflow import validate_workflow
 
 
 def structured_workflow(items, prompt_template="Review {item.name}"):

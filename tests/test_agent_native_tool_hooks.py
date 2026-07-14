@@ -10,9 +10,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from conductor_runtime.agent_lifecycle_hooks import build_agent_lifecycle_hook_input
-from conductor_runtime.agent_tool_policy import effective_command_policy
-from conductor_runtime.agent_native_tool_hooks import (
+from conductor_extras.runtime.agent_lifecycle_hooks import build_agent_lifecycle_hook_input
+from conductor_extras.runtime.agent_tool_policy import effective_command_policy
+from conductor_extras.runtime.agent_native_tool_hooks import (
     AGENT_NATIVE_TOOL_INPUT_SCHEMA,
     agent_native_tool_bridge_path,
     agent_native_tool_config_path,
@@ -31,13 +31,13 @@ from conductor_runtime.agent_native_tool_hooks import (
     write_agent_native_tool_config,
     write_agent_native_tool_gate,
 )
-from conductor_runtime.artifacts import RunArtifacts, utc_now
-from conductor_runtime.dashboard import collect_run_detail, write_dashboard
+from conductor_extras.runtime.artifacts import RunArtifacts, utc_now
+from conductor_extras.runtime.dashboard import collect_run_detail, write_dashboard
 from conductor_runtime.errors import PolicyError, ValidationError
-from conductor_runtime.runner import ProcessResult, WorkflowRunner
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy
-from conductor_runtime.workflow import validate_workflow
+from conductor_extras.runtime.runner import ProcessResult, WorkflowRunner
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy
+from conductor_extras.runtime.workflow import validate_workflow
 
 
 def workflow_with_hook(**hook_overrides):
@@ -311,9 +311,9 @@ class AgentNativeToolHookTests(unittest.TestCase):
                 "_run_process",
                 return_value=expected,
             ) as run_process, mock.patch(
-                "conductor_runtime.runner.write_agent_native_tool_bridge"
+                "conductor_extras.runtime.runner.write_agent_native_tool_bridge"
             ) as write_bridge, mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state"
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state"
             ) as preflight:
                 observed = runner._run_codex_provider(
                     workflow_step=step,
@@ -789,10 +789,10 @@ class AgentNativeToolHookTests(unittest.TestCase):
             }
             path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
             with mock.patch.dict(os.environ, {"PATH": path}), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value=sys.executable,
             ), mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state",
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state",
                 return_value=preflight,
             ) as prepare:
                 runner = FakeNativeToolRunner(
@@ -876,10 +876,10 @@ class AgentNativeToolHookTests(unittest.TestCase):
             }
             path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
             with mock.patch.dict(os.environ, {"PATH": path}), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value=sys.executable,
             ), mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state",
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state",
                 return_value=preflight,
             ):
                 runner = FakeNativeToolRunner(
@@ -939,10 +939,10 @@ class AgentNativeToolHookTests(unittest.TestCase):
             }
             path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
             with mock.patch.dict(os.environ, {"PATH": path}), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value=sys.executable,
             ), mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state",
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state",
                 return_value=preflight,
             ) as prepare:
                 runner = FakeNativeToolRunner(
@@ -979,7 +979,7 @@ class AgentNativeToolHookTests(unittest.TestCase):
             )
             path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
             with mock.patch.dict(os.environ, {"PATH": path}), mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state"
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state"
             ) as prepare:
                 runner = FakeNativeToolRunner(
                     workflow=workflow,
@@ -1001,7 +1001,7 @@ class AgentNativeToolHookTests(unittest.TestCase):
             workspace.mkdir()
             workflow = workflow_with_hook(command=["true"])
             with mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state"
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state"
             ) as prepare:
                 runner = FakeNativeToolRunner(
                     workflow=workflow,
@@ -1063,10 +1063,10 @@ class AgentNativeToolHookTests(unittest.TestCase):
             }
             path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
             with mock.patch.dict(os.environ, {"PATH": path}), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value=sys.executable,
             ), mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state",
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state",
                 return_value=preflight,
             ) as prepare:
                 runner = FakeNativeToolRunner(
@@ -1190,10 +1190,10 @@ class AgentNativeToolHookTests(unittest.TestCase):
             }
             path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
             with mock.patch.dict(os.environ, {"PATH": path}), mock.patch(
-                "conductor_runtime.runner.restricted_hook_python",
+                "conductor_extras.runtime.runner.restricted_hook_python",
                 return_value=sys.executable,
             ), mock.patch(
-                "conductor_runtime.runner.prepare_pre_tool_hook_state",
+                "conductor_extras.runtime.runner.prepare_pre_tool_hook_state",
                 return_value=preflight,
             ):
                 runner = NativeToolTeamRunner(
@@ -1243,10 +1243,10 @@ class AgentNativeToolHookTests(unittest.TestCase):
                 }
                 path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
                 with mock.patch.dict(os.environ, {"PATH": path}), mock.patch(
-                    "conductor_runtime.runner.restricted_hook_python",
+                    "conductor_extras.runtime.runner.restricted_hook_python",
                     return_value=sys.executable,
                 ), mock.patch(
-                    "conductor_runtime.runner.prepare_pre_tool_hook_state",
+                    "conductor_extras.runtime.runner.prepare_pre_tool_hook_state",
                     return_value=preflight,
                 ):
                     runner = CrashAfterNativeToolTerminalRunner(

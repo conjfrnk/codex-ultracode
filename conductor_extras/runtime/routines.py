@@ -716,7 +716,10 @@ def parse_routine_launch_command(argv) -> Dict:
 
 
 def _routine_subcommand_index(argv: List[str]) -> int:
-    if len(argv) >= 5 and argv[1:4] == ["-B", "-m", "conductor_runtime"]:
+    if len(argv) >= 5 and argv[1:3] == ["-B", "-m"] and argv[3] in {
+        "conductor_runtime",
+        "conductor_extras",
+    }:
         if not _is_python_launcher(argv[0]):
             raise ValidationError("routine module launch must use a trusted Python command shape")
         return 4

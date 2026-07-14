@@ -15,11 +15,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from conductor_runtime.errors import ValidationError
-from conductor_runtime.security import (
+from conductor_extras.runtime.security import (
     read_regular_text_file_no_follow,
     write_new_text_file_no_follow,
 )
-from conductor_runtime.staged_workspace import snapshot_workspace
+from conductor_extras.runtime.staged_workspace import snapshot_workspace
 
 
 READONLY_DIAGNOSTIC_SUITE = "conductor-readonly-diagnostic-canary"

@@ -11,12 +11,12 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from urllib.parse import urlencode
 
-from conductor_runtime.agent_profiles import AGENT_PROFILE_SCHEMA
-from conductor_runtime.agent_lifecycle_context import (
+from conductor_extras.runtime.agent_profiles import AGENT_PROFILE_SCHEMA
+from conductor_extras.runtime.agent_lifecycle_context import (
     AGENT_LIFECYCLE_CONTEXT_BEGIN,
     load_agent_lifecycle_context_receipt,
 )
-from conductor_runtime.agent_team import (
+from conductor_extras.runtime.agent_team import (
     AGENT_TEAM_STATE_SCHEMA,
     AGENT_TEAM_STATE_SCHEMA_V5,
     AGENT_TEAM_STATE_SCHEMA_V4,
@@ -38,20 +38,20 @@ from conductor_runtime.agent_team import (
     verify_agent_team_state_outputs,
     write_agent_team_state,
 )
-from conductor_runtime.agent_team_chat import (
+from conductor_extras.runtime.agent_team_chat import (
     AGENT_TEAM_OPERATOR_CHAT_SCHEMA,
     agent_team_operator_chat_summary,
     load_agent_team_operator_chat,
     validate_agent_team_operator_chat,
     verify_agent_team_operator_chat,
 )
-from conductor_runtime.agent_team_transcript import (
+from conductor_extras.runtime.agent_team_transcript import (
     AGENT_TEAM_TRANSCRIPT_SCHEMA,
     AgentTeamTranscriptWriter,
     load_agent_team_transcript,
     validate_agent_team_transcript,
 )
-from conductor_runtime.agent_team_operator import (
+from conductor_extras.runtime.agent_team_operator import (
     AGENT_TEAM_OPERATOR_INBOX_SCHEMA,
     AGENT_TEAM_OPERATOR_INBOX_SCHEMA_V1,
     append_agent_team_operator_entry,
@@ -62,7 +62,7 @@ from conductor_runtime.agent_team_operator import (
     validate_agent_team_operator_inbox,
     verify_agent_team_operator_inbox,
 )
-from conductor_runtime.agent_team_merge import (
+from conductor_extras.runtime.agent_team_merge import (
     AGENT_TEAM_MERGE_INTENT_SCHEMA,
     AGENT_TEAM_MERGE_LEDGER_SCHEMA,
     AGENT_TEAM_MERGE_RECOVERY_SCHEMA,
@@ -74,14 +74,14 @@ from conductor_runtime.agent_team_merge import (
     load_agent_team_merge_transaction,
     load_agent_team_merge_ledger,
 )
-from conductor_runtime.agent_team_hooks import (
+from conductor_extras.runtime.agent_team_hooks import (
     AGENT_TEAM_HOOK_INPUT_SCHEMA,
     agent_team_hook_input_json,
     agent_team_hook_input_sha256,
     build_agent_team_hook_input,
     validate_agent_team_hook_input,
 )
-from conductor_runtime.agent_team_quality_retry import (
+from conductor_extras.runtime.agent_team_quality_retry import (
     AGENT_TEAM_QUALITY_RETRY_SCHEMA,
     build_agent_team_quality_retry,
     finalize_agent_team_quality_retry,
@@ -90,19 +90,19 @@ from conductor_runtime.agent_team_quality_retry import (
     load_agent_team_quality_retry,
     validate_agent_team_quality_retry,
 )
-from conductor_runtime.agent_team_turn_completion import (
+from conductor_extras.runtime.agent_team_turn_completion import (
     AGENT_TEAM_TURN_COMPLETION_SCHEMA,
     agent_team_turn_completion_summary,
     list_agent_team_turn_completion_paths,
     load_agent_team_turn_completion,
 )
-from conductor_runtime.agent_team_turn_terminal import (
+from conductor_extras.runtime.agent_team_turn_terminal import (
     AGENT_TEAM_TURN_TERMINAL_SCHEMA,
     agent_team_turn_terminal_summary,
     list_agent_team_turn_terminal_paths,
     load_agent_team_turn_terminal,
 )
-from conductor_runtime.agent_team_plan_approval import (
+from conductor_extras.runtime.agent_team_plan_approval import (
     AGENT_TEAM_PLAN_APPROVAL_SCHEMA,
     AGENT_TEAM_PLAN_APPROVAL_SCHEMA_V2,
     AGENT_TEAM_PLAN_APPROVAL_SCHEMA_V1,
@@ -114,20 +114,20 @@ from conductor_runtime.agent_team_plan_approval import (
     verify_agent_team_plan_approval_outputs,
 )
 from conductor_runtime.errors import PolicyError, StepExecutionError, ValidationError
-from conductor_runtime.legacy_cli import main as cli_main
-from conductor_runtime.dashboard import (
+from conductor_extras.cli import main as cli_main
+from conductor_extras.runtime.dashboard import (
     collect_run_detail,
     run_handle,
     step_handle,
     write_dashboard,
 )
-from conductor_runtime.live_server import (
+from conductor_extras.runtime.live_server import (
     _handler_factory,
     apply_live_control,
     render_live_run_detail,
 )
-from conductor_runtime.runner import ProcessResult, WorkflowRunner
-from conductor_runtime.run_control import (
+from conductor_extras.runtime.runner import ProcessResult, WorkflowRunner
+from conductor_extras.runtime.run_control import (
     list_team_inbox,
     list_team_plans,
     list_team_questions,
@@ -141,15 +141,15 @@ from conductor_runtime.run_control import (
     review_team_plan,
     retry_step,
 )
-from conductor_runtime.team_console import (
+from conductor_extras.runtime.team_console import (
     render_team_console,
     team_console_is_terminal,
     validate_team_console_snapshot,
 )
-from conductor_runtime.schemas import get_schema
-from conductor_runtime.security import RuntimePolicy, assess_command
-from conductor_runtime.staged_workspace import snapshot_workspace
-from conductor_runtime.workflow import validate_workflow, workflow_fingerprint, workflow_summary
+from conductor_extras.runtime.schemas import get_schema
+from conductor_extras.runtime.security import RuntimePolicy, assess_command
+from conductor_extras.runtime.staged_workspace import snapshot_workspace
+from conductor_extras.runtime.workflow import validate_workflow, workflow_fingerprint, workflow_summary
 
 
 SESSION_IDS = {
@@ -1391,7 +1391,7 @@ class AgentTeamTests(unittest.TestCase):
             [
                 "python3",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "read-team-transcript",
                 "/tmp/run",
                 "team-debug",
@@ -1724,7 +1724,7 @@ class AgentTeamTests(unittest.TestCase):
                 [
                     "python3",
                     "-m",
-                    "conductor_runtime",
+                    "conductor_extras",
                     "team-console",
                     str(run.run_dir),
                     "team-debug",
@@ -1959,7 +1959,7 @@ class AgentTeamTests(unittest.TestCase):
             self.assertEqual(status, 400)
 
             with patch(
-                "conductor_runtime.live_server.time.time",
+                "conductor_extras.runtime.live_server.time.time",
                 return_value=time.time() + 3600,
             ):
                 status, _headers, _body = self._invoke_live_handler(
@@ -2163,7 +2163,7 @@ class AgentTeamTests(unittest.TestCase):
             [
                 "python3",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "reply-team-question",
                 "/tmp/run",
                 "team-debug",
@@ -2178,7 +2178,7 @@ class AgentTeamTests(unittest.TestCase):
             [
                 "python3",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "read-team-question",
                 "/tmp/run",
                 "team-debug",
@@ -2996,7 +2996,7 @@ class AgentTeamTests(unittest.TestCase):
                 "inspect-agent-team-quality-retry",
             ):
                 assessment = assess_command(
-                    ["python3", "-m", "conductor_runtime", command, str(history_path)]
+                    ["python3", "-m", "conductor_extras", command, str(history_path)]
                 )
                 self.assertFalse(assessment.writes)
                 self.assertFalse(assessment.network)
@@ -3577,7 +3577,7 @@ class AgentTeamTests(unittest.TestCase):
             self.assertEqual(inspected_value["generation"], 0)
             self.assertNotIn("messages", inspected_value)
             read_assessment = assess_command(
-                ["python3", "-m", "conductor_runtime", "inspect-agent-team-state", str(state_path)]
+                ["python3", "-m", "conductor_extras", "inspect-agent-team-state", str(state_path)]
             )
             self.assertFalse(read_assessment.writes)
             self.assertFalse(read_assessment.network)
@@ -3780,7 +3780,7 @@ class AgentTeamTests(unittest.TestCase):
             workspace = root / "workspace"
             workspace.mkdir()
             with patch(
-                "conductor_runtime.agent_team.prepare_agent_team_message_tasks",
+                "conductor_extras.runtime.agent_team.prepare_agent_team_message_tasks",
                 side_effect=AssertionError("active messaging path was accessed"),
             ):
                 runner = FakeTeamRunner(
@@ -3919,12 +3919,12 @@ class AgentTeamTests(unittest.TestCase):
             self.assertIn("operator follow-ups", render_live_run_detail(detail))
 
             queue_assessment = assess_command(
-                ["python3", "-m", "conductor_runtime", "queue-team-task", "run", "team"]
+                ["python3", "-m", "conductor_extras", "queue-team-task", "run", "team"]
             )
             self.assertTrue(queue_assessment.writes)
             self.assertFalse(queue_assessment.network)
             list_assessment = assess_command(
-                ["python3", "-m", "conductor_runtime", "list-team-inbox", "run", "team"]
+                ["python3", "-m", "conductor_extras", "list-team-inbox", "run", "team"]
             )
             self.assertFalse(list_assessment.writes)
             self.assertFalse(list_assessment.network)
@@ -4154,7 +4154,7 @@ class AgentTeamTests(unittest.TestCase):
                 [
                     "python3",
                     "-m",
-                    "conductor_runtime",
+                    "conductor_extras",
                     "inspect-agent-team-interruption",
                     str(interruption_path),
                 ]
@@ -4485,7 +4485,7 @@ class AgentTeamTests(unittest.TestCase):
                 runner,
                 "_agent_team_operator_inbox_path",
                 return_value=root / "missing-inbox.json",
-            ), patch("conductor_runtime.runner.os.stat", side_effect=missing_inbox):
+            ), patch("conductor_extras.runtime.runner.os.stat", side_effect=missing_inbox):
                 for _index in range(64):
                     self.assertEqual(
                         runner._agent_team_interrupt_requests(step, state),
@@ -5391,7 +5391,7 @@ class AgentTeamTests(unittest.TestCase):
             [
                 "python3",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "review-team-plan",
                 "/tmp/run",
                 "team-planned-implementation",
@@ -5408,7 +5408,7 @@ class AgentTeamTests(unittest.TestCase):
             [
                 "python3",
                 "-m",
-                "conductor_runtime",
+                "conductor_extras",
                 "read-team-plan",
                 "/tmp/run",
                 "team-planned-implementation",
@@ -5521,7 +5521,7 @@ class AgentTeamTests(unittest.TestCase):
                 [
                     "python3",
                     "-m",
-                    "conductor_runtime",
+                    "conductor_extras",
                     "inspect-agent-team-plan-approval",
                     str(approval_path),
                 ]
@@ -5973,7 +5973,7 @@ class AgentTeamTests(unittest.TestCase):
             workspace = root / "workspace"
             workspace.mkdir()
             with patch(
-                "conductor_runtime.runner.agent_team_plan_approval_path",
+                "conductor_extras.runtime.runner.agent_team_plan_approval_path",
                 side_effect=AssertionError("disabled teams must not inspect approval state"),
             ):
                 runner = FakeTeamRunner(
@@ -6107,7 +6107,7 @@ class AgentTeamTests(unittest.TestCase):
                 [
                     "python3",
                     "-m",
-                    "conductor_runtime",
+                    "conductor_extras",
                     "inspect-agent-team-merge-ledger",
                     str(ledger_path),
                 ]
@@ -6291,7 +6291,7 @@ class AgentTeamTests(unittest.TestCase):
                 [
                     "python3",
                     "-m",
-                    "conductor_runtime",
+                    "conductor_extras",
                     "inspect-agent-team-merge-intent",
                     str(intent_path),
                 ]
@@ -6401,7 +6401,7 @@ class AgentTeamTests(unittest.TestCase):
                 [
                     "python3",
                     "-m",
-                    "conductor_runtime",
+                    "conductor_extras",
                     "inspect-agent-team-turn-completion",
                     str(completion_paths[0]),
                 ]
@@ -6521,7 +6521,7 @@ class AgentTeamTests(unittest.TestCase):
                 [
                     "python3",
                     "-m",
-                    "conductor_runtime",
+                    "conductor_extras",
                     "inspect-agent-team-turn-terminal",
                     str(terminal_paths[0]),
                 ]
@@ -7512,7 +7512,7 @@ class AgentTeamTests(unittest.TestCase):
                     [
                         "python3",
                         "-m",
-                        "conductor_runtime",
+                        "conductor_extras",
                         "inspect-agent-team-merge-transaction",
                         str(pending),
                     ]
@@ -7594,7 +7594,7 @@ class AgentTeamTests(unittest.TestCase):
                     [
                         "python3",
                         "-m",
-                        "conductor_runtime",
+                        "conductor_extras",
                         "inspect-agent-team-merge-recovery",
                         str(receipts[0]),
                     ]

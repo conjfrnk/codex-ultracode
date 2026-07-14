@@ -122,7 +122,7 @@ def _resume_command_argv(
         "python3",
         "-B",
         "-m",
-        "conductor_runtime",
+        "conductor_extras",
         "run",
         str(workflow_path),
         "--workspace",
