@@ -8,7 +8,7 @@ from ..errors import PolicyError, ValidationError
 from .auto import write_requested
 from .policy import RuntimePolicy
 from .runner import WorkflowRunner
-from .safe import canonical_json_bytes, sha256_bytes, strict_json_bytes
+from .safe import canonical_json_bytes, require_external_state_path, sha256_bytes, strict_json_bytes
 from .workflow import MAX_ITEMS, MAX_STEPS, MAX_WORKERS, validate_workflow, workflow_fingerprint
 
 
@@ -61,6 +61,9 @@ def run_planned_workflow(
     _bounded_limit(max_workers, 1, MAX_WORKERS, "max_workers")
     _bounded_limit(planner_max_tokens, 100, 10**9, "planner_max_tokens")
     _bounded_limit(execution_max_tokens, 100, 10**9, "execution_max_tokens")
+    workspace = Path(workspace).resolve()
+    if receipt_path is not None:
+        receipt_path = require_external_state_path(receipt_path, workspace, "workflow receipt")
     planner_step = {
         "id": "plan",
         "kind": "codex_exec",
@@ -198,6 +201,9 @@ def _enforce_plan_limits(workflow, policy, max_steps, max_items, max_workers, to
 
 
 def _planner_prompt(task, policy, max_steps, max_items, max_workers, token_cap):
+    task = task.replace("BEGIN_UNTRUSTED_TASK", "[escaped-task-begin]").replace(
+        "END_UNTRUSTED_TASK", "[escaped-task-end]"
+    )
     return """Design one strict conductor.workflow.v1 JSON workflow for the task below.
 
 Use direct sequential steps unless independent investigation over multiple items is materially useful. For parallel work, use exactly this bounded shape: one read-only agent_map, one collect_results step, then one codex_exec synthesis step that directly depends on and uses context_from the collector. Map workers must be read-only. Every Codex call needs max_tokens; every map needs max_total_tokens. A workspace-write Codex step is allowed only when writes_allowed is true and must have a downstream read-only shell check or strict-v1 Codex verifier. Use at most {steps} steps, {items} items, {workers} workers, and {tokens} aggregate declared execution tokens. Use argv arrays for shell commands. Set result_artifact. Return only the workflow JSON.

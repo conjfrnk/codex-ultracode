@@ -1459,6 +1459,22 @@ class RuntimeWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(packaged_extras.returncode, 0, packaged_extras.stderr)
             extras = dist / "conductor-extras.pyz"
+            packaged_skill = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(project_root / "tools" / "package_skill.py"),
+                    str(project_root / "codex-conductor"),
+                    str(dist),
+                ],
+                cwd=str(project_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(packaged_skill.returncode, 0, packaged_skill.stderr)
+            skill_archive = dist / "skill.zip"
             self.assertTrue(os.access(runtime, os.X_OK))
             self.assertTrue(runtime.read_bytes().startswith(b"#!/usr/bin/env python3\n"))
             with zipfile.ZipFile(runtime) as archive:
@@ -1472,6 +1488,7 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 )
             with zipfile.ZipFile(dist / "codex-conductor-bundle.zip") as archive:
                 self.assertIsNone(archive.testzip())
+                self.assertEqual({item.date_time for item in archive.infolist()}, {(1980, 1, 2, 0, 0, 0)})
                 self.assertFalse(
                     any("__pycache__" in name or name.endswith(".pyc") for name in archive.namelist())
                 )
@@ -1485,6 +1502,9 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 self.assertIsNone(archive.testzip())
                 self.assertIn("conductor_extras/runtime/routine_service.py", archive.namelist())
                 self.assertIn("tools/evaluate_implementation_canary.py", archive.namelist())
+            with zipfile.ZipFile(skill_archive) as archive:
+                self.assertIsNone(archive.testzip())
+                self.assertEqual({item.date_time for item in archive.infolist()}, {(1980, 1, 2, 0, 0, 0)})
             second_dist = Path(tmp) / "dist-second"
             packaged_again = subprocess.run(
                 [sys.executable, "-B", str(project_root / "tools" / "package_runtime.py"), str(second_dist)],
@@ -1518,6 +1538,22 @@ class RuntimeWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(packaged_extras_again.returncode, 0, packaged_extras_again.stderr)
             self.assertEqual(extras.read_bytes(), (second_dist / "conductor-extras.pyz").read_bytes())
+            packaged_skill_again = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(project_root / "tools" / "package_skill.py"),
+                    str(project_root / "codex-conductor"),
+                    str(second_dist),
+                ],
+                cwd=str(project_root),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(packaged_skill_again.returncode, 0, packaged_skill_again.stderr)
+            self.assertEqual(skill_archive.read_bytes(), (second_dist / "skill.zip").read_bytes())
             invoked = subprocess.run(
                 [str(runtime), "--version"],
                 cwd=str(project_root),

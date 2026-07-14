@@ -18,6 +18,7 @@ from .safe import (
     external_goals_dir,
     load_json,
     replace_json,
+    require_external_state_path,
     sha256_bytes,
     strict_json_bytes,
     write_new_json,
@@ -56,14 +57,17 @@ def run_goal(
     if isinstance(max_iterations, bool) or not isinstance(max_iterations, int) or not 1 <= max_iterations <= MAX_ITERATIONS:
         raise ValidationError("max_iterations must be from 1 to %d" % MAX_ITERATIONS)
     workspace_path = Path(workspace).resolve()
-    bindings = _bindings(task, workspace_path, policy, max_iterations, workflow_options)
+    binding_options = dict(workflow_options)
+    binding_options["output_path"] = output_path
+    bindings = _bindings(task, workspace_path, policy, max_iterations, binding_options)
     if resume_goal is not None:
-        path = Path(resume_goal).expanduser()
+        path = require_external_state_path(resume_goal, workspace_path, "goal state")
     else:
         identifier = goal_id or ("goal-" + os.urandom(6).hex())
         if GOAL_ID.fullmatch(identifier) is None:
             raise ValidationError("goal id must use lowercase letters, digits, and hyphens")
         root = Path(goals_dir).expanduser().resolve(strict=False) if goals_dir else external_goals_dir(workspace_path)
+        root = require_external_state_path(root, workspace_path, "goal state directory")
         path = root / (identifier + ".json")
     with _goal_lock(path):
         if resume_goal is not None:
@@ -92,7 +96,7 @@ def run_goal(
             state["attempts"].append(
                 {
                     "iteration": len(state["attempts"]) + 1,
-                    "run_dir": redact_text(str(result.run_dir)),
+                    "run_dir": str(result.run_dir),
                     "run_id": run.descriptor["run_id"],
                     "status": result.status,
                     "retryable_verification_failure": retryable,
@@ -169,15 +173,78 @@ def _save_goal(path: Path, value: dict) -> dict:
 
 def _load_goal(path: Path) -> dict:
     value = load_json(path, "goal state")
-    if not isinstance(value, dict) or value.get("schema") != GOAL_SCHEMA:
+    fields = {
+        "schema",
+        "goal_id",
+        "task_sha256",
+        "workspace_sha256",
+        "policy_sha256",
+        "options_sha256",
+        "max_iterations",
+        "status",
+        "attempts",
+        "created_at_utc",
+        "updated_at_utc",
+        "approval_values_persisted",
+        "goal_sha256",
+    }
+    if not isinstance(value, dict) or set(value) != fields or value.get("schema") != GOAL_SCHEMA:
         raise ValidationError("goal state schema is invalid")
     if value.get("goal_sha256") != _with_hash(value)["goal_sha256"]:
         raise ValidationError("goal state hash does not match")
-    if value.get("status") not in {"pending", "running", "retrying", "completed", "failed", "exhausted"}:
+    if value.get("goal_id") != path.stem or GOAL_ID.fullmatch(value.get("goal_id", "")) is None:
+        raise ValidationError("goal state identity is invalid")
+    for field in ("task_sha256", "workspace_sha256", "policy_sha256", "options_sha256"):
+        if not isinstance(value.get(field), str) or re.fullmatch(r"[0-9a-f]{64}", value[field]) is None:
+            raise ValidationError("goal state binding is invalid")
+    maximum = value.get("max_iterations")
+    if isinstance(maximum, bool) or not isinstance(maximum, int) or not 1 <= maximum <= MAX_ITERATIONS:
+        raise ValidationError("goal state iteration limit is invalid")
+    status = value.get("status")
+    if not isinstance(status, str) or status not in {
+        "pending",
+        "running",
+        "retrying",
+        "completed",
+        "failed",
+        "exhausted",
+    }:
         raise ValidationError("goal state status is invalid")
     attempts = value.get("attempts")
-    if not isinstance(attempts, list) or len(attempts) > MAX_ITERATIONS:
+    if not isinstance(attempts, list) or len(attempts) > maximum:
         raise ValidationError("goal attempt history is invalid")
+    for index, attempt in enumerate(attempts, start=1):
+        if not isinstance(attempt, dict) or set(attempt) != {
+            "iteration",
+            "run_dir",
+            "run_id",
+            "status",
+            "retryable_verification_failure",
+            "feedback_sha256",
+        }:
+            raise ValidationError("goal attempt record is invalid")
+        feedback = attempt.get("feedback_sha256")
+        if (
+            attempt.get("iteration") != index
+            or not isinstance(attempt.get("run_dir"), str)
+            or not attempt["run_dir"]
+            or not isinstance(attempt.get("run_id"), str)
+            or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,127}", attempt["run_id"]) is None
+            or not isinstance(attempt.get("status"), str)
+            or attempt.get("status") not in {"completed", "failed", "blocked", "paused"}
+            or not isinstance(attempt.get("retryable_verification_failure"), bool)
+            or (
+                feedback is not None
+                and (not isinstance(feedback, str) or re.fullmatch(r"[0-9a-f]{64}", feedback) is None)
+            )
+        ):
+            raise ValidationError("goal attempt record is invalid")
+    if (
+        not isinstance(value.get("created_at_utc"), str)
+        or not isinstance(value.get("updated_at_utc"), str)
+        or value.get("approval_values_persisted") is not False
+    ):
+        raise ValidationError("goal state metadata is invalid")
     return value
 
 

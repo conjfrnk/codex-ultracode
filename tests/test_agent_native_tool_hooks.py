@@ -5,6 +5,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -1018,6 +1019,19 @@ class AgentNativeToolHookTests(unittest.TestCase):
             prepare.assert_not_called()
 
     def test_parallel_map_uses_one_preflight_and_one_gate_per_invocation(self):
+        class DeferredWorkerSummaryRunner(FakeNativeToolRunner):
+            def __init__(self, *args, **kwargs):
+                self.worker_summary_calls = 0
+                self.main_summary_calls = 0
+                super().__init__(*args, **kwargs)
+
+            def _publish_agent_native_tool_summary(self):
+                if threading.current_thread() is not threading.main_thread():
+                    self.worker_summary_calls += 1
+                    return {}
+                self.main_summary_calls += 1
+                return super()._publish_agent_native_tool_summary()
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
@@ -1069,7 +1083,7 @@ class AgentNativeToolHookTests(unittest.TestCase):
                 "conductor_extras.runtime.runner.prepare_pre_tool_hook_state",
                 return_value=preflight,
             ) as prepare:
-                runner = FakeNativeToolRunner(
+                runner = DeferredWorkerSummaryRunner(
                     workflow=workflow,
                     workspace=workspace,
                     base_run_dir=root / "runs",
@@ -1081,6 +1095,8 @@ class AgentNativeToolHookTests(unittest.TestCase):
                 )
                 run = runner.execute()
             self.assertEqual(runner.provider_calls, 2)
+            self.assertEqual(runner.worker_summary_calls, 2)
+            self.assertEqual(runner.main_summary_calls, 1)
             self.assertEqual(prepare.call_count, 1)
             gates = [
                 load_agent_native_tool_gate(path)

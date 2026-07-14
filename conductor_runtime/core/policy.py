@@ -28,7 +28,7 @@ class RuntimePolicy:
     approvals: Set[str] = field(default_factory=set)
 
     def has_approval(self, value: str) -> bool:
-        return value in self.approvals or "all" in self.approvals
+        return value in self.approvals
 
 
 @dataclass(frozen=True)
@@ -42,9 +42,16 @@ class CommandAssessment:
 def validate_approval_tokens(tokens: Iterable[str]) -> Set[str]:
     values = set()
     for token in tokens:
-        if not isinstance(token, str) or not token or any(char.isspace() for char in token):
-            raise ValidationError("approval tokens must be non-empty and contain no whitespace")
+        if (
+            not isinstance(token, str)
+            or not token
+            or len(token) > 256
+            or any(char.isspace() for char in token)
+        ):
+            raise ValidationError("approval tokens must be bounded, non-empty, and contain no whitespace")
         values.add(token)
+        if len(values) > 128:
+            raise ValidationError("at most 128 approval tokens are supported")
     return values
 
 
@@ -54,7 +61,7 @@ def normalize_command(command) -> List[str]:
             raise ValidationError("shell command must be a non-empty argv array")
         return list(command)
     if isinstance(command, str):
-        if any(char in SHELL_METACHARS for char in command):
+        if "\x00" in command or any(char in SHELL_METACHARS for char in command):
             raise ValidationError("shell command strings cannot contain shell metacharacters")
         values = shlex.split(command)
         if not values:
@@ -70,7 +77,7 @@ def assess_command(step: dict) -> CommandAssessment:
     destructive = bool(step.get("destructive", False)) or executable in DESTRUCTIVE_TOOLS
     writes = bool(step.get("writes", False)) or destructive
     if executable == "git" and len(argv) > 1:
-        operation = next((part for part in argv[1:] if not part.startswith("-")), "")
+        operation = _git_operation(argv)
         network = network or operation in {"clone", "fetch", "pull", "push"}
         writes = writes or operation in {
             "add",
@@ -95,10 +102,40 @@ def assess_command(step: dict) -> CommandAssessment:
     return CommandAssessment(argv=argv, writes=writes, destructive=destructive, network=network)
 
 
+def _git_operation(argv: List[str]) -> str:
+    options_with_values = {
+        "-C",
+        "-c",
+        "--config-env",
+        "--exec-path",
+        "--git-dir",
+        "--namespace",
+        "--super-prefix",
+        "--work-tree",
+    }
+    value_prefixes = tuple(value + "=" for value in options_with_values if value.startswith("--"))
+    index = 1
+    while index < len(argv):
+        value = argv[index]
+        if value in options_with_values:
+            index += 2
+            continue
+        if value.startswith(value_prefixes) or (value.startswith("-c") and value != "-c"):
+            index += 1
+            continue
+        if value == "--":
+            return argv[index + 1] if index + 1 < len(argv) else ""
+        if value.startswith("-"):
+            index += 1
+            continue
+        return value
+    return ""
+
+
 def enforce_shell(step: dict, policy: RuntimePolicy) -> CommandAssessment:
     assessment = assess_command(step)
     _enforce_risk(step, policy)
-    if Path(assessment.argv[0]).name not in INERT_SHELL_TOOLS:
+    if assessment.argv[0] not in INERT_SHELL_TOOLS:
         approval = shell_approval(assessment.argv)
         require_approval(policy, approval, "shell step %s" % step["id"])
     if assessment.writes and not policy.allow_writes:
@@ -127,6 +164,14 @@ def enforce_agent(step: dict, policy: RuntimePolicy, workers: int = 1) -> None:
         raise PolicyError("step %s requires --approve high-scale-agent-map" % step["id"])
 
 
+def enforce_workflow_risk(workflow: dict, policy: RuntimePolicy) -> None:
+    risk = workflow.get("risk", "low")
+    if not isinstance(risk, str) or risk not in RISK_LEVELS:
+        raise ValidationError("workflow has invalid risk")
+    if risk == "high" and not policy.has_approval("high-risk"):
+        raise PolicyError("high-risk workflow requires --approve high-risk")
+
+
 def require_approval(policy: RuntimePolicy, value: str, label: str) -> None:
     if not policy.has_approval(value):
         raise PolicyError("%s requires --approve %s" % (label, value))
@@ -134,7 +179,7 @@ def require_approval(policy: RuntimePolicy, value: str, label: str) -> None:
 
 def _enforce_risk(step: dict, policy: RuntimePolicy) -> None:
     risk = step.get("risk", "low")
-    if risk not in RISK_LEVELS:
+    if not isinstance(risk, str) or risk not in RISK_LEVELS:
         raise ValidationError("step %s has invalid risk" % step.get("id", "<unknown>"))
     if risk == "high" and not (
         policy.has_approval(step.get("id", "")) or policy.has_approval("high-risk")

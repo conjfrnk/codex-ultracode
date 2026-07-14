@@ -2,6 +2,19 @@
 
 Git history is the authoritative archive for releases before `0.172.0`.
 
+## 0.173.1
+
+- Hardened core workflow, state, goal, provider-stream, and staged-apply
+  validation against malformed, rehashed, duplicated, and type-confused data.
+- Made staged application lock-serialized and crash-recoverable, with exact
+  evidence binding, rollback verification, and source-drift preservation.
+- Closed approval, path-overlap, command-inference, process-tree timeout,
+  terminal-redaction, and custom-receipt boundary gaps.
+- Hardened the bundle installer against symlink roots and leaf reads, rejected
+  overlapping destinations, and normalized release ZIP metadata.
+- Fixed a parallel optional-runtime gate-summary race and expanded adversarial,
+  CLI, installer, packaging, crash, and fault-injection coverage.
+
 ## 0.173.0
 
 - Replaced the monolithic default runtime with a small model-first core.

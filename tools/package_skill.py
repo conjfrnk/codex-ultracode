@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import os
+import stat
 import sys
 import zipfile
 
 root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("codex-conductor")
 dist = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("dist")
 output = dist / "skill.zip"
+REPRODUCIBLE_MTIME = 315619200
+REPRODUCIBLE_ZIP_DATETIME = (1980, 1, 2, 0, 0, 0)
 
 if not root.is_dir():
     print(f"Package failed: {root} is not a directory")
@@ -35,7 +39,13 @@ with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         # Always arcname relative to a single top-level folder, regardless of
         # whether `root` was passed as relative, absolute, or with a trailing slash.
         arcname = f"{root_name}/{path.relative_to(root).as_posix()}"
-        archive.write(path, arcname)
+        info = zipfile.ZipInfo(arcname, date_time=REPRODUCIBLE_ZIP_DATETIME)
+        info.create_system = 3
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = (stat.S_IFREG | 0o644) << 16
+        archive.writestr(info, path.read_bytes())
+
+os.utime(output, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME))
 
 size = output.stat().st_size
 limit = 25 * 1024 * 1024

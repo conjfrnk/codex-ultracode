@@ -90,26 +90,40 @@ def run_process(
     ]
     for reader in readers:
         reader.start()
+    writer = threading.Thread(
+        target=_write_stream,
+        args=(process.stdin, input_text.encode("utf-8")),
+        daemon=True,
+    )
+    writer.start()
     try:
-        if process.stdin is not None:
-            try:
-                process.stdin.write(input_text.encode("utf-8"))
-                process.stdin.close()
-            except (BrokenPipeError, OSError):
-                pass
         timed_out = False
         try:
             returncode = process.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired:
             timed_out = True
             _terminate_group(process)
-            returncode = process.wait(timeout=5)
+            try:
+                returncode = process.wait(timeout=5)
+            except subprocess.TimeoutExpired as exc:
+                raise ValidationError("process group did not terminate") from exc
     finally:
+        writer.join(timeout=1)
         for reader in readers:
-            reader.join(timeout=5)
+            reader.join(timeout=1)
+        if writer.is_alive() or any(reader.is_alive() for reader in readers):
+            # A descendant may inherit a pipe after the leader exits. Terminate
+            # the original process group so output collection cannot leak it.
+            _terminate_group(process)
+            writer.join(timeout=2)
+            for reader in readers:
+                reader.join(timeout=2)
         if process.poll() is None:
             _terminate_group(process)
-            process.wait(timeout=5)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired as exc:
+                raise ValidationError("process group did not terminate") from exc
     duration_ms = max(0, int((time.monotonic() - started) * 1000))
     return ProcessResult(
         returncode=returncode,
@@ -140,16 +154,38 @@ def _read_stream(stream, buffer: _BoundedBuffer) -> None:
             pass
 
 
+def _write_stream(stream, payload: bytes) -> None:
+    if stream is None:
+        return
+    try:
+        stream.write(payload)
+        stream.close()
+    except (BrokenPipeError, OSError):
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
 def _terminate_group(process: subprocess.Popen) -> None:
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
         return
-    try:
-        process.wait(timeout=2)
-        return
-    except subprocess.TimeoutExpired:
-        pass
+    if process.poll() is None:
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+    deadline = time.monotonic() + 0.25
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            break
+        time.sleep(0.01)
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):

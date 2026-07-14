@@ -44,8 +44,8 @@ TOP_LEVEL_FIELDS = {
     "agent_map_max_total_tokens",
     "result_artifact",
     "steps",
-    "_source_path",
 }
+INTERNAL_ARTIFACT_ROOTS = {".receipts", ".schemas", "apply-backups", "stages"}
 COMMON_STEP_FIELDS = {
     "id",
     "kind",
@@ -134,9 +134,11 @@ def validate_workflow(workflow: Dict, source: str = "<memory>") -> None:
     if not isinstance(name, str) or not name.strip() or len(name) > 128:
         raise ValidationError("%s must set a bounded non-empty name" % source)
     _optional_text(workflow, "description", source, 4096)
-    if workflow.get("mode", "read_only") not in {"read_only", "workspace_write", "review", "custom"}:
+    mode = workflow.get("mode", "read_only")
+    if not isinstance(mode, str) or mode not in {"read_only", "workspace_write", "review", "custom"}:
         raise ValidationError("%s mode is unsupported" % source)
-    if workflow.get("risk", "low") not in RISK_LEVELS:
+    risk = workflow.get("risk", "low")
+    if not isinstance(risk, str) or risk not in RISK_LEVELS:
         raise ValidationError("%s risk is unsupported" % source)
     _optional_int(workflow, "max_workers", source, 1, MAX_WORKERS)
     _optional_int(workflow, "max_items", source, 1, MAX_ITEMS)
@@ -175,12 +177,13 @@ def validate_step(step: Dict, seen: set, workflow: Dict) -> None:
         raise ValidationError("duplicate step id %s" % step_id)
     seen.add(step_id)
     kind = step.get("kind")
-    if kind not in STEP_KINDS:
+    if not isinstance(kind, str) or kind not in STEP_KINDS:
         raise ValidationError("step %s has unsupported kind %r" % (step_id, kind))
     unknown = sorted(set(step) - STEP_FIELDS[kind])
     if unknown:
         raise ValidationError("step %s contains unsupported fields: %s" % (step_id, ", ".join(unknown)))
-    if step.get("risk", "low") not in RISK_LEVELS:
+    risk = step.get("risk", "low")
+    if not isinstance(risk, str) or risk not in RISK_LEVELS:
         raise ValidationError("step %s has unsupported risk" % step_id)
     _optional_text(step, "description", "step %s" % step_id, 4096)
     _optional_text(step, "phase", "step %s" % step_id, 128, pattern=SAFE_ID)
@@ -209,7 +212,12 @@ def validate_step(step: Dict, seen: set, workflow: Dict) -> None:
         _optional_bool(step, "intermediate", step_id)
     elif kind == "manual_gate":
         approval = step.get("approval_id", step_id)
-        if not isinstance(approval, str) or not approval or any(char.isspace() for char in approval):
+        if (
+            not isinstance(approval, str)
+            or not approval
+            or len(approval) > 256
+            or any(char.isspace() for char in approval)
+        ):
             raise ValidationError("step %s approval_id is invalid" % step_id)
     elif kind == "shell":
         normalize_command(step.get("command"))
@@ -217,7 +225,8 @@ def validate_step(step: Dict, seen: set, workflow: Dict) -> None:
             require_relative(step["cwd"], "step %s cwd" % step_id)
         if step.get("capture") is not None:
             require_relative(step["capture"], "step %s capture" % step_id)
-        if step.get("capture_mode", "combined") not in {"combined", "stdout", "stderr"}:
+        capture_mode = step.get("capture_mode", "combined")
+        if not isinstance(capture_mode, str) or capture_mode not in {"combined", "stdout", "stderr"}:
             raise ValidationError("step %s capture_mode is unsupported" % step_id)
         for field in ("writes", "destructive", "network"):
             if field not in step:
@@ -240,7 +249,8 @@ def _validate_codex_step(step: Dict, workflow: Dict) -> None:
         if step.get(field) is not None:
             require_relative(step[field], "step %s %s" % (step_id, field))
     require_relative(step.get("capture", "%s.md" % step_id), "step %s capture" % step_id)
-    if step.get("sandbox", "read-only") not in {"read-only", "workspace-write"}:
+    sandbox = step.get("sandbox", "read-only")
+    if not isinstance(sandbox, str) or sandbox not in {"read-only", "workspace-write"}:
         raise ValidationError("step %s sandbox is unsupported" % step_id)
     if step.get("model") is not None:
         _bounded_text(step["model"], "step %s model" % step_id, 200)
@@ -270,7 +280,7 @@ def _validate_map_step(step: Dict, workflow: Dict) -> None:
     if sum(value is not None for value in sources) != 1:
         raise ValidationError("step %s must set exactly one item source" % step_id)
     semantics = step.get("item_semantics", "workspace_path")
-    if semantics not in {"workspace_path", "opaque", "json"}:
+    if not isinstance(semantics, str) or semantics not in {"workspace_path", "opaque", "json"}:
         raise ValidationError("step %s item_semantics is unsupported" % step_id)
     items = step.get("items")
     if items is not None:
@@ -292,17 +302,22 @@ def _validate_map_step(step: Dict, workflow: Dict) -> None:
     _bounded_text(template, "step %s prompt_template" % step_id, MAX_PROMPT_CHARS)
     fields = []
     try:
-        for _, name, _, _ in string.Formatter().parse(template):
+        for _, name, format_spec, conversion in string.Formatter().parse(template):
             if name is not None:
                 fields.append(name)
+                if format_spec or conversion:
+                    raise ValidationError(
+                        "step %s prompt_template does not support conversions or format specs" % step_id
+                    )
     except ValueError as exc:
         raise ValidationError("step %s prompt_template is invalid" % step_id) from exc
     if "item" not in fields or any(field not in {"item", "index"} for field in fields):
         raise ValidationError("step %s prompt_template supports only item and index" % step_id)
     require_relative(step.get("capture_dir", step_id), "step %s capture_dir" % step_id)
-    if step.get("sandbox", "read-only") not in {"read-only", "workspace-write"}:
+    sandbox = step.get("sandbox", "read-only")
+    if not isinstance(sandbox, str) or sandbox not in {"read-only", "workspace-write"}:
         raise ValidationError("step %s sandbox is unsupported" % step_id)
-    if step.get("sandbox", "read-only") != "read-only":
+    if sandbox != "read-only":
         raise ValidationError("step %s map workers must be read-only" % step_id)
     if step.get("model") is not None:
         _bounded_text(step["model"], "step %s model" % step_id, 200)
@@ -348,14 +363,37 @@ def _validate_context(steps: List[Dict]) -> None:
 
 def _validate_outputs(workflow: Dict, steps: List[Dict]) -> None:
     outputs = []
+    directories = []
     for step in steps:
         output = step.get("output") or step.get("capture")
         if step["kind"] == "codex_exec" and output is None:
             output = "%s.md" % step["id"]
         if isinstance(output, str):
+            _validate_public_artifact_path(output, "step %s output" % step["id"])
             outputs.append(output)
+        if step["kind"] == "agent_map":
+            directory = step.get("capture_dir", step["id"])
+            _validate_public_artifact_path(directory, "step %s capture_dir" % step["id"])
+            directories.append(directory)
     if len(outputs) != len(set(outputs)):
         raise ValidationError("workflow output paths must be unique")
+    if len(directories) != len(set(directories)):
+        raise ValidationError("workflow map capture directories must be unique")
+    paths = [(path, False) for path in outputs] + [(path, True) for path in directories]
+    for index, (left, left_is_directory) in enumerate(paths):
+        left_parts = Path(left).parts
+        for right, right_is_directory in paths[index + 1 :]:
+            right_parts = Path(right).parts
+            if left_parts == right_parts:
+                raise ValidationError("workflow artifact paths must not overlap")
+            if left_is_directory and right_parts[: len(left_parts)] == left_parts:
+                raise ValidationError("workflow artifact paths must not overlap")
+            if right_is_directory and left_parts[: len(right_parts)] == right_parts:
+                raise ValidationError("workflow artifact paths must not overlap")
+            if not left_is_directory and right_parts[: len(left_parts)] == left_parts:
+                raise ValidationError("workflow artifact file cannot contain another output")
+            if not right_is_directory and left_parts[: len(right_parts)] == right_parts:
+                raise ValidationError("workflow artifact file cannot contain another output")
     result = workflow.get("result_artifact")
     if result is not None and result not in outputs:
         raise ValidationError("result_artifact must name a declared step output")
@@ -505,7 +543,7 @@ def _optional_tokens(value: Dict, field: str, label: str) -> None:
 
 
 def _optional_effort(value: Dict, field: str, label: str) -> None:
-    if field in value and value[field] not in EFFORTS:
+    if field in value and (not isinstance(value[field], str) or value[field] not in EFFORTS):
         raise ValidationError("%s %s is unsupported" % (label, field))
 
 
@@ -523,3 +561,9 @@ def _bounded_text(value, label: str, maximum: int) -> str:
     if not isinstance(value, str) or not value or len(value) > maximum:
         raise ValidationError("%s must be non-empty bounded text" % label)
     return value
+
+
+def _validate_public_artifact_path(value: str, label: str) -> None:
+    clean = require_relative(value, label)
+    if Path(clean).parts[0] in INTERNAL_ARTIFACT_ROOTS:
+        raise ValidationError("%s uses a reserved runtime path" % label)

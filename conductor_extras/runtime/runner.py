@@ -717,26 +717,36 @@ class WorkflowRunner:
             )
             self._honor_run_control_request()
             return
-        if self.dry_run:
-            self._dry_run_step(step)
-        elif kind == "write_artifact":
-            self._write_artifact(step)
-        elif kind == "collect_results":
-            self._collect_results(step)
-        elif kind == "manual_gate":
-            self._manual_gate(step)
-        elif kind == "shell":
-            self._shell(step)
-        elif kind == "codex_exec":
-            self._codex_exec(step)
-        elif kind == "agent_map":
-            self._agent_map(step)
-        elif kind == "agent_team":
-            self._agent_team(step)
-        elif kind == "agent_memory":
-            self._agent_memory(step)
-        else:
-            raise ValidationError("unsupported step kind %s" % kind)
+        try:
+            if self.dry_run:
+                self._dry_run_step(step)
+            elif kind == "write_artifact":
+                self._write_artifact(step)
+            elif kind == "collect_results":
+                self._collect_results(step)
+            elif kind == "manual_gate":
+                self._manual_gate(step)
+            elif kind == "shell":
+                self._shell(step)
+            elif kind == "codex_exec":
+                self._codex_exec(step)
+            elif kind == "agent_map":
+                self._agent_map(step)
+            elif kind == "agent_team":
+                self._agent_team(step)
+            elif kind == "agent_memory":
+                self._agent_memory(step)
+            else:
+                raise ValidationError("unsupported step kind %s" % kind)
+        except BaseException:
+            if self._may_have_agent_native_tool_hooks(step):
+                try:
+                    self._publish_agent_native_tool_summary()
+                except (OSError, ValidationError):
+                    pass
+            raise
+        if self._may_have_agent_native_tool_hooks(step):
+            self._publish_agent_native_tool_summary()
         if self._has_matching_hooks("after_step", step=step):
             self.run.mark_run_status("running")
         self._run_hooks("after_step", step=step)

@@ -9,7 +9,7 @@ from typing import Dict, Optional
 from ..errors import ConductorError, PolicyError, StepExecutionError, ValidationError
 from ..redaction import redact_text
 from .codex import CodexInvocationError, invoke_codex
-from .policy import RuntimePolicy, enforce_agent, enforce_shell, require_approval
+from .policy import RuntimePolicy, enforce_agent, enforce_shell, enforce_workflow_risk, require_approval
 from .process import run_process
 from .safe import (
     canonical_json_bytes,
@@ -19,7 +19,14 @@ from .safe import (
     sha256_bytes,
     strict_json_bytes,
 )
-from .staged import create_stage, finalize_stage, mark_stage_verified, snapshot_workspace
+from .staged import (
+    create_stage,
+    discard_stage,
+    finalize_stage,
+    mark_stage_verified,
+    snapshot_workspace,
+    validate_stage_evidence,
+)
 from .state import RunState
 from .workflow import (
     MAX_CONTEXT_SOURCES,
@@ -38,6 +45,10 @@ MAX_COLLECT_INPUT_BYTES = 16 * 1024 * 1024
 MAX_ITERATION_CONTEXT_CHARS = 8000
 CONTEXT_BEGIN = "BEGIN_UNTRUSTED_DEPENDENCY_EVIDENCE"
 CONTEXT_END = "END_UNTRUSTED_DEPENDENCY_EVIDENCE"
+ITERATION_CONTEXT_BEGIN = "BEGIN_UNTRUSTED_PRIOR_VERIFIER_FEEDBACK"
+ITERATION_CONTEXT_END = "END_UNTRUSTED_PRIOR_VERIFIER_FEEDBACK"
+MAP_ITEM_BEGIN = "BEGIN_UNTRUSTED_MAP_ITEM"
+MAP_ITEM_END = "END_UNTRUSTED_MAP_ITEM"
 
 
 class WorkflowRunner:
@@ -100,6 +111,11 @@ class WorkflowRunner:
                 self.run.verify_recorded_artifacts()
                 return self.run
             self.run.set_status("running")
+            try:
+                enforce_workflow_risk(self.workflow, self.policy)
+            except PolicyError as exc:
+                self.run.set_status("blocked", str(exc))
+                return self.run
             for step in self.workflow["steps"]:
                 record = self.run.state["steps"][step["id"]]
                 if record["status"] == "completed":
@@ -168,7 +184,7 @@ class WorkflowRunner:
             require_approval(self.policy, step.get("approval_id", step["id"]), "manual gate")
         elif kind == "shell":
             enforce_shell(step, self.policy)
-            self._shell_workspace(step)
+            self._shell_workspace(step, self._active_workspace(step))
         elif kind == "codex_exec":
             enforce_agent(step, self.policy)
             self._load_prompt(step, allow_missing_artifact=True)
@@ -180,39 +196,52 @@ class WorkflowRunner:
 
     def _shell(self, step: Dict) -> Dict:
         assessment = enforce_shell(step, self.policy)
-        cwd = self._shell_workspace(step)
-        timeout = step.get("timeout_seconds", self.workflow.get("default_timeout_seconds", 300))
-        limit = step.get("output_limit_bytes", self.workflow.get("output_limit_bytes", DEFAULT_OUTPUT_LIMIT_BYTES))
-        result = run_process(
-            assessment.argv,
-            cwd=cwd,
-            timeout_seconds=timeout,
-            output_limit_bytes=limit,
-        )
-        capture = step.get("capture")
-        if capture:
-            mode = step.get("capture_mode", "combined")
-            if mode == "stdout":
-                text = result.stdout
-            elif mode == "stderr":
-                text = result.stderr
+        source = self._active_workspace(step)
+        attempt = self.run.state["steps"][step["id"]]["attempt"]
+        sandbox_id = "shell-%s-attempt-%d" % (step["id"], attempt)
+        isolated = create_stage(self.run.run_dir, sandbox_id, source)
+        mutated = False
+        try:
+            cwd = self._shell_workspace(step, isolated["stage_dir"])
+            timeout = step.get("timeout_seconds", self.workflow.get("default_timeout_seconds", 300))
+            limit = step.get("output_limit_bytes", self.workflow.get("output_limit_bytes", DEFAULT_OUTPUT_LIMIT_BYTES))
+            result = run_process(
+                assessment.argv,
+                cwd=cwd,
+                timeout_seconds=timeout,
+                output_limit_bytes=limit,
+            )
+            capture = step.get("capture")
+            if capture:
+                mode = step.get("capture_mode", "combined")
+                if mode == "stdout":
+                    text = result.stdout
+                elif mode == "stderr":
+                    text = result.stderr
+                else:
+                    text = result.stdout + ("\n" if result.stdout and result.stderr else "") + result.stderr
+                record = self.run.write_artifact(capture, redact_text(text), replace=True)
+                self.run.update_step(step["id"], outputs=[capture])
             else:
-                text = result.stdout + ("\n" if result.stdout and result.stderr else "") + result.stderr
-            record = self.run.write_artifact(capture, redact_text(text), replace=True)
-            self.run.update_step(step["id"], outputs=[capture])
-        else:
-            record = None
-            self.run.update_step(step["id"], outputs=[])
-        if result.timed_out:
-            raise StepExecutionError("shell step timed out")
-        if result.returncode != 0:
-            raise StepExecutionError("shell step returned %d" % result.returncode)
+                record = None
+                self.run.update_step(step["id"], outputs=[])
+            after = snapshot_workspace(isolated["stage_dir"])
+            mutated = after["fingerprint_sha256"] != isolated["before"]["fingerprint_sha256"]
+            if mutated and not assessment.writes:
+                raise StepExecutionError("shell step modified its isolated workspace without declaring writes")
+            if result.timed_out:
+                raise StepExecutionError("shell step timed out")
+            if result.returncode != 0:
+                raise StepExecutionError("shell step returned %d" % result.returncode)
+        finally:
+            discard_stage(self.run.run_dir, isolated["stage_dir"])
         return {
             "returncode": result.returncode,
             "duration_ms": result.duration_ms,
             "stdout_truncated": result.stdout_truncated,
             "stderr_truncated": result.stderr_truncated,
             "output_sha256": record["sha256"] if record else None,
+            "isolated_workspace_mutated": mutated,
         }
 
     def _codex(self, step: Dict) -> Dict:
@@ -221,7 +250,14 @@ class WorkflowRunner:
         prompt = self._load_prompt(step)
         prompt += self._dependency_context(step)
         if self.iteration_context:
-            prompt += "\n\nBEGIN_UNTRUSTED_PRIOR_VERIFIER_FEEDBACK\n%s\nEND_UNTRUSTED_PRIOR_VERIFIER_FEEDBACK\n" % self.iteration_context
+            feedback = self.iteration_context.replace(
+                ITERATION_CONTEXT_BEGIN, "[escaped-feedback-begin]"
+            ).replace(ITERATION_CONTEXT_END, "[escaped-feedback-end]")
+            prompt += "\n\n%s\n%s\n%s\n" % (
+                ITERATION_CONTEXT_BEGIN,
+                feedback,
+                ITERATION_CONTEXT_END,
+            )
         output_relative = step.get("capture", "%s.md" % step["id"])
         schema_relative = self._prepare_output_schema(step)
         record = self.run.state["steps"][step["id"]]
@@ -344,6 +380,10 @@ class WorkflowRunner:
 
     def _run_map_packet(self, step: Dict, index: int, packet, cap: int, cached: Dict) -> Dict:
         rendered = _render_item(packet)
+        rendered = rendered.replace(MAP_ITEM_BEGIN, "[escaped-map-item-begin]").replace(
+            MAP_ITEM_END, "[escaped-map-item-end]"
+        )
+        rendered = "%s\n%s\n%s" % (MAP_ITEM_BEGIN, rendered, MAP_ITEM_END)
         prompt = step["prompt_template"].format(item=rendered, index=index)
         output = "%s/%04d-%s.md" % (
             step.get("capture_dir", step["id"]),
@@ -526,8 +566,7 @@ class WorkflowRunner:
             self._stage["step_id"] = step["id"]
         return self._stage["stage_dir"]
 
-    def _shell_workspace(self, step: Dict) -> Path:
-        root = self._active_workspace(step)
+    def _shell_workspace(self, step: Dict, root: Path) -> Path:
         if step.get("cwd"):
             root = resolve_under(root, step["cwd"], "shell cwd")
             if not root.is_dir():
@@ -573,6 +612,7 @@ class WorkflowRunner:
             evidence_relative = record.get("stage_evidence")
             if evidence_relative:
                 evidence = strict_json_bytes(self.run.read_artifact(evidence_relative), "stage evidence")
+                validate_stage_evidence(evidence)
                 return {
                     "step_id": step["id"],
                     "stage_dir": resolve_under(self.run.run_dir, evidence["stage_subdir"], "stage directory"),
@@ -591,6 +631,7 @@ class WorkflowRunner:
         if not pending_relative:
             raise ValidationError("staged work is missing its writer evidence")
         pending = strict_json_bytes(self.run.read_artifact(pending_relative), "pending stage evidence")
+        validate_stage_evidence(pending)
         observed_stage = snapshot_workspace(self._stage["stage_dir"])
         if observed_stage["fingerprint_sha256"] != pending.get("after", {}).get("fingerprint_sha256"):
             raise ValidationError("a downstream verifier modified the staged workspace")
@@ -625,9 +666,14 @@ def _render_item(value) -> str:
 def _json_pointer(value, pointer: str):
     current = value
     for raw in pointer.split("/")[1:]:
-        part = raw.replace("~1", "/").replace("~0", "~")
+        part = _decode_json_pointer_token(raw)
         if isinstance(current, list):
-            if not part.isdigit() or int(part) >= len(current):
+            if (
+                not part
+                or any(char not in "0123456789" for char in part)
+                or (len(part) > 1 and part.startswith("0"))
+                or int(part) >= len(current)
+            ):
                 raise ValidationError("map items JSON pointer is missing")
             current = current[int(part)]
         elif isinstance(current, dict) and part in current:
@@ -635,3 +681,19 @@ def _json_pointer(value, pointer: str):
         else:
             raise ValidationError("map items JSON pointer is missing")
     return current
+
+
+def _decode_json_pointer_token(value: str) -> str:
+    result = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        if char != "~":
+            result.append(char)
+            index += 1
+            continue
+        if index + 1 >= len(value) or value[index + 1] not in {"0", "1"}:
+            raise ValidationError("map items JSON pointer has an invalid escape")
+        result.append("~" if value[index + 1] == "0" else "/")
+        index += 2
+    return "".join(result)

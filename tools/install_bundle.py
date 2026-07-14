@@ -35,14 +35,7 @@ class InstallError(Exception):
 
 
 def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while True:
-            chunk = handle.read(1024 * 1024)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
+    return hashlib.sha256(_read_regular_bytes(path, "file", MAX_BUNDLE_FILE_BYTES)).hexdigest()
 
 
 def skill_tree_sha256(files: List[Dict]) -> str:
@@ -71,14 +64,18 @@ def build_skill_manifest(skill_root: Path) -> Dict:
             raise InstallError("Skill source contains a non-regular file: %s" % relative)
         if path.name in DENIED_SKILL_NAMES or path.suffix.lower() not in ALLOWED_SKILL_SUFFIXES:
             raise InstallError("Skill source contains a non-text or sensitive path: %s" % relative)
-        size = path.stat().st_size
-        if size > MAX_BUNDLE_FILE_BYTES:
-            raise InstallError("Skill source file exceeds the bundle limit: %s" % relative)
+        data = _read_regular_bytes(path, "Skill source file %s" % relative, MAX_BUNDLE_FILE_BYTES)
         try:
-            path.read_text(encoding="utf-8")
+            data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise InstallError("Skill source is not valid UTF-8 text: %s" % relative) from exc
-        files.append({"path": relative, "sha256": sha256_file(path), "size_bytes": size})
+        files.append(
+            {
+                "path": relative,
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "size_bytes": len(data),
+            }
+        )
     if not files or len(files) > MAX_SKILL_FILES:
         raise InstallError("Skill source file count is outside the supported range")
     if files != sorted(files, key=lambda item: item["path"]):
@@ -145,9 +142,9 @@ def install_bundle(
     dry_run: bool,
     installer_path: Optional[Path] = None,
 ) -> Dict:
-    bundle_root = bundle_root.expanduser().resolve()
-    codex_home = codex_home.expanduser().resolve()
-    conductor_home = conductor_home.expanduser().resolve()
+    bundle_root = _resolve_configured_root(bundle_root, "bundle root")
+    codex_home = _resolve_configured_root(codex_home, "Codex home")
+    conductor_home = _resolve_configured_root(conductor_home, "Conductor home")
     manifest, manifest_sha256 = validate_bundle(bundle_root, installer_path=installer_path)
     version = manifest["version"]
     source_runtime = _safe_join(bundle_root, manifest["runtime"]["path"], "runtime")
@@ -158,6 +155,14 @@ def install_bundle(
     active_runtime = conductor_home / "bin" / "conductor-runtime.pyz"
     active_skill = codex_home / "skills" / "codex-conductor"
     receipt_path = conductor_home / "installations" / "current.json"
+    _reject_destination_overlaps(
+        {
+            "release": release_dir,
+            "runtime": active_runtime,
+            "skill": active_skill,
+            "receipt": receipt_path,
+        }
+    )
     _reject_symlink_components(conductor_home, release_dir.parent)
     _reject_symlink_components(conductor_home, active_runtime.parent)
     _reject_symlink_components(conductor_home, receipt_path.parent)
@@ -301,16 +306,87 @@ def _verify_record(bundle_root: Path, record: Dict, label: str) -> None:
 
 
 def _read_regular_bytes(path: Path, label: str, limit: int) -> bytes:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
     try:
-        mode = path.lstat().st_mode
+        descriptor = os.open(path, flags)
     except FileNotFoundError as exc:
         raise InstallError("%s is missing" % label) from exc
-    if not stat.S_ISREG(mode) or stat.S_ISLNK(mode):
-        raise InstallError("%s must be a regular non-symlink file" % label)
-    size = path.stat().st_size
-    if size > limit:
-        raise InstallError("%s exceeds the supported size" % label)
-    return path.read_bytes()
+    except OSError as exc:
+        raise InstallError("%s must be a readable regular non-symlink file" % label) from exc
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise InstallError("%s must be a regular non-symlink file" % label)
+        if before.st_size > limit:
+            raise InstallError("%s exceeds the supported size" % label)
+        chunks = []
+        remaining = limit + 1
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if len(data) > limit:
+            raise InstallError("%s exceeds the supported size" % label)
+        if (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ) or len(data) != after.st_size:
+            raise InstallError("%s changed while it was being read" % label)
+        return data
+    finally:
+        os.close(descriptor)
+
+
+def _resolve_configured_root(path: Path, label: str) -> Path:
+    expanded = Path(os.path.abspath(os.fspath(path.expanduser())))
+    current = Path(expanded.anchor)
+    for part in expanded.parts[1:]:
+        current /= part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            break
+        if stat.S_ISLNK(info.st_mode):
+            if current == expanded:
+                raise InstallError("%s must not be a symlink" % label)
+            if not hasattr(info, "st_uid") or info.st_uid != 0:
+                raise InstallError("%s path contains an untrusted symlink" % label)
+    return expanded.resolve()
+
+
+def _reject_destination_overlaps(destinations: Dict[str, Path]) -> None:
+    items = list(destinations.items())
+    for index, (left_label, left) in enumerate(items):
+        for right_label, right in items[index + 1 :]:
+            if left == right or _is_relative_to(left, right) or _is_relative_to(right, left):
+                raise InstallError(
+                    "installation destinations overlap: %s and %s" % (left_label, right_label)
+                )
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _require_real_directory(path: Path, label: str) -> None:

@@ -11,7 +11,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from conductor_extras.runtime.clock import utc_from_timestamp, utc_now
-from tools.install_bundle import InstallError, _commit_replacements, build_skill_manifest
+from tools.install_bundle import (
+    InstallError,
+    _commit_replacements,
+    _read_regular_bytes,
+    build_skill_manifest,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -227,6 +232,51 @@ class BundleInstallerTests(unittest.TestCase):
             result = run_installer(extracted, codex_home, conductor_home, "--dry-run")
             self.assertEqual(result.returncode, 2)
             self.assertIn("contains a symlink", result.stderr)
+
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlink checks require symlink support")
+    def test_bundle_installer_rejects_symlinked_roots_and_bundle_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            extracted = package_and_extract(root)
+            real_codex_home = root / "real-codex-home"
+            real_codex_home.mkdir()
+            codex_home = root / "codex-home"
+            codex_home.symlink_to(real_codex_home, target_is_directory=True)
+
+            result = run_installer(extracted, codex_home, root / "conductor-home", "--dry-run")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("Codex home must not be a symlink", result.stderr)
+
+            regular = root / "regular"
+            regular.write_bytes(b"content")
+            linked = root / "linked"
+            linked.symlink_to(regular)
+            with self.assertRaisesRegex(InstallError, "non-symlink"):
+                _read_regular_bytes(linked, "linked file", 100)
+
+            redirected = root / "redirected-parent"
+            redirected.mkdir()
+            parent_link = root / "parent-link"
+            parent_link.symlink_to(redirected, target_is_directory=True)
+            nested = run_installer(
+                extracted,
+                parent_link / "nested-codex-home",
+                root / "nested-conductor-home",
+                "--dry-run",
+            )
+            self.assertEqual(nested.returncode, 2)
+            self.assertIn("untrusted symlink", nested.stderr)
+
+    def test_bundle_installer_rejects_overlapping_destinations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            extracted = package_and_extract(root)
+            codex_home = root / "codex-home"
+            conductor_home = codex_home / "skills" / "codex-conductor"
+
+            result = run_installer(extracted, codex_home, conductor_home, "--dry-run")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("destinations overlap", result.stderr)
 
     def test_atomic_replacement_restores_prior_targets_after_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

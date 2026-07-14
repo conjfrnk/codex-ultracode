@@ -129,10 +129,10 @@ def main(argv=None) -> int:
         }[args.command](args)
     except Exception as exc:
         from .errors import ConductorError
-        from .redaction import redact_text
+        from .redaction import redact_terminal_text
 
         if isinstance(exc, (ConductorError, FileNotFoundError)):
-            print("ERROR: %s" % redact_text(str(exc)), file=sys.stderr)
+            print("ERROR: %s" % redact_terminal_text(str(exc)), file=sys.stderr)
             return 2
         raise
 
@@ -140,7 +140,7 @@ def main(argv=None) -> int:
 def _auto(args) -> int:
     from .core.auto import parse_command_json, run_direct
     from .core.safe import read_regular_text
-    from .redaction import redact_text
+    from .redaction import redact_terminal_text as redact_text
 
     task = read_regular_text(args.task_file, "task file", 65536) if args.task_file else args.task
     check_prompt = args.check_prompt
@@ -255,7 +255,7 @@ def _run(args) -> int:
     from .core.runner import WorkflowRunner
     from .core.workflow import load_workflow
     from .errors import ValidationError
-    from .redaction import redact_text
+    from .redaction import redact_terminal_text as redact_text
 
     workflow = load_workflow(args.workflow)
     if args.print_result and (args.dry_run or not workflow.get("result_artifact")):
@@ -283,7 +283,7 @@ def _run(args) -> int:
         if args.print_result:
             if status != "completed":
                 raise ValidationError("--print-result requires a completed workflow")
-            text = run.read_artifact(relative).decode("utf-8", errors="replace")
+            text = redact_text(run.read_artifact(relative).decode("utf-8", errors="replace"))
             sys.stdout.write("Result:\n" + text + ("" if text.endswith("\n") else "\n"))
     return 0 if status in {"planned", "completed"} else 1
 
@@ -291,7 +291,7 @@ def _run(args) -> int:
 def _validate(args) -> int:
     from .core.workflow import iter_workflow_files, load_workflow
     from .errors import ValidationError
-    from .redaction import redact_text
+    from .redaction import redact_terminal_text as redact_text
 
     files = iter_workflow_files(args.paths)
     if not files:
@@ -314,7 +314,7 @@ def _status(args) -> int:
 def _list(args) -> int:
     from .core.workflow import iter_workflow_files, load_workflow, workflow_summary
     from .errors import ConductorError
-    from .redaction import redact_text
+    from .redaction import redact_terminal_text as redact_text
 
     for path in iter_workflow_files(args.paths):
         try:
@@ -328,7 +328,7 @@ def _list(args) -> int:
 
 def _apply(args) -> int:
     from .core.staged import apply_verified_stage
-    from .redaction import redact_text
+    from .redaction import redact_terminal_text as redact_text
 
     result = apply_verified_stage(
         args.evidence,
@@ -346,6 +346,7 @@ def _apply(args) -> int:
 
 def _doctor(args) -> int:
     from .core.process import run_process
+    from .redaction import redact_terminal_text
 
     executable = shutil.which("codex")
     payload = {
@@ -359,17 +360,19 @@ def _doctor(args) -> int:
         payload["status"] = "ready" if result.returncode == 0 and not result.timed_out else "unhealthy"
         payload["codex_version"] = (result.stdout or result.stderr).strip()[:200]
     if args.json:
-        print(json.dumps(payload, indent=2, sort_keys=True))
+        from .redaction import redact_json_value
+
+        print(json.dumps(redact_json_value(payload), indent=2, sort_keys=True))
     else:
-        print("python: %s" % payload["python"])
-        print("codex: %s" % (payload["codex_executable"] or "not found"))
-        print("status: %s" % payload["status"])
+        print("python: %s" % redact_terminal_text(payload["python"]))
+        print("codex: %s" % redact_terminal_text(payload["codex_executable"] or "not found"))
+        print("status: %s" % redact_terminal_text(payload["status"]))
     return 0 if payload["status"] == "ready" else 1
 
 
 def _print_run_detail(run_or_path) -> None:
     from .core.state import RunState
-    from .redaction import redact_text
+    from .redaction import redact_terminal_text as redact_text
 
     run = run_or_path if isinstance(run_or_path, RunState) else RunState.inspect(run_or_path)
     details = []

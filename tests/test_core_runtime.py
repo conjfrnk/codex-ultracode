@@ -279,7 +279,11 @@ class CoreRuntimeTestCase(unittest.TestCase):
             ),
         ).execute()
         self.assertEqual(run.state["status"], "failed")
-        self.assertIn("verifier modified", run.state["detail"])
+        self.assertIn("modified its isolated workspace", run.state["steps"]["check"]["detail"])
+        self.assertFalse((self.workspace / "verifier.txt").exists())
+        evidence = strict_json_bytes(run.read_artifact("stages/work.json"), "stage evidence")
+        stage = run.run_dir / evidence["stage_subdir"]
+        self.assertFalse((stage / "verifier.txt").exists())
 
     def test_goal_retries_only_verifier_failure_and_keeps_external_state(self):
         marker = self.root / "verifier-once"

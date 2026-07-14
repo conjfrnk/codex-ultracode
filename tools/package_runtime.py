@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 import zipapp
@@ -23,6 +24,7 @@ manifest_output = dist / "release-manifest.json"
 plugin_output = dist / "codex-conductor-marketplace.zip"
 installer_source = project_root / "tools" / "install_bundle.py"
 REPRODUCIBLE_MTIME = 315619200  # 1980-01-02 UTC, portable across local ZIP time zones.
+REPRODUCIBLE_ZIP_DATETIME = (1980, 1, 2, 0, 0, 0)
 MAX_DEFAULT_RUNTIME_BYTES = 500 * 1024
 CORE_RUNTIME_FILES = (
     "__init__.py",
@@ -45,6 +47,14 @@ def normalize_tree_mtimes(root: Path) -> None:
     for path in sorted(root.rglob("*"), reverse=True):
         os.utime(path, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
     os.utime(root, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
+
+
+def write_reproducible_file(archive: zipfile.ZipFile, arcname: str, path: Path, mode: int) -> None:
+    info = zipfile.ZipInfo(arcname, date_time=REPRODUCIBLE_ZIP_DATETIME)
+    info.create_system = 3
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = (stat.S_IFREG | mode) << 16
+    archive.writestr(info, path.read_bytes())
 
 if not runtime_root.is_dir() or not (runtime_root / "cli.py").is_file():
     print("Package failed: conductor_runtime is missing")
@@ -110,17 +120,17 @@ os.utime(manifest_output, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME))
 build_plugin_marketplace(project_root, runtime_output, plugin_output)
 
 bundle_entries = [
-    ("README.md", project_root / "README.md"),
-    ("LICENSE", project_root / "LICENSE"),
-    (runtime_output.name, runtime_output),
-    ("install.py", installer_source),
-    (manifest_output.name, manifest_output),
+    ("README.md", project_root / "README.md", 0o644),
+    ("LICENSE", project_root / "LICENSE", 0o644),
+    (runtime_output.name, runtime_output, 0o755),
+    ("install.py", installer_source, 0o755),
+    (manifest_output.name, manifest_output, 0o644),
 ]
 for directory in [
     skill_root,
 ]:
     bundle_entries.extend(
-        (path.relative_to(project_root).as_posix(), path)
+        (path.relative_to(project_root).as_posix(), path, 0o644)
         for path in directory.rglob("*")
         if path.is_file()
         and "__pycache__" not in path.parts
@@ -128,8 +138,10 @@ for directory in [
     )
 
 with zipfile.ZipFile(bundle_output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-    for arcname, path in sorted(bundle_entries):
-        archive.write(path, arcname)
+    for arcname, path, mode in sorted(bundle_entries):
+        write_reproducible_file(archive, arcname, path, mode)
+
+os.utime(bundle_output, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME))
 
 for output in (runtime_output, bundle_output, manifest_output, plugin_output):
     if output.stat().st_size >= 25 * 1024 * 1024:

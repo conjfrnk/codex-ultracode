@@ -21,6 +21,7 @@ from .safe import (
     load_json,
     read_regular_bytes,
     replace_json,
+    require_external_state_path,
     require_relative,
     resolve_under,
     sha256_bytes,
@@ -40,6 +41,22 @@ MAX_EVENTS = 2000
 TERMINAL_STATUSES = {"completed", "failed", "blocked", "paused", "planned", "stopped", "terminated"}
 STEP_STATUSES = {"pending", "running", "completed", "failed", "blocked", "skipped", "planned"}
 RUN_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
+STEP_RECORD_FIELDS = {
+    "kind",
+    "status",
+    "attempt",
+    "started_at_utc",
+    "finished_at_utc",
+    "detail",
+    "metrics",
+    "outputs",
+    "resume_session_id",
+    "resume_available",
+    "session_id_sha256",
+    "stage_evidence",
+    "packets",
+    "source_outputs",
+}
 
 
 def utc_now() -> str:
@@ -87,6 +104,7 @@ class RunState:
         validate_workflow(public)
         workspace_path = Path(workspace).resolve()
         requested_root = Path(runs_dir).expanduser().resolve(strict=False) if runs_dir else external_runs_dir(workspace_path)
+        requested_root = require_external_state_path(requested_root, workspace_path, "runs directory")
         root = ensure_directory(requested_root, "runs directory")
         identifier = _new_run_id(workflow["name"], run_id)
         run_dir = root / identifier
@@ -151,7 +169,7 @@ class RunState:
         policy: RuntimePolicy,
         context_sha256: Optional[str] = None,
     ):
-        directory = Path(run_dir).expanduser()
+        directory = require_external_state_path(run_dir, workspace, "run directory")
         descriptor = load_json(directory / "run.json", "run descriptor", MAX_STATE_BYTES)
         state = load_json(directory / "state.json", "run state", MAX_STATE_BYTES)
         _validate_hashed(descriptor, "descriptor_sha256", RUN_SCHEMA, "run descriptor")
@@ -375,6 +393,7 @@ def _validate_run_shapes(descriptor: Dict, state: Dict, workflow: Dict) -> None:
         or descriptor.get("artifacts_path") != "artifacts"
     ):
         raise ValidationError("run descriptor paths or workflow identity are invalid")
+    _bounded_timestamp(descriptor.get("created_at_utc"), "run descriptor timestamp")
     required_state = {
         "schema",
         "generation",
@@ -402,9 +421,16 @@ def _validate_run_shapes(descriptor: Dict, state: Dict, workflow: Dict) -> None:
         isinstance(state.get("generation"), bool)
         or not isinstance(state.get("generation"), int)
         or state["generation"] < 0
+        or not isinstance(state.get("status"), str)
         or state.get("status") not in TERMINAL_STATUSES | {"pending", "running"}
     ):
         raise ValidationError("run state generation or status is invalid")
+    _bounded_timestamp(state.get("created_at_utc"), "run created timestamp")
+    _bounded_timestamp(state.get("updated_at_utc"), "run updated timestamp")
+    if "finished_at_utc" in state:
+        _bounded_timestamp(state["finished_at_utc"], "run finished timestamp")
+    if "detail" in state and (not isinstance(state["detail"], str) or len(state["detail"]) > 1000):
+        raise ValidationError("run state detail is invalid")
     steps = state.get("steps")
     expected_steps = {step["id"]: step["kind"] for step in workflow["steps"]}
     if not isinstance(steps, dict) or set(steps) != set(expected_steps):
@@ -412,11 +438,12 @@ def _validate_run_shapes(descriptor: Dict, state: Dict, workflow: Dict) -> None:
     for step_id, record in steps.items():
         if not isinstance(record, dict) or record.get("kind") != expected_steps[step_id]:
             raise ValidationError("run state step record is invalid")
-        if record.get("status") not in STEP_STATUSES:
+        if not isinstance(record.get("status"), str) or record.get("status") not in STEP_STATUSES:
             raise ValidationError("run state step status is invalid")
         attempt = record.get("attempt")
         if isinstance(attempt, bool) or not isinstance(attempt, int) or not 0 <= attempt <= 1000:
             raise ValidationError("run state step attempt is invalid")
+        _validate_step_record(record)
     artifacts = state.get("artifacts")
     if not isinstance(artifacts, dict) or len(artifacts) > MAX_ARTIFACTS:
         raise ValidationError("run artifact index is invalid")
@@ -435,12 +462,159 @@ def _validate_run_shapes(descriptor: Dict, state: Dict, workflow: Dict) -> None:
     events = state.get("events")
     if not isinstance(events, list) or len(events) > MAX_EVENTS:
         raise ValidationError("run event history is invalid")
+    previous_sequence = 0
     for event in events:
         if (
             not isinstance(event, dict)
             or set(event) != {"sequence", "at_utc", "kind", "step_id", "status"}
+            or not isinstance(event.get("kind"), str)
             or event.get("kind") not in {"run", "step"}
+            or isinstance(event.get("sequence"), bool)
             or not isinstance(event.get("sequence"), int)
             or event["sequence"] < 1
         ):
             raise ValidationError("run event record is invalid")
+        sequence = event["sequence"]
+        kind = event["kind"]
+        if (
+            sequence <= previous_sequence
+            or sequence > state["generation"]
+            or not isinstance(event.get("at_utc"), str)
+            or not 0 < len(event["at_utc"]) <= 64
+            or (
+                kind == "run"
+                and (
+                    event.get("step_id") != ""
+                    or not isinstance(event.get("status"), str)
+                    or event.get("status") not in TERMINAL_STATUSES | {"pending", "running"}
+                )
+            )
+            or (
+                kind == "step"
+                and (
+                    not isinstance(event.get("step_id"), str)
+                    or event.get("step_id") not in steps
+                    or not isinstance(event.get("status"), str)
+                    or event.get("status") not in STEP_STATUSES
+                )
+            )
+        ):
+            raise ValidationError("run event binding is invalid")
+        previous_sequence = sequence
+
+
+def _validate_step_record(record: Dict) -> None:
+    if set(record) - STEP_RECORD_FIELDS:
+        raise ValidationError("run state step fields are invalid")
+    for field in ("started_at_utc", "finished_at_utc"):
+        if field in record:
+            _bounded_timestamp(record[field], "step timestamp")
+    if "detail" in record and (not isinstance(record["detail"], str) or len(record["detail"]) > 1000):
+        raise ValidationError("run state step detail is invalid")
+    outputs = record.get("outputs")
+    if outputs is not None:
+        if (
+            not isinstance(outputs, list)
+            or len(outputs) > MAX_ARTIFACTS
+            or not all(isinstance(relative, str) for relative in outputs)
+            or len(outputs) != len(set(outputs))
+        ):
+            raise ValidationError("run state step outputs are invalid")
+        for relative in outputs:
+            require_relative(relative, "run state step output")
+    if "metrics" in record:
+        metrics = record["metrics"]
+        if not isinstance(metrics, dict) or len(canonical_json_bytes(metrics)) > MAX_STATE_BYTES:
+            raise ValidationError("run state step metrics are invalid")
+    resume_session_id = record.get("resume_session_id")
+    if resume_session_id is not None and (
+        not isinstance(resume_session_id, str) or not resume_session_id or len(resume_session_id) > 200
+    ):
+        raise ValidationError("run state resume session is invalid")
+    if "resume_available" in record and not isinstance(record["resume_available"], bool):
+        raise ValidationError("run state resume availability is invalid")
+    session_hash = record.get("session_id_sha256")
+    if session_hash is not None and (
+        not isinstance(session_hash, str) or re.fullmatch(r"[0-9a-f]{64}", session_hash) is None
+    ):
+        raise ValidationError("run state session hash is invalid")
+    if "stage_evidence" in record:
+        require_relative(record["stage_evidence"], "run state stage evidence")
+    source_outputs = record.get("source_outputs")
+    if source_outputs is not None and (
+        isinstance(source_outputs, bool)
+        or not isinstance(source_outputs, int)
+        or not 0 <= source_outputs <= MAX_ARTIFACTS
+    ):
+        raise ValidationError("run state source output count is invalid")
+    if "packets" in record:
+        _validate_packet_records(record["packets"])
+
+
+def _validate_packet_records(value) -> None:
+    if not isinstance(value, dict) or len(value) > 1000:
+        raise ValidationError("run state map packet index is invalid")
+    for key, packet in value.items():
+        if (
+            not isinstance(key, str)
+            or re.fullmatch(r"[0-9]{4}", key) is None
+            or not 1 <= int(key) <= 1000
+        ):
+            raise ValidationError("run state map packet id is invalid")
+        if not isinstance(packet, dict):
+            raise ValidationError("run state map packet record is invalid")
+        if packet.get("status") == "failed":
+            fields = {"status", "error_class"}
+            if "resume_session_id" in packet:
+                fields.add("resume_session_id")
+            if set(packet) != fields:
+                raise ValidationError("run state failed map packet fields are invalid")
+            error_class = packet.get("error_class")
+            resume_session_id = packet.get("resume_session_id")
+            if (
+                not isinstance(error_class, str)
+                or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,127}", error_class) is None
+                or (
+                    resume_session_id is not None
+                    and (
+                        not isinstance(resume_session_id, str)
+                        or not resume_session_id
+                        or len(resume_session_id) > 200
+                    )
+                )
+            ):
+                raise ValidationError("run state failed map packet is invalid")
+            continue
+        fields = {
+            "status",
+            "output",
+            "output_sha256",
+            "charged_tokens",
+            "cap_tokens",
+            "session_id_sha256",
+            "receipt",
+        }
+        if set(packet) != fields or packet.get("status") != "completed":
+            raise ValidationError("run state completed map packet fields are invalid")
+        charged = packet.get("charged_tokens")
+        cap = packet.get("cap_tokens")
+        if (
+            isinstance(charged, bool)
+            or not isinstance(charged, int)
+            or isinstance(cap, bool)
+            or not isinstance(cap, int)
+            or not 0 <= charged <= cap <= 10**9
+            or cap < 100
+            or not isinstance(packet.get("output_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", packet["output_sha256"]) is None
+            or not isinstance(packet.get("session_id_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", packet["session_id_sha256"]) is None
+        ):
+            raise ValidationError("run state completed map packet is invalid")
+        require_relative(packet.get("output"), "run state map packet output")
+        require_relative(packet.get("receipt"), "run state map packet receipt")
+
+
+def _bounded_timestamp(value, label: str) -> None:
+    if not isinstance(value, str) or not 0 < len(value) <= 64:
+        raise ValidationError("%s is invalid" % label)

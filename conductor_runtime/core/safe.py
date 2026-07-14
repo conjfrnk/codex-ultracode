@@ -124,12 +124,13 @@ def read_regular_bytes(path: Path, label: str, max_bytes: int = MAX_JSON_BYTES) 
         after = os.fstat(fd)
         if len(payload) > max_bytes:
             raise ValidationError("%s exceeds %d bytes" % (label, max_bytes))
-        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
+        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
             after.st_dev,
             after.st_ino,
             after.st_size,
             after.st_mtime_ns,
-        ):
+            after.st_ctime_ns,
+        ) or len(payload) != after.st_size:
             raise ValidationError("%s changed while it was read" % label)
         return payload
     finally:
@@ -237,6 +238,16 @@ def external_runs_dir(workspace: Path) -> Path:
 
 def external_goals_dir(workspace: Path) -> Path:
     return ensure_directory(workspace_state_root(workspace) / "goals", "goal state")
+
+
+def require_external_state_path(path: Path, workspace: Path, label: str) -> Path:
+    candidate = Path(path).expanduser().resolve(strict=False)
+    source = Path(workspace).expanduser().resolve()
+    try:
+        candidate.relative_to(source)
+    except ValueError:
+        return candidate
+    raise ValidationError("%s must remain outside the workspace" % label)
 
 
 def _reject_duplicate_pairs(pairs):

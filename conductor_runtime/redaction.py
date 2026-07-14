@@ -6,6 +6,7 @@ from typing import Iterable
 
 
 APPROVAL_ID_PLACEHOLDER = "<approval-id>"
+TOKEN_PREFIX = r"(?:\b|\x1b\[[0-?]*[ -/]*[@-~])"
 
 SECRET_PATTERNS = [
     re.compile(
@@ -13,12 +14,18 @@ SECRET_PATTERNS = [
         r"\s*:\s*\")([^\"]+)(\")"
     ),
     re.compile(
-        r"(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd)\b"
-        r"(\s*[:=]\s*)([^\s'\"<>]+)"
+        TOKEN_PREFIX
+        + r"(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password|passwd)\b"
+        r"(\s*[:=]\s*)([^\s'\"<>]+)",
+        re.IGNORECASE,
     ),
-    re.compile(r"(?i)\b(bearer)\s+([a-z0-9._~+/=-]{12,})"),
-    re.compile(r"(?i)\b(sk-[a-z0-9_-]{12,})"),
+    re.compile(TOKEN_PREFIX + r"(bearer)\s+([a-z0-9._~+/=-]{12,})", re.IGNORECASE),
+    re.compile(TOKEN_PREFIX + r"(sk-[a-z0-9_-]{12,})", re.IGNORECASE),
     re.compile(r"(?i)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
+    re.compile(TOKEN_PREFIX + r"gh[pousr]_[a-z0-9]{20,}", re.IGNORECASE),
+    re.compile(TOKEN_PREFIX + r"(?:AKIA|ASIA)[0-9A-Z]{16}"),
+    re.compile(TOKEN_PREFIX + r"xox[baprs]-[a-z0-9-]{12,}", re.IGNORECASE),
+    re.compile(TOKEN_PREFIX + r"AIza[0-9A-Za-z_-]{30,}"),
 ]
 
 _EXACT_SECRET_LOCK = threading.Lock()
@@ -78,6 +85,10 @@ def redact_text(text: str) -> str:
     redacted = SECRET_PATTERNS[2].sub(lambda match: match.group(1) + " <redacted>", redacted)
     redacted = SECRET_PATTERNS[3].sub("<redacted-openai-style-key>", redacted)
     redacted = SECRET_PATTERNS[4].sub("<redacted-private-key-block>", redacted)
+    redacted = SECRET_PATTERNS[5].sub("<redacted-github-token>", redacted)
+    redacted = SECRET_PATTERNS[6].sub("<redacted-aws-access-key>", redacted)
+    redacted = SECRET_PATTERNS[7].sub("<redacted-slack-token>", redacted)
+    redacted = SECRET_PATTERNS[8].sub("<redacted-google-api-key>", redacted)
     return redacted
 
 

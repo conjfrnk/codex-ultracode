@@ -2,6 +2,8 @@
 
 import hashlib
 import os
+import re
+import shutil
 import stat
 from pathlib import Path
 from typing import Dict, Optional
@@ -15,9 +17,11 @@ from .safe import (
     read_regular_bytes,
     reject_symlink_components,
     replace_bytes,
+    require_external_state_path,
     require_relative,
     resolve_under,
     sha256_bytes,
+    strict_json_bytes,
     write_new_bytes,
     write_new_json,
 )
@@ -31,6 +35,9 @@ DELETE_APPROVAL = "verified-stage-delete"
 MAX_FILES = 20000
 MAX_BYTES = 512 * 1024 * 1024
 MAX_CHANGES = 5000
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
 EXCLUDED_DIRECTORIES = {
     ".codex-conductor",
     ".git",
@@ -61,6 +68,20 @@ def create_stage(run_dir: Path, step_id: str, workspace: Path) -> Dict:
     }
 
 
+def discard_stage(run_dir: Path, stage_dir: Path) -> None:
+    root = (Path(run_dir) / "stages").resolve()
+    stage = Path(stage_dir)
+    candidate = stage.parent
+    reject_symlink_components(candidate, "discarded stage")
+    try:
+        candidate.resolve().relative_to(root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValidationError("discarded stage is outside its run") from exc
+    if stage.name != "workspace" or candidate.parent.resolve() != root:
+        raise ValidationError("discarded stage path is invalid")
+    shutil.rmtree(candidate)
+
+
 def finalize_stage(
     *,
     run_dir: Path,
@@ -71,7 +92,7 @@ def finalize_stage(
     before: Dict,
     verification_status: str = "pending",
 ) -> Dict:
-    if verification_status not in {"pending", "passed"}:
+    if not isinstance(verification_status, str) or verification_status not in {"pending", "passed"}:
         raise ValidationError("stage verification status is invalid")
     after = snapshot_workspace(stage_dir)
     changes = workspace_delta(before, after)
@@ -92,7 +113,7 @@ def finalize_stage(
 
 
 def mark_stage_verified(evidence: Dict, verifier_step_ids: list) -> Dict:
-    _validate_evidence(evidence)
+    validate_stage_evidence(evidence)
     if (
         not isinstance(verifier_step_ids, list)
         or not verifier_step_ids
@@ -194,28 +215,59 @@ def apply_verified_stage(
         raise PolicyError("verified stage apply requires --allow-writes")
     require_approval(active_policy, APPLY_APPROVAL, "verified stage apply")
     evidence_file = Path(evidence_path).expanduser()
-    evidence = load_json(evidence_file, "stage evidence", 32 * 1024 * 1024)
-    _validate_evidence(evidence)
+    evidence_payload = read_regular_bytes(evidence_file, "stage evidence", 32 * 1024 * 1024)
+    evidence = strict_json_bytes(evidence_payload, "stage evidence")
+    validate_stage_evidence(evidence)
     if evidence["verification_status"] != "passed":
         raise ValidationError("stage evidence is not independently verified")
-    run_dir = _run_dir_from_evidence(evidence_file)
+    source = Path(workspace).resolve()
+    run_dir = require_external_state_path(
+        _run_dir_from_evidence(evidence_file), source, "stage run directory"
+    )
     run = RunState.inspect(run_dir)
+    receipt = Path(receipt_path) if receipt_path is not None else evidence_file.with_name(evidence_file.stem + ".apply.json")
+    receipt = require_external_state_path(receipt, source, "stage apply receipt")
+    with run.lock():
+        run.reload()
+        run.verify_recorded_artifacts()
+        evidence_relative = _evidence_artifact_relative(evidence_file, run_dir)
+        if run.read_artifact(evidence_relative, 32 * 1024 * 1024) != evidence_payload:
+            raise ValidationError("stage evidence changed before application")
+        return _apply_verified_stage_locked(
+            evidence=evidence,
+            source=source,
+            run=run,
+            run_dir=run_dir,
+            receipt=receipt,
+            policy=active_policy,
+        )
+
+
+def _apply_verified_stage_locked(
+    *,
+    evidence: Dict,
+    source: Path,
+    run: RunState,
+    run_dir: Path,
+    receipt: Path,
+    policy: RuntimePolicy,
+) -> Dict:
     if run.state.get("status") != "completed" or run.state.get("run_id") != evidence["run_id"]:
         raise ValidationError("stage evidence does not belong to a completed run")
-    source = Path(workspace).resolve()
     if sha256_bytes(str(source).encode("utf-8")) != evidence["workspace_sha256"]:
         raise ValidationError("stage evidence belongs to another workspace")
     stage = resolve_under(run_dir, evidence["stage_subdir"], "stage directory")
     observed_stage = snapshot_workspace(stage)
     if observed_stage["fingerprint_sha256"] != evidence["after"]["fingerprint_sha256"]:
         raise ValidationError("staged workspace changed after verification")
-    receipt = Path(receipt_path) if receipt_path is not None else evidence_file.with_name(evidence_file.stem + ".apply.json")
+    destructive = any(change["action"] == "deleted" for change in evidence["changes"])
+    expected_receipt = _apply_receipt(evidence, destructive)
     if receipt.exists() or receipt.is_symlink():
         existing = load_json(receipt, "stage apply receipt")
         _validate_apply_receipt(existing)
         current = snapshot_workspace(source)
         if (
-            existing["evidence_sha256"] == evidence["evidence_sha256"]
+            existing == expected_receipt
             and current["fingerprint_sha256"] == evidence["after"]["fingerprint_sha256"]
         ):
             return {
@@ -225,27 +277,65 @@ def apply_verified_stage(
                 "receipt": existing,
             }
         raise ValidationError("existing stage apply receipt does not match workspace state")
-    current = snapshot_workspace(source)
-    if current["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
-        raise ValidationError("workspace changed after the stage was created")
-    destructive = any(change["action"] == "deleted" for change in evidence["changes"])
     if destructive:
-        if not active_policy.allow_destructive:
+        if not policy.allow_destructive:
             raise PolicyError("stage deletes files and requires --allow-destructive")
-        require_approval(active_policy, DELETE_APPROVAL, "stage deletion")
+        require_approval(policy, DELETE_APPROVAL, "stage deletion")
+    current = snapshot_workspace(source)
     backup = Path(run_dir) / "apply-backups" / evidence["step_id"]
     if backup.exists() or backup.is_symlink():
-        raise ValidationError("stage apply backup already exists")
-    ensure_directory(backup, "stage apply backup")
-    _copy_snapshot(source, backup, evidence["before"])
+        if backup.is_symlink() or not backup.is_dir():
+            raise ValidationError("stage apply backup is invalid")
+        observed_backup = snapshot_workspace(backup)
+        if observed_backup["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
+            if current["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
+                raise ValidationError("interrupted stage apply has an invalid backup")
+            shutil.rmtree(backup)
+            backup = _create_apply_backup(source, backup, evidence["before"])
+        elif current["fingerprint_sha256"] == evidence["after"]["fingerprint_sha256"]:
+            value = _apply_receipt(evidence, destructive)
+            write_new_json(receipt, value, "stage apply receipt")
+            return _apply_result(evidence, value, already_applied=False)
+        elif current["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
+            if not _is_interrupted_snapshot(current, evidence["before"], evidence["after"]):
+                raise ValidationError("workspace changed during an interrupted stage apply")
+            _restore_snapshot(source, backup, evidence["before"], evidence["after"])
+            current = snapshot_workspace(source)
+            if current["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
+                raise ValidationError("interrupted stage apply rollback did not restore the workspace")
+    else:
+        if current["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
+            raise ValidationError("workspace changed after the stage was created")
+        backup = _create_apply_backup(source, backup, evidence["before"])
+    current = snapshot_workspace(source)
+    if current["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
+        raise ValidationError("workspace changed before staged application")
     try:
         _apply_changes(source, stage, evidence["changes"])
         merged = snapshot_workspace(source)
         if merged["fingerprint_sha256"] != evidence["after"]["fingerprint_sha256"]:
             raise ValidationError("applied workspace does not match verified stage")
+        value = _apply_receipt(evidence, destructive)
+        write_new_json(receipt, value, "stage apply receipt")
     except BaseException:
         _restore_snapshot(source, backup, evidence["before"], evidence["after"])
+        restored = snapshot_workspace(source)
+        if restored["fingerprint_sha256"] != evidence["before"]["fingerprint_sha256"]:
+            raise ValidationError("stage apply rollback did not restore the workspace")
         raise
+    return _apply_result(evidence, value, already_applied=False)
+
+
+def _create_apply_backup(source: Path, backup: Path, before: Dict) -> Path:
+    ensure_directory(backup, "stage apply backup")
+    _copy_snapshot(source, backup, before)
+    observed = snapshot_workspace(backup)
+    if observed["fingerprint_sha256"] != before["fingerprint_sha256"]:
+        raise ValidationError("stage apply backup does not match the source snapshot")
+    return backup
+
+
+def _apply_receipt(evidence: Dict, destructive: bool) -> Dict:
     value = {
         "schema": APPLY_SCHEMA,
         "status": "merged",
@@ -261,13 +351,15 @@ def apply_verified_stage(
         "verifier_calls": 0,
         "approval_values_persisted": False,
     }
-    value = _with_hash(value, "receipt_sha256")
-    write_new_json(receipt, value, "stage apply receipt")
+    return _with_hash(value, "receipt_sha256")
+
+
+def _apply_result(evidence: Dict, receipt: Dict, *, already_applied: bool) -> Dict:
     return {
         "status": "merged",
         "change_count": evidence["change_count"],
-        "already_applied": False,
-        "receipt": value,
+        "already_applied": already_applied,
+        "receipt": receipt,
     }
 
 
@@ -316,6 +408,24 @@ def _restore_snapshot(source: Path, backup: Path, before: Dict, after: Dict) -> 
             write_new_bytes(destination, payload, "rollback destination", mode=record["mode"])
 
 
+def _is_interrupted_snapshot(current: Dict, before: Dict, after: Dict) -> bool:
+    """Accept only pointwise combinations of the bound before/after snapshots."""
+    _validate_snapshot(current, "interrupted snapshot")
+    left = {record["path"]: record for record in before["files"]}
+    right = {record["path"]: record for record in after["files"]}
+    observed = {record["path"]: record for record in current["files"]}
+    for relative in set(left) | set(right) | set(observed):
+        if relative not in left and relative not in right:
+            return False
+        record = observed.get(relative)
+        if record is None:
+            if relative in left and relative in right:
+                return False
+        elif record != left.get(relative) and record != right.get(relative):
+            return False
+    return True
+
+
 def _validate_snapshot(value, label: str) -> None:
     if not isinstance(value, dict) or set(value) != {
         "files",
@@ -326,44 +436,174 @@ def _validate_snapshot(value, label: str) -> None:
     }:
         raise ValidationError("%s is invalid" % label)
     files = value["files"]
-    if not isinstance(files, list) or len(files) != value["file_count"] or len(files) > MAX_FILES:
+    file_count = value["file_count"]
+    size_bytes = value["size_bytes"]
+    if (
+        not isinstance(files, list)
+        or isinstance(file_count, bool)
+        or not isinstance(file_count, int)
+        or len(files) != file_count
+        or len(files) > MAX_FILES
+        or isinstance(size_bytes, bool)
+        or not isinstance(size_bytes, int)
+        or not 0 <= size_bytes <= MAX_BYTES
+    ):
         raise ValidationError("%s file list is invalid" % label)
     if value["excluded_directories"] != sorted(EXCLUDED_DIRECTORIES):
         raise ValidationError("%s exclusions changed" % label)
+    paths = set()
+    observed_size = 0
+    for record in files:
+        if not isinstance(record, dict) or set(record) != {"path", "sha256", "size_bytes", "mode"}:
+            raise ValidationError("%s file record is invalid" % label)
+        relative = require_relative(record.get("path"), "%s file path" % label)
+        digest = record.get("sha256")
+        size = record.get("size_bytes")
+        mode = record.get("mode")
+        if (
+            relative in paths
+            or not isinstance(digest, str)
+            or SHA256_RE.fullmatch(digest) is None
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or not 0 <= size <= MAX_BYTES
+            or isinstance(mode, bool)
+            or not isinstance(mode, int)
+            or not 0 <= mode <= 0o777
+        ):
+            raise ValidationError("%s file record is invalid" % label)
+        paths.add(relative)
+        observed_size += size
+    if observed_size != size_bytes:
+        raise ValidationError("%s byte count does not match" % label)
     if sha256_bytes(canonical_json_bytes(files)) != value["fingerprint_sha256"]:
         raise ValidationError("%s fingerprint does not match" % label)
 
 
-def _validate_evidence(value) -> None:
+def validate_stage_evidence(value) -> None:
     if not isinstance(value, dict) or value.get("schema") != STAGE_SCHEMA:
         raise ValidationError("stage evidence schema is invalid")
+    status = value.get("verification_status")
+    fields = {
+        "schema",
+        "run_id",
+        "step_id",
+        "workspace_sha256",
+        "stage_subdir",
+        "before",
+        "after",
+        "changes",
+        "change_count",
+        "verification_status",
+        "run_status_required",
+        "evidence_sha256",
+    }
+    if status == "passed":
+        fields.add("verified_by_steps")
+    if set(value) != fields or not isinstance(status, str) or status not in {"pending", "passed"}:
+        raise ValidationError("stage evidence fields are invalid")
     observed = value.get("evidence_sha256")
-    if observed != _with_hash(value, "evidence_sha256")["evidence_sha256"]:
+    if not isinstance(observed, str) or observed != _with_hash(value, "evidence_sha256")["evidence_sha256"]:
         raise ValidationError("stage evidence hash does not match")
+    run_id = value.get("run_id")
+    step_id = value.get("step_id")
+    if not isinstance(run_id, str) or RUN_ID_RE.fullmatch(run_id) is None:
+        raise ValidationError("stage evidence run id is invalid")
+    if not isinstance(step_id, str) or SAFE_ID_RE.fullmatch(step_id) is None:
+        raise ValidationError("stage evidence step id is invalid")
+    if (
+        not isinstance(value.get("workspace_sha256"), str)
+        or SHA256_RE.fullmatch(value["workspace_sha256"]) is None
+        or value.get("stage_subdir") != "stages/%s/workspace" % step_id
+        or value.get("run_status_required") != "completed"
+    ):
+        raise ValidationError("stage evidence bindings are invalid")
     _validate_snapshot(value.get("before"), "stage before snapshot")
     _validate_snapshot(value.get("after"), "stage after snapshot")
+    changes = value.get("changes")
+    if not isinstance(changes, list) or len(changes) > MAX_CHANGES:
+        raise ValidationError("stage evidence changes are invalid")
+    for change in changes:
+        if not isinstance(change, dict) or set(change) != {
+            "path",
+            "action",
+            "before_sha256",
+            "after_sha256",
+            "after_mode",
+        }:
+            raise ValidationError("stage evidence change record is invalid")
+        require_relative(change.get("path"), "stage change path")
+        action = change.get("action")
+        if not isinstance(action, str) or action not in {"added", "modified", "deleted"}:
+            raise ValidationError("stage evidence change action is invalid")
     if value.get("changes") != workspace_delta(value["before"], value["after"]):
         raise ValidationError("stage evidence delta does not match snapshots")
-    if value.get("change_count") != len(value["changes"]):
+    if (
+        isinstance(value.get("change_count"), bool)
+        or not isinstance(value.get("change_count"), int)
+        or value.get("change_count") != len(value["changes"])
+    ):
         raise ValidationError("stage evidence change count does not match")
     verified_by = value.get("verified_by_steps", [])
     if (
         not isinstance(verified_by, list)
         or len(verified_by) > 128
-        or not all(isinstance(step_id, str) and step_id for step_id in verified_by)
+        or not all(
+            isinstance(step_id, str) and SAFE_ID_RE.fullmatch(step_id) is not None
+            for step_id in verified_by
+        )
         or len(verified_by) != len(set(verified_by))
     ):
         raise ValidationError("stage verifier evidence is invalid")
-    if value.get("verification_status") == "passed" and not verified_by:
+    if status == "passed" and not verified_by:
         raise ValidationError("verified stage evidence must identify a verifier step")
-    require_relative(value.get("stage_subdir"), "stage subdirectory")
 
 
 def _validate_apply_receipt(value) -> None:
-    if not isinstance(value, dict) or value.get("schema") != APPLY_SCHEMA:
+    fields = {
+        "schema",
+        "status",
+        "run_id",
+        "step_id",
+        "evidence_sha256",
+        "workspace_sha256",
+        "before_fingerprint_sha256",
+        "after_fingerprint_sha256",
+        "change_count",
+        "destructive",
+        "provider_calls",
+        "verifier_calls",
+        "approval_values_persisted",
+        "receipt_sha256",
+    }
+    if not isinstance(value, dict) or set(value) != fields or value.get("schema") != APPLY_SCHEMA:
         raise ValidationError("stage apply receipt schema is invalid")
     if value.get("receipt_sha256") != _with_hash(value, "receipt_sha256")["receipt_sha256"]:
         raise ValidationError("stage apply receipt hash does not match")
+    if (
+        value.get("status") != "merged"
+        or not isinstance(value.get("run_id"), str)
+        or RUN_ID_RE.fullmatch(value["run_id"]) is None
+        or not isinstance(value.get("step_id"), str)
+        or SAFE_ID_RE.fullmatch(value["step_id"]) is None
+        or any(
+            not isinstance(value.get(field), str) or SHA256_RE.fullmatch(value[field]) is None
+            for field in (
+                "evidence_sha256",
+                "workspace_sha256",
+                "before_fingerprint_sha256",
+                "after_fingerprint_sha256",
+            )
+        )
+        or isinstance(value.get("change_count"), bool)
+        or not isinstance(value.get("change_count"), int)
+        or not 0 <= value["change_count"] <= MAX_CHANGES
+        or not isinstance(value.get("destructive"), bool)
+        or value.get("provider_calls") != 0
+        or value.get("verifier_calls") != 0
+        or value.get("approval_values_persisted") is not False
+    ):
+        raise ValidationError("stage apply receipt fields are invalid")
 
 
 def _run_dir_from_evidence(evidence_path: Path) -> Path:
@@ -372,6 +612,14 @@ def _run_dir_from_evidence(evidence_path: Path) -> Path:
         if (parent / "run.json").is_file() and (parent / "state.json").is_file():
             return parent
     raise ValidationError("stage evidence is not inside a run directory")
+
+
+def _evidence_artifact_relative(evidence_path: Path, run_dir: Path) -> str:
+    try:
+        relative = evidence_path.resolve().relative_to((Path(run_dir) / "artifacts").resolve())
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValidationError("stage evidence is not a recorded run artifact") from exc
+    return require_relative(relative.as_posix(), "stage evidence artifact")
 
 
 def _with_hash(value: Dict, field: str) -> Dict:

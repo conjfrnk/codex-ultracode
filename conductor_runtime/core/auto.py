@@ -9,7 +9,13 @@ from ..errors import ValidationError
 from ..redaction import redact_text
 from .policy import RuntimePolicy
 from .runner import WorkflowRunner
-from .safe import canonical_json_bytes, replace_bytes, sha256_bytes, write_new_bytes
+from .safe import (
+    canonical_json_bytes,
+    replace_bytes,
+    require_external_state_path,
+    sha256_bytes,
+    write_new_bytes,
+)
 from .workflow import slugify, workflow_fingerprint
 
 
@@ -160,10 +166,16 @@ def run_direct(
     iteration_context: Optional[str] = None,
     **workflow_options,
 ) -> AutoResult:
+    workspace_path = Path(workspace).resolve()
+    requested_receipt = (
+        require_external_state_path(receipt_path, workspace_path, "automatic receipt")
+        if receipt_path is not None
+        else None
+    )
     workflow = build_direct_workflow(task, writes=policy.allow_writes, **workflow_options)
     runner = WorkflowRunner(
         workflow,
-        workspace,
+        workspace_path,
         runs_dir,
         policy,
         dry_run=dry_run,
@@ -196,7 +208,7 @@ def run_direct(
         "approval_values_persisted": False,
     }
     receipt["receipt_sha256"] = sha256_bytes(canonical_json_bytes(receipt))
-    destination = Path(receipt_path) if receipt_path is not None else run.run_dir / "auto.json"
+    destination = requested_receipt if requested_receipt is not None else run.run_dir / "auto.json"
     write_requested(destination, canonical_json_bytes(receipt))
     return AutoResult(
         status=run.state["status"],
@@ -213,7 +225,10 @@ def _worker_prompt(task: str, writes: bool) -> str:
         if writes
         else "Inspect the workspace without modifying it. Answer the task directly and cite checks actually run."
     )
-    return "%s\n\nBEGIN_UNTRUSTED_TASK\n%s\nEND_UNTRUSTED_TASK" % (mode, task)
+    clean = task.replace("BEGIN_UNTRUSTED_TASK", "[escaped-task-begin]").replace(
+        "END_UNTRUSTED_TASK", "[escaped-task-end]"
+    )
+    return "%s\n\nBEGIN_UNTRUSTED_TASK\n%s\nEND_UNTRUSTED_TASK" % (mode, clean)
 
 
 def write_requested(path: Path, payload: bytes) -> None:
