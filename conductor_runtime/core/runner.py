@@ -4,13 +4,20 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 
 from ..errors import ConductorError, PolicyError, StepExecutionError, ValidationError
 from ..redaction import redact_text
 from .codex import CodexInvocationError, invoke_codex
-from .policy import RuntimePolicy, enforce_agent, enforce_shell, enforce_workflow_risk, require_approval
-from .process import run_process
+from .policy import (
+    RuntimePolicy,
+    enforce_agent,
+    enforce_shell,
+    enforce_workflow_risk,
+    prepare_shell_launch,
+    require_approval,
+)
+from .process import run_process, sanitized_subprocess_environment
 from .safe import (
     canonical_json_bytes,
     read_regular_text,
@@ -23,8 +30,11 @@ from .staged import (
     create_stage,
     discard_stage,
     finalize_stage,
+    load_pending_stage,
     mark_stage_verified,
+    pending_stage_descriptor,
     snapshot_workspace,
+    validate_stage_workspace,
     validate_stage_evidence,
 )
 from .state import RunState
@@ -138,14 +148,20 @@ class WorkflowRunner:
                     self.run.set_status("blocked", str(exc))
                     return self.run
                 except (ConductorError, OSError, ValueError) as exc:
-                    if isinstance(exc, CodexInvocationError) and exc.resumable:
+                    failure: Exception = exc
+                    resumable = isinstance(exc, CodexInvocationError) and exc.resumable
+                    if step.get("sandbox", "read-only") == "workspace-write":
+                        failure, resumable = self._handle_failed_stage(step, failure, resumable)
+                    elif self._stage is not None and self._depends_on(step["id"], self._stage["step_id"]):
+                        failure = self._discard_invalid_downstream_stage(failure)
+                    if resumable and isinstance(failure, CodexInvocationError):
                         self.run.update_step(
                             step["id"],
-                            resume_session_id=exc.session_id,
+                            resume_session_id=failure.session_id,
                             resume_available=True,
                         )
-                    self.run.transition_step(step["id"], "failed", detail=str(exc))
-                    self.run.set_status("failed", exc.__class__.__name__)
+                    self.run.transition_step(step["id"], "failed", detail=str(failure))
+                    self.run.set_status("failed", failure.__class__.__name__)
                     return self.run
             if self.dry_run:
                 self.run.set_status("planned")
@@ -183,8 +199,16 @@ class WorkflowRunner:
         if kind == "manual_gate":
             require_approval(self.policy, step.get("approval_id", step["id"]), "manual gate")
         elif kind == "shell":
-            enforce_shell(step, self.policy)
-            self._shell_workspace(step, self._active_workspace(step))
+            source = self._active_workspace(step)
+            cwd = self._shell_workspace(step, source)
+            enforce_shell(
+                step,
+                self.policy,
+                cwd=cwd,
+                workspace=source,
+                workspace_alias=self.workspace,
+                environment=sanitized_subprocess_environment(),
+            )
         elif kind == "codex_exec":
             enforce_agent(step, self.policy)
             self._load_prompt(step, allow_missing_artifact=True)
@@ -195,21 +219,35 @@ class WorkflowRunner:
                 self._map_packets(step)
 
     def _shell(self, step: Dict) -> Dict:
-        assessment = enforce_shell(step, self.policy)
         source = self._active_workspace(step)
+        resolution_cwd = self._shell_workspace(step, source)
+        environment = sanitized_subprocess_environment()
+        assessment = enforce_shell(
+            step,
+            self.policy,
+            cwd=resolution_cwd,
+            workspace=source,
+            workspace_alias=self.workspace,
+            environment=environment,
+        )
         attempt = self.run.state["steps"][step["id"]]["attempt"]
         sandbox_id = "shell-%s-attempt-%d" % (step["id"], attempt)
         isolated = create_stage(self.run.run_dir, sandbox_id, source)
         mutated = False
         try:
             cwd = self._shell_workspace(step, isolated["stage_dir"])
+            launch_argv = prepare_shell_launch(
+                assessment,
+                isolated_workspace=isolated["stage_dir"],
+            )
             timeout = step.get("timeout_seconds", self.workflow.get("default_timeout_seconds", 300))
             limit = step.get("output_limit_bytes", self.workflow.get("output_limit_bytes", DEFAULT_OUTPUT_LIMIT_BYTES))
             result = run_process(
-                assessment.argv,
+                launch_argv,
                 cwd=cwd,
                 timeout_seconds=timeout,
                 output_limit_bytes=limit,
+                env=environment,
             )
             capture = step.get("capture")
             if capture:
@@ -267,7 +305,7 @@ class WorkflowRunner:
             prompt=prompt,
             workspace=workspace,
             output_relative=output_relative,
-            max_tokens=step.get("max_tokens", self.workflow.get("agent_max_tokens")),
+            max_tokens=cast(int, step.get("max_tokens", self.workflow.get("agent_max_tokens"))),
             timeout_seconds=step.get(
                 "timeout_seconds",
                 self.workflow.get("agent_timeout_seconds", self.workflow.get("default_timeout_seconds", 900)),
@@ -279,12 +317,12 @@ class WorkflowRunner:
             resume_session_id=record.get("resume_session_id"),
             output_schema_relative=schema_relative,
         )
-        self.run.update_step(
-            step["id"],
-            outputs=[output_relative],
-            session_id_sha256=sha256_bytes(result.session_id.encode("utf-8")),
-            resume_available=False,
-        )
+        updates = {
+            "outputs": [output_relative],
+            "session_id_sha256": sha256_bytes(result.session_id.encode("utf-8")),
+            "resume_session_id": None,
+            "resume_available": False,
+        }
         metrics = {
             "output_sha256": result.output_sha256,
             "duration_ms": result.process.duration_ms,
@@ -301,19 +339,20 @@ class WorkflowRunner:
                 before=self._stage["before"],
             )
             relative = "stages/%s.json" % step["id"]
-            self.run.write_artifact(relative, canonical_json_bytes(evidence))
-            self.run.update_step(step["id"], stage_evidence=relative)
+            self.run.write_artifact(relative, canonical_json_bytes(evidence), replace=True)
+            updates.update(stage_evidence=relative, pending_stage=None)
             self._stage["evidence_relative"] = relative
             metrics["stage_evidence"] = relative
             metrics["staged_changes"] = evidence["change_count"]
+        self.run.update_step(step["id"], **updates)
         return metrics
 
     def _agent_map(self, step: Dict) -> Dict:
         packets = self._map_packets(step)
         workers = min(step.get("max_workers", self.max_workers), self.max_workers, len(packets))
         enforce_agent(step, self.policy, workers=workers)
-        per_call = step.get("max_tokens", self.workflow.get("agent_max_tokens"))
-        total_cap = step.get("max_total_tokens", self.workflow.get("agent_map_max_total_tokens"))
+        per_call = cast(int, step.get("max_tokens", self.workflow.get("agent_max_tokens")))
+        total_cap = cast(int, step.get("max_total_tokens", self.workflow.get("agent_map_max_total_tokens")))
         previous = self.run.state["steps"][step["id"]].get("packets", {})
         packet_records = dict(previous) if isinstance(previous, dict) else {}
         outputs = [None] * len(packets)
@@ -562,9 +601,84 @@ class WorkflowRunner:
         if step.get("sandbox", "read-only") != "workspace-write":
             return self._active_workspace(step)
         if self._stage is None:
+            stage_dir = resolve_under(
+                self.run.run_dir,
+                "stages/%s/workspace" % step["id"],
+                "stage directory",
+            )
+            if stage_dir.parent.exists() or stage_dir.parent.is_symlink():
+                self.run.update_step(
+                    step["id"],
+                    pending_stage=None,
+                    resume_session_id=None,
+                    resume_available=False,
+                )
+                discard_stage(self.run.run_dir, stage_dir)
             self._stage = create_stage(self.run.run_dir, step["id"], self.workspace)
             self._stage["step_id"] = step["id"]
+            attempt = self.run.state["steps"][step["id"]]["attempt"]
+            descriptor = pending_stage_descriptor(
+                run_dir=self.run.run_dir,
+                run_id=self.run.descriptor["run_id"],
+                step_id=step["id"],
+                attempt=attempt,
+                workspace=self.workspace,
+                stage_dir=self._stage["stage_dir"],
+                before=self._stage["before"],
+            )
+            relative = "stages/%s.attempt-%d.pending.json" % (step["id"], attempt)
+            self.run.write_artifact(relative, canonical_json_bytes(descriptor))
+            self.run.update_step(step["id"], pending_stage=relative)
+            self._stage["pending_relative"] = relative
+        if self._stage.get("step_id") != step["id"]:
+            raise ValidationError("writable stage belongs to another step")
+        self._validate_active_stage()
         return self._stage["stage_dir"]
+
+    def _validate_active_stage(self) -> None:
+        if self._stage is None:
+            return
+        validate_stage_workspace(self._stage["stage_dir"])
+        source = snapshot_workspace(self.workspace)
+        if source["fingerprint_sha256"] != self._stage["before"]["fingerprint_sha256"]:
+            raise ValidationError("source workspace changed while staged work was running")
+
+    def _handle_failed_stage(self, step: Dict, failure: Exception, resumable: bool):
+        if self._stage is None or self._stage.get("step_id") != step["id"]:
+            return failure, resumable
+        if resumable:
+            try:
+                self._validate_active_stage()
+            except (ConductorError, OSError, ValueError) as exc:
+                failure = exc
+                resumable = False
+        if not resumable:
+            try:
+                self.run.update_step(
+                    step["id"],
+                    pending_stage=None,
+                    resume_session_id=None,
+                    resume_available=False,
+                )
+                discard_stage(self.run.run_dir, self._stage["stage_dir"])
+                self._stage = None
+            except (ConductorError, OSError, ValueError) as exc:
+                failure = exc
+        return failure, resumable
+
+    def _discard_invalid_downstream_stage(self, failure: Exception) -> Exception:
+        if self._stage is None:
+            return failure
+        try:
+            validate_stage_workspace(self._stage["stage_dir"])
+        except (ConductorError, OSError, ValueError) as exc:
+            failure = exc
+            try:
+                discard_stage(self.run.run_dir, self._stage["stage_dir"])
+                self._stage = None
+            except (ConductorError, OSError, ValueError) as cleanup_exc:
+                failure = cleanup_exc
+        return failure
 
     def _shell_workspace(self, step: Dict, root: Path) -> Path:
         if step.get("cwd"):
@@ -619,11 +733,29 @@ class WorkflowRunner:
                     "before": evidence["before"],
                     "evidence_relative": evidence_relative,
                 }
+        for step in self.workflow["steps"]:
+            record = self.run.state["steps"].get(step["id"], {})
+            pending_relative = record.get("pending_stage")
+            if pending_relative is not None:
+                if step.get("sandbox", "read-only") != "workspace-write":
+                    raise ValidationError("pending stage belongs to a non-writer step")
+                return load_pending_stage(
+                    run=self.run,
+                    descriptor_relative=pending_relative,
+                    step_id=step["id"],
+                    workspace=self.workspace,
+                )
         return None
 
     def _verify_and_seal_stage(self) -> None:
         if self._stage is None:
             return
+        try:
+            validate_stage_workspace(self._stage["stage_dir"])
+        except (ConductorError, OSError, ValueError):
+            discard_stage(self.run.run_dir, self._stage["stage_dir"])
+            self._stage = None
+            raise
         source = snapshot_workspace(self.workspace)
         if source["fingerprint_sha256"] != self._stage["before"]["fingerprint_sha256"]:
             raise ValidationError("source workspace changed while staged work was running")

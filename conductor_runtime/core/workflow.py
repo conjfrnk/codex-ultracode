@@ -5,14 +5,21 @@ import json
 import re
 import string
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Set
 
 from ..errors import ValidationError
 from .policy import RISK_LEVELS, normalize_command
-from .safe import canonical_json_bytes, read_regular_bytes, require_relative, strict_json_bytes
+from .safe import (
+    MAX_RELATIVE_PATH_CHARS,
+    canonical_json_bytes,
+    read_regular_bytes,
+    require_relative,
+    strict_json_bytes,
+)
 
 
-SCHEMA = "conductor.workflow.v1"
+SCHEMA = "conductor.core.workflow.v1"
+LEGACY_SCHEMA = "conductor.workflow.v1"
 STEP_KINDS = {"write_artifact", "collect_results", "manual_gate", "shell", "codex_exec", "agent_map"}
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 EFFORTS = {"low", "medium", "high", "xhigh", "ultra"}
@@ -107,6 +114,200 @@ STEP_FIELDS = {
 }
 
 
+def workflow_template(template: str) -> Dict:
+    """Return one dependency-free, executable core workflow example."""
+    if template == "read-only":
+        return {
+            "schema": SCHEMA,
+            "name": "read-only-review",
+            "description": "Inspect the workspace and save a concise review.",
+            "mode": "read_only",
+            "agent_max_tokens": 20000,
+            "result_artifact": "review.md",
+            "steps": [
+                {
+                    "id": "review",
+                    "kind": "codex_exec",
+                    "prompt": "Review this workspace. Report concrete findings with file-level evidence.",
+                    "sandbox": "read-only",
+                    "max_tokens": 20000,
+                    "capture": "review.md",
+                }
+            ],
+        }
+    if template == "staged-write":
+        return {
+            "schema": SCHEMA,
+            "name": "staged-change",
+            "description": "Implement a bounded change in a stage, then verify it before application.",
+            "mode": "workspace_write",
+            "risk": "medium",
+            "agent_max_tokens": 20000,
+            "result_artifact": "verification.md",
+            "steps": [
+                {
+                    "id": "implement",
+                    "kind": "codex_exec",
+                    "prompt": "Implement the requested bounded change and run focused checks.",
+                    "sandbox": "workspace-write",
+                    "max_tokens": 20000,
+                    "capture": "implementation.md",
+                },
+                {
+                    "id": "verify",
+                    "kind": "codex_exec",
+                    "depends_on": ["implement"],
+                    "context_from": ["implement"],
+                    "prompt": "Verify the staged change against the request and report concrete evidence.",
+                    "sandbox": "read-only",
+                    "completion_verdict": "strict-v1",
+                    "max_tokens": 8000,
+                    "capture": "verification.md",
+                },
+            ],
+        }
+    raise ValidationError("unknown core workflow template %r" % template)
+
+
+def migrate_legacy_workflow(workflow: Dict, source: str = "<memory>") -> Dict:
+    """Convert an old core-shaped workflow from the ambiguous legacy schema."""
+    if not isinstance(workflow, dict):
+        raise ValidationError("%s must be an object" % source)
+    observed = workflow.get("schema")
+    if observed not in {LEGACY_SCHEMA, SCHEMA}:
+        raise ValidationError("%s does not use %s or %s" % (source, LEGACY_SCHEMA, SCHEMA))
+    migrated = dict(workflow)
+    migrated["schema"] = SCHEMA
+    validate_workflow(migrated, source=source)
+    return migrated
+
+
+def workflow_json_schema() -> Dict:
+    """Generate the published JSON Schema for the dependency-free core dialect."""
+    path = {"type": "string", "minLength": 1, "maxLength": MAX_RELATIVE_PATH_CHARS}
+    bounded_text = {"type": "string", "maxLength": 4096}
+    identifier = {"type": "string", "pattern": SAFE_ID.pattern, "maxLength": 128}
+    positive_int = {"type": "integer", "minimum": 1}
+    token_cap = {"type": "integer", "minimum": MIN_TOKEN_CAP, "maximum": MAX_TOKEN_CAP}
+    fields = {
+        "id": identifier,
+        "kind": {"type": "string", "enum": sorted(STEP_KINDS)},
+        "description": bounded_text,
+        "risk": {"type": "string", "enum": sorted(RISK_LEVELS)},
+        "depends_on": {
+            "type": "array",
+            "maxItems": MAX_STEPS,
+            "uniqueItems": True,
+            "items": identifier,
+        },
+        "phase": identifier,
+        "timeout_seconds": {**positive_int, "maximum": MAX_TIMEOUT_SECONDS},
+        "output_limit_bytes": {**positive_int, "maximum": MAX_OUTPUT_BYTES},
+        "output": path,
+        "content": {"type": "string", "maxLength": MAX_CONTENT_CHARS},
+        "source_step": identifier,
+        "filter_falsey": {"type": "boolean"},
+        "intermediate": {"type": "boolean"},
+        "approval_id": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": r"^\S+$"},
+        "command": {
+            "oneOf": [
+                {"type": "string", "minLength": 1},
+                {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            ]
+        },
+        "cwd": path,
+        "capture": path,
+        "capture_mode": {"type": "string", "enum": ["combined", "stdout", "stderr"]},
+        "writes": {"type": "boolean"},
+        "destructive": {"type": "boolean"},
+        "network": {"type": "boolean"},
+        "prompt": {"type": "string", "minLength": 1, "maxLength": MAX_PROMPT_CHARS},
+        "prompt_file": path,
+        "prompt_artifact": path,
+        "sandbox": {"type": "string", "enum": ["read-only", "workspace-write"]},
+        "model": {"type": "string", "minLength": 1, "maxLength": 200},
+        "effort": {"type": "string", "enum": sorted(EFFORTS)},
+        "max_tokens": token_cap,
+        "context_from": {
+            "type": "array",
+            "maxItems": MAX_CONTEXT_SOURCES,
+            "uniqueItems": True,
+            "items": identifier,
+        },
+        "completion_verdict": {"const": "strict-v1"},
+        "output_schema": {"type": "object"},
+        "items": {"type": "array", "minItems": 1, "maxItems": MAX_ITEMS},
+        "items_file": path,
+        "items_artifact": path,
+        "items_pointer": {"type": "string", "pattern": "^/", "maxLength": 1024},
+        "item_semantics": {"type": "string", "enum": ["workspace_path", "opaque", "json"]},
+        "preserve_duplicate_items": {"type": "boolean"},
+        "prompt_template": {"type": "string", "minLength": 1, "maxLength": MAX_PROMPT_CHARS},
+        "capture_dir": path,
+        "max_total_tokens": token_cap,
+        "max_workers": {"type": "integer", "minimum": 1, "maximum": MAX_WORKERS},
+        "max_packets": {"type": "integer", "minimum": 1, "maximum": MAX_ITEMS},
+    }
+    required = {
+        "write_artifact": ["id", "kind", "output", "content"],
+        "collect_results": ["id", "kind", "source_step", "output"],
+        "manual_gate": ["id", "kind"],
+        "shell": ["id", "kind", "command", "writes", "destructive", "network"],
+        "codex_exec": ["id", "kind"],
+        "agent_map": ["id", "kind", "prompt_template"],
+    }
+    variants = []
+    for kind in sorted(STEP_KINDS):
+        properties = {name: fields[name] for name in sorted(STEP_FIELDS[kind])}
+        properties["kind"] = {"const": kind}
+        variant = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": required[kind],
+            "properties": properties,
+        }
+        if kind == "codex_exec":
+            variant["oneOf"] = [
+                {"required": ["prompt"]},
+                {"required": ["prompt_file"]},
+                {"required": ["prompt_artifact"]},
+            ]
+        elif kind == "agent_map":
+            variant["oneOf"] = [
+                {"required": ["items"]},
+                {"required": ["items_file"]},
+                {"required": ["items_artifact"]},
+            ]
+        variants.append(variant)
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:codex-conductor:schema:core-workflow:v1",
+        "title": "Codex Conductor core workflow v1",
+        "$comment": "The runtime validator additionally enforces path safety and cross-step semantics.",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["schema", "name", "steps"],
+        "properties": {
+            "schema": {"const": SCHEMA},
+            "name": {"type": "string", "minLength": 1, "maxLength": 128},
+            "description": bounded_text,
+            "mode": {"type": "string", "enum": ["read_only", "workspace_write", "review", "custom"]},
+            "risk": {"type": "string", "enum": sorted(RISK_LEVELS)},
+            "max_workers": {"type": "integer", "minimum": 1, "maximum": MAX_WORKERS},
+            "max_items": {"type": "integer", "minimum": 1, "maximum": MAX_ITEMS},
+            "default_timeout_seconds": {**positive_int, "maximum": MAX_TIMEOUT_SECONDS},
+            "agent_timeout_seconds": {**positive_int, "maximum": MAX_TIMEOUT_SECONDS},
+            "output_limit_bytes": {**positive_int, "maximum": MAX_OUTPUT_BYTES},
+            "agent_effort": {"type": "string", "enum": sorted(EFFORTS)},
+            "agent_max_tokens": token_cap,
+            "agent_map_max_total_tokens": token_cap,
+            "result_artifact": path,
+            "steps": {"type": "array", "minItems": 1, "maxItems": MAX_STEPS, "items": {"$ref": "#/$defs/step"}},
+        },
+        "$defs": {"step": {"oneOf": variants}},
+    }
+
+
 def slugify(value: str) -> str:
     clean = re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
     return clean or "workflow"
@@ -128,6 +329,11 @@ def validate_workflow(workflow: Dict, source: str = "<memory>") -> None:
     unknown = sorted(set(workflow) - TOP_LEVEL_FIELDS)
     if unknown:
         raise ValidationError("%s contains unsupported fields: %s" % (source, ", ".join(unknown)))
+    if workflow.get("schema") == LEGACY_SCHEMA:
+        raise ValidationError(
+            "%s uses ambiguous legacy schema %s; run conductor-runtime migrate to convert a core workflow"
+            % (source, LEGACY_SCHEMA)
+        )
     if workflow.get("schema") != SCHEMA:
         raise ValidationError("%s must set schema to %s" % (source, SCHEMA))
     name = workflow.get("name")
@@ -155,7 +361,7 @@ def validate_workflow(workflow: Dict, source: str = "<memory>") -> None:
     steps = workflow.get("steps")
     if not isinstance(steps, list) or not steps or len(steps) > MAX_STEPS:
         raise ValidationError("%s must contain 1-%d steps" % (source, MAX_STEPS))
-    seen = set()
+    seen: Set[str] = set()
     for step in steps:
         validate_step(step, seen, workflow)
     _validate_dependencies(steps)
@@ -165,7 +371,7 @@ def validate_workflow(workflow: Dict, source: str = "<memory>") -> None:
     _validate_staged_verification(steps)
 
 
-def validate_step(step: Dict, seen: set, workflow: Dict) -> None:
+def validate_step(step: Dict, seen: Set[str], workflow: Dict) -> None:
     if not isinstance(step, dict):
         raise ValidationError("each workflow step must be an object")
     if any(isinstance(key, str) and key.startswith("_") for key in step):
@@ -182,6 +388,8 @@ def validate_step(step: Dict, seen: set, workflow: Dict) -> None:
     unknown = sorted(set(step) - STEP_FIELDS[kind])
     if unknown:
         raise ValidationError("step %s contains unsupported fields: %s" % (step_id, ", ".join(unknown)))
+    if kind in {"shell", "codex_exec", "agent_map"}:
+        _reject_explicit_nulls(step, "step %s" % step_id)
     risk = step.get("risk", "low")
     if not isinstance(risk, str) or risk not in RISK_LEVELS:
         raise ValidationError("step %s has unsupported risk" % step_id)
@@ -199,7 +407,10 @@ def validate_step(step: Dict, seen: set, workflow: Dict) -> None:
         raise ValidationError("step %s depends_on must contain unique safe ids" % step_id)
 
     if kind == "write_artifact":
-        require_relative(step.get("output"), "step %s output" % step_id)
+        output = step.get("output")
+        if not isinstance(output, str):
+            raise ValidationError("step %s output must be a relative path" % step_id)
+        require_relative(output, "step %s output" % step_id)
         content = step.get("content")
         if not isinstance(content, str) or len(content) > MAX_CONTENT_CHARS:
             raise ValidationError("step %s content must be bounded text" % step_id)
@@ -207,7 +418,10 @@ def validate_step(step: Dict, seen: set, workflow: Dict) -> None:
         source_step = step.get("source_step")
         if not isinstance(source_step, str) or SAFE_ID.fullmatch(source_step) is None:
             raise ValidationError("step %s source_step must be a safe id" % step_id)
-        require_relative(step.get("output"), "step %s output" % step_id)
+        output = step.get("output")
+        if not isinstance(output, str):
+            raise ValidationError("step %s output must be a relative path" % step_id)
+        require_relative(output, "step %s output" % step_id)
         _optional_bool(step, "filter_falsey", step_id)
         _optional_bool(step, "intermediate", step_id)
     elif kind == "manual_gate":
@@ -298,9 +512,8 @@ def _validate_map_step(step: Dict, workflow: Dict) -> None:
         if len(pointer) > 1024 or any(part in {".", ".."} for part in pointer.split("/")):
             raise ValidationError("step %s items_pointer is invalid" % step_id)
     _optional_bool(step, "preserve_duplicate_items", step_id)
-    template = step.get("prompt_template")
-    _bounded_text(template, "step %s prompt_template" % step_id, MAX_PROMPT_CHARS)
-    fields = []
+    template = _bounded_text(step.get("prompt_template"), "step %s prompt_template" % step_id, MAX_PROMPT_CHARS)
+    fields: List[str] = []
     try:
         for _, name, format_spec, conversion in string.Formatter().parse(template):
             if name is not None:
@@ -479,7 +692,7 @@ def workflow_fingerprint(workflow: Dict) -> str:
 
 def workflow_summary(workflow: Dict) -> str:
     validate_workflow({key: value for key, value in workflow.items() if not key.startswith("_")})
-    counts = {}
+    counts: Dict[str, int] = {}
     for step in workflow["steps"]:
         counts[step["kind"]] = counts.get(step["kind"], 0) + 1
     kinds = ", ".join("%s=%d" % item for item in sorted(counts.items()))
@@ -523,6 +736,12 @@ def _validate_output_schema(value, label: str) -> None:
         raise ValidationError("%s must be JSON-compatible" % label) from exc
     if len(payload) > 256 * 1024:
         raise ValidationError("%s exceeds 262144 bytes" % label)
+
+
+def _reject_explicit_nulls(value: Dict, label: str) -> None:
+    fields = sorted(field for field, observed in value.items() if observed is None)
+    if fields:
+        raise ValidationError("%s fields must not be null: %s" % (label, ", ".join(fields)))
 
 
 def _optional_bool(value: Dict, field: str, label: str) -> None:

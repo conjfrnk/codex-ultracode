@@ -65,6 +65,7 @@ AGENT_LIFECYCLE_STOP_GATE_RESULT_STATUSES = {
 MAX_AGENT_LIFECYCLE_STOP_GATE_HOOKS = 64
 MAX_AGENT_LIFECYCLE_STOP_GATES = 4096
 MAX_AGENT_LIFECYCLE_STOP_GATE_BYTES = 256 * 1024
+_AGENT_LIFECYCLE_STOP_GATE_TEMP_DIR = ".agent-lifecycle-stop-gate-temporary"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SAFE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
 TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$")
@@ -424,6 +425,7 @@ def replace_agent_lifecycle_stop_gate(run, gate: Dict) -> Path:
         serialized,
         ".agent-stop-gate-",
         sync=True,
+        temp_directory=_agent_lifecycle_stop_gate_temp_dir(run),
     )
     return path
 
@@ -483,6 +485,12 @@ def agent_lifecycle_stop_gate_path(run, invocation_sha256: str) -> Path:
 def agent_lifecycle_stop_gate_dir(run) -> Path:
     path = run.resolve_artifact_path(".agent-lifecycle-stop-gates")
     reject_symlink_path(path, "agent lifecycle stop gate directory")
+    return path
+
+
+def _agent_lifecycle_stop_gate_temp_dir(run) -> Path:
+    path = run.resolve_artifact_path(_AGENT_LIFECYCLE_STOP_GATE_TEMP_DIR)
+    reject_symlink_path(path, "agent lifecycle stop gate temporary directory")
     return path
 
 

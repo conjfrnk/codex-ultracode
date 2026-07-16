@@ -413,12 +413,76 @@ from conductor_extras.runtime.system_doctor import (
 
 MAX_STATUS_JSON_BYTES = 2 * 1024 * 1024
 STAGED_EXIT_CONTRACTS = ("strict", "verified-stage")
+FLAT_COMMAND_ALIASES_SUPPORTED_THROUGH = "2027-07-15"
+_COMMAND_GROUPS = (
+    "workflow",
+    "team",
+    "memory",
+    "benchmark",
+    "routine",
+    "cloud",
+)
+_COMMAND_GROUP_DESCRIPTIONS = {
+    "workflow": "Author, run, inspect, and recover workflows and goals.",
+    "team": "Inspect and operate agent-team coordination artifacts.",
+    "memory": "Validate and manage workspace-scoped agent memory.",
+    "benchmark": "Run, score, compare, and validate benchmark campaigns.",
+    "routine": "Create, run, supervise, and install bounded routines.",
+    "cloud": "Submit, inspect, review, and apply Codex Cloud tasks.",
+}
+_COMMAND_ROUTE_OVERRIDES = {
+    "validate-agent-team-state": ("team", "validate-state"),
+    "inspect-agent-team-state": ("team", "inspect-state"),
+    "queue-team-task": ("team", "queue-task"),
+    "list-team-inbox": ("team", "list-inbox"),
+    "team-console": ("team", "console"),
+    "validate-agent-memory": ("memory", "validate"),
+    "list-agent-memory": ("memory", "list"),
+    "inspect-agent-memory": ("memory", "inspect"),
+    "remember-agent-memory": ("memory", "remember"),
+    "forget-agent-memory": ("memory", "forget"),
+    "benchmark": ("benchmark", "run"),
+    "validate-benchmark-report": ("benchmark", "validate-report"),
+    "score-benchmark-report": ("benchmark", "score-report"),
+    "compare": ("benchmark", "compare"),
+    "validate-routine-manifest": ("routine", "validate-manifest"),
+    "write-routine-manifest": ("routine", "write-manifest"),
+    "list-routines": ("routine", "list"),
+    "status-routine": ("routine", "status"),
+    "run-routine": ("routine", "run"),
+    "run-routine-now": ("routine", "run-now"),
+    "pause-routine": ("routine", "pause"),
+    "resume-routine": ("routine", "resume"),
+    "update-routine-schedule": ("routine", "update-schedule"),
+    "supervise-routines": ("routine", "supervise"),
+    "install-routine-service": ("routine", "service-install"),
+    "update-routine-service": ("routine", "service-update"),
+    "status-routine-service": ("routine", "service-status"),
+    "uninstall-routine-service": ("routine", "service-uninstall"),
+    "cloud-submit": ("cloud", "submit"),
+    "cloud-status": ("cloud", "status"),
+    "cloud-review": ("cloud", "review"),
+    "cloud-apply": ("cloud", "apply"),
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="conductor-runtime", description="Run Codex Conductor workflows.")
-    parser.add_argument("--version", action="version", version="conductor-runtime %s" % __version__)
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(
+        prog="conductor-extras",
+        description="Run extended Codex Conductor workflows and operations.",
+        epilog=_command_group_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version="conductor-extras %s" % __version__,
+    )
+    subparsers = parser.add_subparsers(
+        dest="command",
+        required=True,
+        metavar="GROUP",
+    )
 
     validate = subparsers.add_parser("validate", help="Validate workflow JSON files.")
     validate.add_argument("paths", nargs="+", type=Path)
@@ -2455,7 +2519,181 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Escalate to SIGKILL only if graceful child cleanup does not finish within the bounded grace period.",
     )
+    _hide_flat_command_help(parser)
     return parser
+
+
+def _command_group_epilog() -> str:
+    lines = ["Preferred command groups:"]
+    for group in _COMMAND_GROUPS:
+        lines.append("  %-9s %s" % (group, _COMMAND_GROUP_DESCRIPTIONS[group]))
+    lines.extend(
+        [
+            "",
+            "Run 'conductor-extras GROUP --help' to list that group's commands.",
+            "Deprecated flat aliases remain supported through %s."
+            % FLAT_COMMAND_ALIASES_SUPPORTED_THROUGH,
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _command_subparsers(parser: argparse.ArgumentParser):
+    actions = [
+        action
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    ]
+    if len(actions) != 1:
+        raise RuntimeError("extras CLI must have exactly one command parser")
+    return actions[0]
+
+
+def _hide_flat_command_help(parser: argparse.ArgumentParser) -> None:
+    subparsers = _command_subparsers(parser)
+    subparsers._choices_actions[:] = []
+
+
+def _command_group(command: str) -> str:
+    override = _COMMAND_ROUTE_OVERRIDES.get(command)
+    if override is not None:
+        return override[0]
+    if "memory" in command:
+        return "memory"
+    if (
+        "team" in command
+        or "agent-map-packet" in command
+        or command.startswith("validate-codex-step-terminal")
+        or command.startswith("inspect-codex-step-terminal")
+        or command.startswith("validate-codex-progress")
+        or command.startswith("inspect-codex-progress")
+    ):
+        return "team"
+    if (
+        "benchmark" in command
+        or "comparison" in command
+        or "parity" in command
+        or "auto-topology" in command
+        or "run-manifest" in command
+        or "evidence-bundle" in command
+    ):
+        return "benchmark"
+    if "routine" in command:
+        return "routine"
+    if command.startswith("cloud-"):
+        return "cloud"
+    return "workflow"
+
+
+def _grouped_command_registry(parser: argparse.ArgumentParser) -> Dict[str, Dict[str, str]]:
+    registry = {group: {} for group in _COMMAND_GROUPS}
+    for flat_command in sorted(_command_subparsers(parser).choices):
+        group = _command_group(flat_command)
+        override = _COMMAND_ROUTE_OVERRIDES.get(flat_command)
+        leaf = override[1] if override is not None else flat_command
+        previous = registry[group].setdefault(leaf, flat_command)
+        if previous != flat_command:
+            raise RuntimeError(
+                "duplicate grouped command %s %s" % (group, leaf)
+            )
+    return registry
+
+
+def _group_help_parser(
+    root_parser: argparse.ArgumentParser,
+    group: str,
+    registry: Dict[str, Dict[str, str]],
+) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="%s %s" % (root_parser.prog, group),
+        description=_COMMAND_GROUP_DESCRIPTIONS[group],
+        epilog=(
+            "Grouped commands use the existing command parsers and dispatch handlers; "
+            "run a subcommand with --help for its full options."
+        ),
+    )
+    subparsers = parser.add_subparsers(
+        dest="group_command",
+        required=True,
+        metavar="SUBCOMMAND",
+    )
+    for leaf, flat_command in sorted(registry[group].items()):
+        subparsers.add_parser(
+            leaf,
+            add_help=False,
+            help="Grouped form of the deprecated '%s' command." % flat_command,
+        )
+    return parser
+
+
+def _normalize_command_argv(parser: argparse.ArgumentParser, raw_argv):
+    argv = list(raw_argv)
+    registry = _grouped_command_registry(parser)
+    flat_routes = {
+        flat_command: (group, leaf, flat_command)
+        for group, commands in registry.items()
+        for leaf, flat_command in commands.items()
+    }
+    if not argv or argv[0].startswith("-"):
+        return argv, None, None
+
+    command = argv[0]
+    if command in registry:
+        treat_as_group = command != "benchmark"
+        if command == "benchmark":
+            treat_as_group = (
+                len(argv) == 1
+                or argv[1] in {"-h", "--help"}
+                or argv[1] in registry[command]
+            )
+        if treat_as_group:
+            group_parser = _group_help_parser(parser, command, registry)
+            if len(argv) == 1:
+                group_parser.parse_args([])
+            leaf = argv[1]
+            if leaf in {"-h", "--help"}:
+                group_parser.parse_args([leaf])
+            if leaf not in registry[command]:
+                group_parser.parse_args([leaf])
+            flat_command = registry[command][leaf]
+            return [flat_command, *argv[2:]], (command, leaf, flat_command), None
+
+    legacy_route = flat_routes.get(command)
+    if legacy_route is not None:
+        return argv, None, legacy_route
+    parser.error(
+        "unknown command %r; choose a command group: %s"
+        % (command, ", ".join(_COMMAND_GROUPS))
+    )
+
+
+def _set_grouped_command_prog(
+    parser: argparse.ArgumentParser,
+    grouped_route,
+) -> None:
+    group, leaf, flat_command = grouped_route
+    _command_subparsers(parser).choices[flat_command].prog = "%s %s %s" % (
+        parser.prog,
+        group,
+        leaf,
+    )
+
+
+def _warn_flat_command_alias(legacy_route) -> None:
+    group, leaf, flat_command = legacy_route
+    print(
+        "DEPRECATION: flat command '%s %s' remains supported through %s; "
+        "use '%s %s %s'."
+        % (
+            "conductor-extras",
+            flat_command,
+            FLAT_COMMAND_ALIASES_SUPPORTED_THROUGH,
+            "conductor-extras",
+            group,
+            leaf,
+        ),
+        file=sys.stderr,
+    )
 
 
 def _add_inline_verified_apply_args(parser) -> None:
@@ -2603,6 +2841,7 @@ def _add_routine_service_install_args(parser) -> None:
 
 
 def main(argv=None) -> int:
+    invoked_as_process = argv is None
     raw_argv = list(argv) if argv is not None else sys.argv[1:]
     if raw_argv and raw_argv[0] == "_background-worker":
         if len(raw_argv) not in {2, 3} or (len(raw_argv) == 3 and raw_argv[2] != "--desktop-notify"):
@@ -2653,6 +2892,14 @@ def main(argv=None) -> int:
             print("ERROR: %s" % redact_text(str(exc)), file=sys.stderr)
             return 2
     parser = build_parser()
+    raw_argv, grouped_route, legacy_route = _normalize_command_argv(
+        parser,
+        raw_argv,
+    )
+    if grouped_route is not None:
+        _set_grouped_command_prog(parser, grouped_route)
+    if legacy_route is not None and invoked_as_process:
+        _warn_flat_command_alias(legacy_route)
     args = parser.parse_args(raw_argv)
     _apply_default_storage_paths(args)
     try:

@@ -1,0 +1,67 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "restricted-review",
+  "description": "Run a reusable reviewer with only explicit read-only shell commands.",
+  "mode": "read_only",
+  "risk": "medium",
+  "max_workers": 4,
+  "agent_map_max_total_tokens": 16000,
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "restricted-correctness-reviewer",
+      "description": "A read-only reviewer with a mechanically enforced command allowlist.",
+      "instructions": "Inspect only the assigned scope. Check behavior, boundary cases, callers, and tests. Do not edit files. Return prioritized findings with concrete file evidence, verification performed, and remaining uncertainty.",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "max_tokens": 4000,
+      "sandbox": "read-only",
+      "tool_policy": "restricted",
+      "tool_output_token_limit": 2000,
+      "command_allowlist": [
+        {
+          "argv": [
+            "git",
+            "status",
+            "--short"
+          ]
+        },
+        {
+          "argv_prefix": [
+            "git",
+            "diff"
+          ]
+        },
+        {
+          "argv_prefix": [
+            "rg"
+          ]
+        }
+      ],
+      "allow_apply_patch": false,
+      "risk": "medium",
+      "max_workers": 4,
+      "timeout_seconds": 900
+    }
+  ],
+  "steps": [
+    {
+      "id": "restricted-fanout",
+      "kind": "agent_map",
+      "description": "Apply the same command-bounded reviewer to independent concerns.",
+      "risk": "medium",
+      "agent_profile": "restricted-correctness-reviewer",
+      "items": [
+        "public API and caller compatibility",
+        "error handling and boundary behavior",
+        "test coverage and hidden assumptions",
+        "concurrency, retries, and idempotency"
+      ],
+      "prompt_template": "Review this focus area: {item}",
+      "max_total_tokens": 16000,
+      "max_packets": 4,
+      "capture_dir": "agent/restricted-review",
+      "max_workers": 4
+    }
+  ]
+}

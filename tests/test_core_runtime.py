@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from conductor_runtime.cli import main
+from conductor_runtime.core import codex
 from conductor_runtime.core.auto import build_direct_workflow, run_direct
 from conductor_runtime.core.codex import analyze_stream, validate_completion_verdict
 from conductor_runtime.core.goal import run_goal
@@ -45,7 +46,7 @@ if sandbox == "workspace-write":
         pathlib.Path("remove.txt").unlink()
 if output.name == "planned-workflow.json":
     value = {
-        "schema": "conductor.workflow.v1",
+        "schema": "conductor.core.workflow.v1",
         "name": "planned-map",
         "mode": "read_only",
         "max_workers": 2,
@@ -116,7 +117,7 @@ print(json.dumps({
 
 def read_workflow(name="test"):
     return {
-        "schema": "conductor.workflow.v1",
+        "schema": "conductor.core.workflow.v1",
         "name": name,
         "mode": "read_only",
         "agent_max_tokens": 200,
@@ -141,9 +142,9 @@ class CoreRuntimeTestCase(unittest.TestCase):
         self.home = self.root / "state"
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        codex = self.bin / "codex"
-        codex.write_text(FAKE_CODEX, encoding="utf-8")
-        codex.chmod(0o755)
+        codex_path = self.bin / "codex"
+        codex_path.write_text(FAKE_CODEX, encoding="utf-8")
+        codex_path.chmod(0o755)
         self.environment = patch.dict(
             os.environ,
             {
@@ -152,8 +153,22 @@ class CoreRuntimeTestCase(unittest.TestCase):
             },
         )
         self.environment.start()
+        self.provider_environment = patch.object(
+            codex,
+            "CODEX_ENVIRONMENT_KEYS",
+            codex.CODEX_ENVIRONMENT_KEYS
+            | frozenset(
+                {
+                    "FAKE_CODEX_VERDICT",
+                    "FAKE_CODEX_VERDICT_ONCE_PATH",
+                    "FAKE_CODEX_WRITE",
+                }
+            ),
+        )
+        self.provider_environment.start()
 
     def tearDown(self):
+        self.provider_environment.stop()
         self.environment.stop()
         self.temporary.cleanup()
 
@@ -247,7 +262,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
     def test_verifier_cannot_modify_staged_workspace(self):
         command = [sys.executable, "-c", "from pathlib import Path; Path('verifier.txt').write_text('bad')"]
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "mutating-verifier",
             "agent_max_tokens": 200,
             "steps": [
@@ -311,7 +326,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
 
     def test_run_resume_binds_iteration_context(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "context-resume",
             "steps": [
                 {
@@ -343,7 +358,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
 
     def test_map_collect_synthesis_is_bounded(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "map-synthesis",
             "mode": "read_only",
             "max_workers": 2,
@@ -415,7 +430,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
     def test_non_inert_shell_requires_command_bound_approval(self):
         command = [sys.executable, "-c", "print('checked')"]
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "approved-shell",
             "steps": [
                 {
@@ -441,7 +456,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
     def test_cli_prints_command_bound_approval_for_blocked_run(self):
         command = [sys.executable, "-c", "print('checked')"]
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "approval-output",
             "steps": [
                 {
@@ -465,7 +480,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
 
     def test_failed_shell_run_resumes_with_exact_bindings(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "resume-shell",
             "steps": [
                 {
@@ -479,7 +494,8 @@ class CoreRuntimeTestCase(unittest.TestCase):
                 }
             ],
         }
-        policy = RuntimePolicy()
+        command = ["test", "-f", "ready"]
+        policy = RuntimePolicy(approvals={shell_approval(command)})
         first = WorkflowRunner(workflow, self.workspace, None, policy).execute()
         self.assertEqual(first.state["status"], "failed")
         (self.workspace / "ready").write_text("yes", encoding="utf-8")
@@ -495,7 +511,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
 
     def test_resume_rejects_policy_and_artifact_changes(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "artifact-resume",
             "steps": [{"id": "write", "kind": "write_artifact", "output": "value.txt", "content": "ok"}],
         }
@@ -534,7 +550,7 @@ class CoreRuntimeTestCase(unittest.TestCase):
     @staticmethod
     def _map_workflow():
         return {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "parallel-map",
             "max_workers": 2,
             "agent_max_tokens": 200,
@@ -588,7 +604,7 @@ class CoreValidationTests(unittest.TestCase):
 
     def test_agent_map_requires_collect_and_synthesis(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "orphan-map",
             "agent_max_tokens": 200,
             "agent_map_max_total_tokens": 200,

@@ -2,6 +2,20 @@
 
 Git history is the archive for releases before `0.173.0`.
 
+## 0.174.0
+
+- Closed shell-approval, environment-secret, concurrent-apply, staged-resume,
+  stage-quota, and lifecycle stop-gate defects found in the repository audit.
+- Split the dependency-free core workflow contract into
+  `conductor.core.workflow.v1`; added schema, template, migration, and validated
+  core/extras example surfaces.
+- Made result exports no-clobber by default and clarified direct, goal, and
+  planned execution contracts.
+- Added grouped extras namespaces with a one-year flat-alias migration window.
+- Added pinned CI, mypy, branch coverage, sharded tests, reproducible tracked
+  artifact verification, external checksums, and machine-readable release
+  evidence.
+
 ## 0.173.1
 
 - Hardened validation, staged-apply recovery, process cleanup, installer

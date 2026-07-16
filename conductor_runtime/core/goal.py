@@ -50,6 +50,7 @@ def run_goal(
     goal_id: Optional[str] = None,
     resume_goal: Optional[Path] = None,
     output_path: Optional[Path] = None,
+    replace_output: bool = False,
     **workflow_options,
 ) -> GoalResult:
     if not isinstance(task, str) or not task.strip() or len(task) > 65536:
@@ -59,6 +60,8 @@ def run_goal(
     workspace_path = Path(workspace).resolve()
     binding_options = dict(workflow_options)
     binding_options["output_path"] = output_path
+    if replace_output:
+        binding_options["replace_output"] = True
     bindings = _bindings(task, workspace_path, policy, max_iterations, binding_options)
     if resume_goal is not None:
         path = require_external_state_path(resume_goal, workspace_path, "goal state")
@@ -88,6 +91,7 @@ def run_goal(
                 workspace=workspace_path,
                 policy=policy,
                 output_path=output_path,
+                replace_output=replace_output,
                 iteration_context=feedback,
                 **workflow_options,
             )

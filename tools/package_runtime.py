@@ -128,6 +128,8 @@ bundle_entries = [
 ]
 for directory in [
     skill_root,
+    project_root / "docs",
+    project_root / "conductor-workflows",
 ]:
     bundle_entries.extend(
         (path.relative_to(project_root).as_posix(), path, 0o644)

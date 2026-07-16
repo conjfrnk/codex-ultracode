@@ -1,0 +1,32 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "dependency-context-smoke",
+  "description": "Validate explicit receipt-bound dependency evidence without executing a provider.",
+  "mode": "read_only",
+  "risk": "medium",
+  "max_workers": 1,
+  "steps": [
+    {
+      "id": "source",
+      "kind": "write_artifact",
+      "risk": "low",
+      "output": "context/source.txt",
+      "content": "bounded dependency evidence\n"
+    },
+    {
+      "id": "sink",
+      "kind": "codex_exec",
+      "risk": "medium",
+      "depends_on": [
+        "source"
+      ],
+      "context_from": [
+        "source"
+      ],
+      "completion_verdict": "strict-v1",
+      "sandbox": "read-only",
+      "prompt": "Review the bounded dependency evidence and report residual risk.",
+      "capture": "review.md"
+    }
+  ]
+}

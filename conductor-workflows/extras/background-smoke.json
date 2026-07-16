@@ -1,0 +1,24 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "background-smoke",
+  "description": "Exercise detached prepared-run launch and approval handoff.",
+  "default_timeout_seconds": 30,
+  "max_workers": 1,
+  "steps": [
+    {
+      "id": "approve-background-smoke",
+      "kind": "manual_gate",
+      "approval_id": "background-smoke-execute",
+      "prompt": "Approve the packaged background smoke run."
+    },
+    {
+      "id": "write-background-result",
+      "kind": "write_artifact",
+      "depends_on": [
+        "approve-background-smoke"
+      ],
+      "output": "background-smoke.txt",
+      "content": "background workflow completed\n"
+    }
+  ]
+}

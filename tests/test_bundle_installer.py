@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,35 @@ from tools.install_bundle import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+FAKE_CODEX = r'''#!/usr/bin/env python3
+import json
+import pathlib
+import sys
+
+args = sys.argv[1:]
+output = pathlib.Path(args[args.index("--output-last-message") + 1])
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text("README quickstart completed.\n", encoding="utf-8")
+print(json.dumps({"type": "thread.started", "thread_id": "readme-quickstart"}))
+print(json.dumps({
+    "type": "turn.completed",
+    "usage": {
+        "input_tokens": 1,
+        "cached_input_tokens": 0,
+        "output_tokens": 1,
+        "reasoning_output_tokens": 0,
+    },
+}))
+'''
+
+
+def markdown_shell_command(markdown: str, introduction: str) -> list[str]:
+    start = markdown.index(introduction)
+    fence = markdown.index("```sh\n", start) + len("```sh\n")
+    finish = markdown.index("\n```", fence)
+    lines = markdown[fence:finish].splitlines()
+    command = " ".join(line[:-1].strip() if line.rstrip().endswith("\\") else line.strip() for line in lines)
+    return shlex.split(command)
 
 
 def package_and_extract(root: Path) -> Path:
@@ -36,6 +66,18 @@ def package_and_extract(root: Path) -> Path:
         raise AssertionError(packaged.stderr or packaged.stdout)
     extracted = root / "extracted"
     with zipfile.ZipFile(dist / "codex-conductor-bundle.zip") as archive:
+        names = set(archive.namelist())
+        for expected in (
+            "README.md",
+            "docs/README.md",
+            "docs/runtime.md",
+            "docs/cli-namespaces.md",
+            "conductor-workflows/README.md",
+            "conductor-workflows/core/read-only-review.json",
+            "conductor-workflows/core/staged-change.json",
+        ):
+            if expected not in names:
+                raise AssertionError("release bundle omits README target %s" % expected)
         archive.extractall(extracted)
     return extracted
 
@@ -132,9 +174,72 @@ class BundleInstallerTests(unittest.TestCase):
             self.assertEqual(invoked.returncode, 0, invoked.stderr)
             self.assertRegex(invoked.stdout.strip(), r"^conductor-runtime \d+\.\d+\.\d+$")
 
+            examples = subprocess.run(
+                [
+                    str(active_runtime),
+                    "validate",
+                    str((extracted / "conductor-workflows" / "core").resolve()),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(examples.returncode, 0, examples.stderr)
+            self.assertIn("read-only-review.json", examples.stdout)
+            self.assertIn("staged-change.json", examples.stdout)
+
             repeated = run_installer(extracted, codex_home, conductor_home, "--json")
             self.assertEqual(repeated.returncode, 0, repeated.stderr)
             self.assertEqual(json.loads(repeated.stdout)["status"], "already-installed")
+
+            displayed = run_installer(extracted, codex_home, conductor_home)
+            self.assertEqual(displayed.returncode, 0, displayed.stderr)
+            self.assertIn("Next: ", displayed.stdout)
+            command = next(line.removeprefix("Next: ") for line in displayed.stdout.splitlines() if line.startswith("Next: "))
+            invoked_next = subprocess.run(
+                shlex.split(command),
+                cwd=str(extracted),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+            )
+            self.assertIn(invoked_next.returncode, {0, 1}, invoked_next.stderr)
+            self.assertIn("status:", invoked_next.stdout)
+
+            readme_command = markdown_shell_command(
+                (extracted / "README.md").read_text(encoding="utf-8"),
+                "Run one read-only model call:",
+            )
+            self.assertEqual(
+                readme_command[0],
+                "~/.codex/conductor/bin/conductor-runtime.pyz",
+            )
+            readme_command[0] = str(active_runtime)
+            fake_bin = root / "fake-bin"
+            fake_bin.mkdir()
+            fake_codex = fake_bin / "codex"
+            fake_codex.write_text(FAKE_CODEX, encoding="utf-8")
+            fake_codex.chmod(0o755)
+            readme_environment = dict(os.environ)
+            readme_environment.update(
+                {
+                    "CODEX_CONDUCTOR_HOME": str(root / "readme-state"),
+                    "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+                }
+            )
+            readme_invoked = subprocess.run(
+                readme_command,
+                cwd=str(extracted),
+                env=readme_environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=20,
+            )
+            self.assertEqual(readme_invoked.returncode, 0, readme_invoked.stderr)
+            self.assertIn("completed", readme_invoked.stdout)
 
     def test_bundle_installer_rejects_tampering_and_gates_replacement(self):
         with tempfile.TemporaryDirectory() as tmp:

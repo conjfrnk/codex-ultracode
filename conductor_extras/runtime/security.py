@@ -936,30 +936,52 @@ def replace_text_file_no_follow(
     temp_prefix: str,
     mode: int = 0o600,
     sync: bool = True,
+    temp_directory: Optional[Path] = None,
 ) -> None:
     reject_symlink_path(path, label)
     _validate_temp_prefix(temp_prefix)
     parent_fd = open_dir_no_follow(path.parent, "%s parent" % label)
+    temp_parent_fd = parent_fd
     temp_name = None
     fd = None
     try:
-        fd, temp_name = _create_temp_file_no_follow(parent_fd, temp_prefix, mode)
+        if temp_directory is not None:
+            temp_directory = Path(temp_directory)
+            reject_symlink_path(temp_directory, "%s temporary directory" % label)
+            temp_parent_fd = ensure_dir_no_follow(
+                temp_directory,
+                "%s temporary directory" % label,
+            )
+        fd, temp_name = _create_temp_file_no_follow(
+            temp_parent_fd,
+            temp_prefix,
+            mode,
+        )
         _write_text_fd(fd, text, sync=sync)
         os.close(fd)
         fd = None
-        os.replace(temp_name, path.name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        os.replace(
+            temp_name,
+            path.name,
+            src_dir_fd=temp_parent_fd,
+            dst_dir_fd=parent_fd,
+        )
         if sync:
+            if temp_parent_fd != parent_fd:
+                os.fsync(temp_parent_fd)
             os.fsync(parent_fd)
     except OSError as exc:
         if temp_name is not None:
             try:
-                os.unlink(temp_name, dir_fd=parent_fd)
+                os.unlink(temp_name, dir_fd=temp_parent_fd)
             except OSError:
                 pass
         raise ValidationError("failed to replace %s %s: %s" % (label, path, exc.__class__.__name__))
     finally:
         if fd is not None:
             os.close(fd)
+        if temp_parent_fd != parent_fd:
+            os.close(temp_parent_fd)
         os.close(parent_fd)
 
 

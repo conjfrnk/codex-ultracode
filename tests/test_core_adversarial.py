@@ -1,3 +1,4 @@
+import copy
 import io
 import json
 import os
@@ -11,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from conductor_runtime.cli import main
-from conductor_runtime.core import goal, staged
+from conductor_runtime.core import codex, goal, staged
 from conductor_runtime.core.auto import run_direct
 from conductor_runtime.core.codex import CodexInvocationError, analyze_stream, invoke_codex
 from conductor_runtime.core.goal import run_goal
@@ -25,7 +26,7 @@ from conductor_runtime.core.policy import (
 )
 from conductor_runtime.core.process import run_process
 from conductor_runtime.core.runner import WorkflowRunner
-from conductor_runtime.core.safe import canonical_json_bytes, sha256_bytes, strict_json_bytes
+from conductor_runtime.core.safe import canonical_json_bytes, require_relative, sha256_bytes, strict_json_bytes
 from conductor_runtime.core.staged import apply_verified_stage
 from conductor_runtime.core.state import RunState
 from conductor_runtime.core.workflow import validate_workflow
@@ -101,7 +102,7 @@ if output.name == "planned-workflow.json" and mode.startswith("planner-"):
                 "network": False,
             })
         output.write_text(json.dumps({
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "generated-plan",
             "result_artifact": "result.md",
             "steps": steps,
@@ -171,6 +172,63 @@ if mode == "bad-exit":
 
 
 class CoreAdversarialTests(unittest.TestCase):
+    def test_relative_paths_share_the_published_schema_bound(self):
+        self.assertEqual(require_relative("a" * 4096), "a" * 4096)
+        with self.assertRaisesRegex(ValidationError, "non-empty relative path"):
+            require_relative("a" * 4097)
+
+    def test_execution_steps_reject_explicit_null_optional_fields(self):
+        shell = {
+            "schema": "conductor.core.workflow.v1",
+            "name": "null-shell",
+            "steps": [
+                {
+                    "id": "shell",
+                    "kind": "shell",
+                    "command": ["true"],
+                    "writes": False,
+                    "destructive": False,
+                    "network": False,
+                }
+            ],
+        }
+        codex_workflow = self._codex_workflow()
+        map_workflow = self._map_workflow(["one"])
+        mutations = []
+
+        for field in ("capture", "cwd"):
+            candidate = copy.deepcopy(shell)
+            candidate["steps"][0][field] = None
+            mutations.append(("shell", field, candidate))
+
+        for field in (
+            "completion_verdict",
+            "model",
+            "output_schema",
+            "prompt",
+            "prompt_artifact",
+            "prompt_file",
+        ):
+            candidate = copy.deepcopy(codex_workflow)
+            step = candidate["steps"][0]
+            if field == "prompt":
+                step["prompt_file"] = "prompt.txt"
+            step[field] = None
+            mutations.append(("codex_exec", field, candidate))
+
+        for field in ("items", "items_artifact", "items_file", "items_pointer", "model", "output_schema"):
+            candidate = copy.deepcopy(map_workflow)
+            step = candidate["steps"][0]
+            if field == "items":
+                step["items_file"] = "items.json"
+            step[field] = None
+            mutations.append(("agent_map", field, candidate))
+
+        for kind, field, workflow in mutations:
+            with self.subTest(kind=kind, field=field):
+                with self.assertRaisesRegex(ValidationError, "fields must not be null: %s" % field):
+                    validate_workflow(workflow)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="conductor-adversarial-")
         self.root = Path(self.temporary.name).resolve()
@@ -179,9 +237,9 @@ class CoreAdversarialTests(unittest.TestCase):
         self.home = self.root / "state"
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        codex = self.bin / "codex"
-        codex.write_text(FAKE_CODEX, encoding="utf-8")
-        codex.chmod(0o755)
+        codex_path = self.bin / "codex"
+        codex_path.write_text(FAKE_CODEX, encoding="utf-8")
+        codex_path.chmod(0o755)
         self.environment = patch.dict(
             os.environ,
             {
@@ -190,8 +248,23 @@ class CoreAdversarialTests(unittest.TestCase):
             },
         )
         self.environment.start()
+        self.provider_environment = patch.object(
+            codex,
+            "CODEX_ENVIRONMENT_KEYS",
+            codex.CODEX_ENVIRONMENT_KEYS
+            | frozenset(
+                {
+                    "ADVERSARIAL_CODEX_COUNTER",
+                    "ADVERSARIAL_CODEX_LOG",
+                    "ADVERSARIAL_CODEX_MARKER",
+                    "ADVERSARIAL_CODEX_MODE",
+                }
+            ),
+        )
+        self.provider_environment.start()
 
     def tearDown(self):
+        self.provider_environment.stop()
         self.environment.stop()
         self.temporary.cleanup()
 
@@ -305,12 +378,15 @@ class CoreAdversarialTests(unittest.TestCase):
         fake.chmod(0o755)
         run = self._shell_run(["./true"])
         self.assertEqual(run.state["status"], "blocked")
-        self.assertIn(shell_approval(["./true"]), run.state["detail"])
+        self.assertIn(
+            shell_approval(["./true"], cwd=self.workspace, workspace=self.workspace),
+            run.state["detail"],
+        )
         self.assertFalse((self.workspace / "bypass.txt").exists())
 
     def test_high_risk_workflow_needs_dedicated_approval(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "high-risk",
             "risk": "high",
             "steps": [{"id": "gate", "kind": "manual_gate", "approval_id": "gate"}],
@@ -332,7 +408,7 @@ class CoreAdversarialTests(unittest.TestCase):
 
     def test_all_is_not_a_wildcard_approval(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "exact-approval",
             "steps": [{"id": "gate", "kind": "manual_gate", "approval_id": "specific"}],
         }
@@ -507,7 +583,7 @@ class CoreAdversarialTests(unittest.TestCase):
 
     def test_workflow_rejects_internal_reserved_and_overlapping_paths(self):
         internal = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "internal",
             "_source_path": "/tmp/injected",
             "steps": [{"id": "a", "kind": "write_artifact", "output": "x", "content": "x"}],
@@ -516,7 +592,7 @@ class CoreAdversarialTests(unittest.TestCase):
             validate_workflow(internal)
         for reserved in (".receipts/x", ".schemas/x", "stages/x", "apply-backups/x"):
             workflow = {
-                "schema": "conductor.workflow.v1",
+                "schema": "conductor.core.workflow.v1",
                 "name": "reserved",
                 "steps": [
                     {"id": "a", "kind": "write_artifact", "output": reserved, "content": "x"}
@@ -525,7 +601,7 @@ class CoreAdversarialTests(unittest.TestCase):
             with self.subTest(reserved=reserved), self.assertRaisesRegex(ValidationError, "reserved"):
                 validate_workflow(workflow)
         overlap = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "overlap",
             "steps": [
                 {"id": "a", "kind": "write_artifact", "output": "nested", "content": "x"},
@@ -537,7 +613,7 @@ class CoreAdversarialTests(unittest.TestCase):
 
     def test_workflow_enum_type_errors_are_reported_as_validation_failures(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "enum-types",
             "risk": [],
             "steps": [{"id": "a", "kind": "write_artifact", "output": "x", "content": "x"}],
@@ -552,7 +628,7 @@ class CoreAdversarialTests(unittest.TestCase):
     def test_map_templates_reject_transformations(self):
         for template in ("Inspect {item!r}", "Inspect {item:>20}"):
             workflow = {
-                "schema": "conductor.workflow.v1",
+                "schema": "conductor.core.workflow.v1",
                 "name": "template",
                 "steps": [
                     {
@@ -1047,7 +1123,7 @@ class CoreAdversarialTests(unittest.TestCase):
         ]
         for mode, expected in (("stdout", "redacted-github-token"), ("stderr", "stderr-value")):
             workflow = {
-                "schema": "conductor.workflow.v1",
+                "schema": "conductor.core.workflow.v1",
                 "name": "capture-%s" % mode,
                 "result_artifact": "capture.txt",
                 "steps": [
@@ -1076,7 +1152,7 @@ class CoreAdversarialTests(unittest.TestCase):
 
         noisy = [sys.executable, "-c", "print('x' * 4096)"]
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "truncated-shell",
             "steps": [
                 {
@@ -1104,7 +1180,7 @@ class CoreAdversarialTests(unittest.TestCase):
     def test_shell_timeout_is_bounded_and_leaves_no_execution_stage(self):
         command = [sys.executable, "-c", "import time; time.sleep(30)"]
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "timeout-shell",
             "steps": [
                 {
@@ -1536,7 +1612,7 @@ staged.apply_verified_stage(
 
     def _shell_run(self, command, *, writes=False, approvals=frozenset(), policy=None):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "shell-case",
             "steps": [
                 {
@@ -1566,7 +1642,7 @@ staged.apply_verified_stage(
 
     def _artifact_run(self):
         workflow = {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "artifact-state",
             "result_artifact": "value.txt",
             "steps": [
@@ -1610,7 +1686,7 @@ staged.apply_verified_stage(
         if verdict:
             step["completion_verdict"] = "strict-v1"
         return {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "provider-case",
             "result_artifact": step["capture"],
             "steps": [step],
@@ -1619,7 +1695,7 @@ staged.apply_verified_stage(
     @staticmethod
     def _map_workflow(items, *, total_tokens=400):
         return {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "adversarial-map",
             "max_workers": 2,
             "agent_max_tokens": 200,

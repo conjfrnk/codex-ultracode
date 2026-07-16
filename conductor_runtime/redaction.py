@@ -2,7 +2,7 @@ import json
 import re
 import threading
 import unicodedata
-from typing import Iterable
+from typing import Dict, Iterable, Set, Tuple
 
 
 APPROVAL_ID_PLACEHOLDER = "<approval-id>"
@@ -29,13 +29,13 @@ SECRET_PATTERNS = [
 ]
 
 _EXACT_SECRET_LOCK = threading.Lock()
-_EXACT_SECRET_COUNTS = {}
-_EXACT_SECRET_VARIANTS = ()
+_EXACT_SECRET_COUNTS: Dict[str, int] = {}
+_EXACT_SECRET_VARIANTS: Tuple[str, ...] = ()
 
 
 class ExactSecretRedactionScope:
     def __init__(self):
-        self._values = set()
+        self._values: Set[str] = set()
         self._active = False
 
     def __enter__(self):

@@ -1,0 +1,104 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "plan-approved-implementation-team",
+  "description": "Require a bounded read-only implementation plan and autonomous fixed-lead approval before one isolated teammate write task.",
+  "mode": "workspace_write",
+  "risk": "medium",
+  "max_workers": 1,
+  "max_items": 2,
+  "agent_effort": "ultra",
+  "agent_max_tokens": 20000,
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "plan-approval-lead",
+      "description": "Reviews a teammate plan against bounded implementation and verification criteria.",
+      "instructions": "Review the assigned teammate plan critically. Approve only a minimal, contract-aware approach with concrete verification; reject vague, over-broad, or weakly verified plans with actionable feedback.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "sandbox": "workspace-write",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "plan-approved-implementer",
+      "description": "Plans read-only, incorporates lead feedback, then implements in an isolated workspace.",
+      "instructions": "Inspect only the requested behavior and relevant contracts. During planning, produce a minimal concrete approach and verification list without writes. After approval, implement only that bounded task and run focused checks.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "sandbox": "workspace-write",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    }
+  ],
+  "steps": [
+    {
+      "id": "approve-plan-gated-write",
+      "kind": "manual_gate",
+      "description": "Require explicit approval before the isolated implementation turn can write.",
+      "risk": "medium",
+      "approval_id": "plan-gated-team-write",
+      "prompt": "Approve one bounded isolated teammate implementation after autonomous plan review."
+    },
+    {
+      "id": "implement-after-plan-approval",
+      "kind": "agent_team",
+      "description": "Plan, review, revise when needed, and implement the requested bounded change.",
+      "risk": "medium",
+      "depends_on": [
+        "approve-plan-gated-write"
+      ],
+      "sandbox": "workspace-write",
+      "members": [
+        {
+          "id": "lead",
+          "role": "autonomous plan approval lead",
+          "instructions": "Apply the configured approval criteria consistently and do not widen task authority.",
+          "agent_profile": "plan-approval-lead",
+          "lead": true
+        },
+        {
+          "id": "implementer",
+          "role": "plan-gated implementation specialist",
+          "instructions": "Plan without writes, revise from bounded lead feedback, and implement only after approval.",
+          "agent_profile": "plan-approved-implementer",
+          "lead": false
+        }
+      ],
+      "tasks": [
+        {
+          "id": "implement-requested-change",
+          "description": "Implement the requested bounded repository change, preserve affected public contracts, and run focused deterministic verification.",
+          "assignee": "implementer",
+          "depends_on": []
+        }
+      ],
+      "plan_approval": {
+        "task_ids": [
+          "implement-requested-change"
+        ],
+        "criteria": "Approve only a minimal plan that identifies affected contracts, material risks, exact intended edits, and focused deterministic verification without unrelated cleanup.",
+        "max_revisions": 2,
+        "plan_max_tokens": 5000,
+        "review_max_tokens": 3000
+      },
+      "max_workers": 1,
+      "max_rounds": 2,
+      "max_dynamic_tasks": 0,
+      "max_operator_tasks": 2,
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "max_total_tokens": 60000,
+      "timeout_seconds": 1200,
+      "capture_dir": "plan-approved-implementation-team-internal",
+      "report": "plan-approved-implementation-team.md"
+    }
+  ]
+}

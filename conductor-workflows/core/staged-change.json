@@ -1,0 +1,34 @@
+{
+  "agent_max_tokens": 20000,
+  "description": "Implement a bounded change in a stage, then verify it before application.",
+  "mode": "workspace_write",
+  "name": "staged-change",
+  "result_artifact": "verification.md",
+  "risk": "medium",
+  "schema": "conductor.core.workflow.v1",
+  "steps": [
+    {
+      "capture": "implementation.md",
+      "id": "implement",
+      "kind": "codex_exec",
+      "max_tokens": 20000,
+      "prompt": "Implement the requested bounded change and run focused checks.",
+      "sandbox": "workspace-write"
+    },
+    {
+      "capture": "verification.md",
+      "completion_verdict": "strict-v1",
+      "context_from": [
+        "implement"
+      ],
+      "depends_on": [
+        "implement"
+      ],
+      "id": "verify",
+      "kind": "codex_exec",
+      "max_tokens": 8000,
+      "prompt": "Verify the staged change against the request and report concrete evidence.",
+      "sandbox": "read-only"
+    }
+  ]
+}

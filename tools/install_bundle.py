@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import sys
@@ -28,10 +29,22 @@ DENIED_SKILL_NAMES = {".env", ".npmrc", ".pypirc", "id_ed25519", "id_rsa"}
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SAFE_PATH_PART = re.compile(r"^[A-Za-z0-9._-]+$")
+MINIMUM_PYTHON = (3, 12)
 
 
 class InstallError(Exception):
     pass
+
+
+def require_supported_python(version_info=None) -> None:
+    """Reject installers running outside the release's tested support window."""
+    detected = sys.version_info if version_info is None else version_info
+    detected_version = tuple(detected[:3])
+    if detected_version[:2] < MINIMUM_PYTHON:
+        raise InstallError(
+            "Codex Conductor requires Python %d.%d or newer; found Python %d.%d.%d"
+            % (*MINIMUM_PYTHON, *detected_version)
+        )
 
 
 def sha256_file(path: Path) -> str:
@@ -561,8 +574,9 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
-    args = _parser().parse_args(argv)
     try:
+        require_supported_python()
+        args = _parser().parse_args(argv)
         result = install_bundle(
             args.bundle_root,
             args.codex_home,
@@ -583,6 +597,8 @@ def main(argv=None) -> int:
         print("Runtime: %s" % result["destinations"]["runtime"])
         print("Skill: %s" % result["destinations"]["skill"])
         print("Release: %s" % result["destinations"]["release"])
+        if result["status"] in {"installed", "already-installed"}:
+            print("Next: %s doctor" % shlex.quote(result["destinations"]["runtime"]))
         if result["status"] == "installed":
             print("Restart Codex to refresh installed skills.")
     return 0

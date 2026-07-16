@@ -6,7 +6,7 @@ import re
 import shutil
 import stat
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 
 from ..errors import PolicyError, ValidationError
 from .policy import RuntimePolicy, require_approval
@@ -25,16 +25,19 @@ from .safe import (
     write_new_bytes,
     write_new_json,
 )
-from .state import RunState
+from .state import RunState, workspace_apply_lock
 
 
 STAGE_SCHEMA = "conductor.core_stage.v1"
+PENDING_STAGE_SCHEMA = "conductor.core_pending_stage.v1"
 APPLY_SCHEMA = "conductor.core_stage_apply.v1"
 APPLY_APPROVAL = "verified-stage-apply"
 DELETE_APPROVAL = "verified-stage-delete"
 MAX_FILES = 20000
 MAX_BYTES = 512 * 1024 * 1024
 MAX_CHANGES = 5000
+MAX_STAGE_BYTES = MAX_BYTES
+MAX_STAGE_ENTRIES = 100000
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 RUN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
@@ -49,8 +52,9 @@ EXCLUDED_DIRECTORIES = {
 
 
 def create_stage(run_dir: Path, step_id: str, workspace: Path) -> Dict:
-    source = Path(workspace).resolve()
-    reject_symlink_components(source, "source workspace")
+    requested_source = Path(workspace).expanduser()
+    reject_symlink_components(requested_source, "source workspace")
+    source = requested_source.resolve()
     stage_root = Path(run_dir) / "stages" / step_id
     if stage_root.exists() or stage_root.is_symlink():
         raise ValidationError("stage already exists")
@@ -62,6 +66,7 @@ def create_stage(run_dir: Path, step_id: str, workspace: Path) -> Dict:
     copied = snapshot_workspace(stage)
     if copied["fingerprint_sha256"] != before["fingerprint_sha256"]:
         raise ValidationError("staged workspace does not match its source snapshot")
+    validate_stage_workspace(stage)
     return {
         "stage_dir": stage,
         "before": before,
@@ -82,6 +87,95 @@ def discard_stage(run_dir: Path, stage_dir: Path) -> None:
     shutil.rmtree(candidate)
 
 
+def pending_stage_descriptor(
+    *,
+    run_dir: Path,
+    run_id: str,
+    step_id: str,
+    attempt: int,
+    workspace: Path,
+    stage_dir: Path,
+    before: Dict,
+) -> Dict:
+    """Build immutable metadata that binds a resumable writable stage."""
+    _validate_snapshot(before, "pending stage source snapshot")
+    if not isinstance(run_id, str) or RUN_ID_RE.fullmatch(run_id) is None:
+        raise ValidationError("pending stage run id is invalid")
+    if not isinstance(step_id, str) or SAFE_ID_RE.fullmatch(step_id) is None:
+        raise ValidationError("pending stage step id is invalid")
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or not 1 <= attempt <= 1000:
+        raise ValidationError("pending stage attempt is invalid")
+    requested_source = Path(workspace).expanduser()
+    reject_symlink_components(requested_source, "pending stage source workspace")
+    source = requested_source.resolve()
+    expected_subdir = "stages/%s/workspace" % step_id
+    expected_stage = resolve_under(run_dir, expected_subdir, "pending stage directory")
+    observed_stage = Path(stage_dir).resolve()
+    if observed_stage != expected_stage.resolve():
+        raise ValidationError("pending stage path is invalid")
+    reject_symlink_components(expected_stage, "pending stage directory")
+    value = {
+        "schema": PENDING_STAGE_SCHEMA,
+        "run_id": run_id,
+        "step_id": step_id,
+        "attempt": attempt,
+        "workspace_sha256": sha256_bytes(str(source).encode("utf-8")),
+        "stage_subdir": expected_subdir,
+        "stage_path_sha256": sha256_bytes(str(expected_stage.resolve()).encode("utf-8")),
+        "before_fingerprint_sha256": before["fingerprint_sha256"],
+        "before_file_count": before["file_count"],
+        "before_size_bytes": before["size_bytes"],
+    }
+    return _with_hash(value, "descriptor_sha256")
+
+
+def load_pending_stage(
+    *,
+    run: RunState,
+    descriptor_relative: str,
+    step_id: str,
+    workspace: Path,
+) -> Dict:
+    payload = run.read_artifact(descriptor_relative)
+    descriptor = strict_json_bytes(payload, "pending stage descriptor")
+    _validate_pending_stage_descriptor(descriptor)
+    if descriptor_relative != "stages/%s.attempt-%d.pending.json" % (
+        step_id,
+        descriptor["attempt"],
+    ):
+        raise ValidationError("pending stage descriptor path is invalid")
+    requested_source = Path(workspace).expanduser()
+    reject_symlink_components(requested_source, "pending stage source workspace")
+    source = requested_source.resolve()
+    if (
+        descriptor["run_id"] != run.descriptor["run_id"]
+        or descriptor["step_id"] != step_id
+        or descriptor["workspace_sha256"] != sha256_bytes(str(source).encode("utf-8"))
+        or descriptor["attempt"] > run.state["steps"][step_id]["attempt"]
+    ):
+        raise ValidationError("pending stage descriptor binding is invalid")
+    stage = resolve_under(run.run_dir, descriptor["stage_subdir"], "pending stage directory")
+    reject_symlink_components(stage, "pending stage directory")
+    if not stage.is_dir():
+        raise ValidationError("pending stage directory is missing")
+    if descriptor["stage_path_sha256"] != sha256_bytes(str(stage.resolve()).encode("utf-8")):
+        raise ValidationError("pending stage canonical path changed")
+    source_snapshot = snapshot_workspace(source)
+    if (
+        source_snapshot["fingerprint_sha256"] != descriptor["before_fingerprint_sha256"]
+        or source_snapshot["file_count"] != descriptor["before_file_count"]
+        or source_snapshot["size_bytes"] != descriptor["before_size_bytes"]
+    ):
+        raise ValidationError("source workspace changed while a stage was pending")
+    snapshot_workspace(stage)
+    return {
+        "step_id": step_id,
+        "stage_dir": stage,
+        "before": source_snapshot,
+        "pending_relative": descriptor_relative,
+    }
+
+
 def finalize_stage(
     *,
     run_dir: Path,
@@ -94,6 +188,7 @@ def finalize_stage(
 ) -> Dict:
     if not isinstance(verification_status, str) or verification_status not in {"pending", "passed"}:
         raise ValidationError("stage verification status is invalid")
+    validate_stage_workspace(stage_dir)
     after = snapshot_workspace(stage_dir)
     changes = workspace_delta(before, after)
     value = {
@@ -128,8 +223,9 @@ def mark_stage_verified(evidence: Dict, verifier_step_ids: list) -> Dict:
 
 
 def snapshot_workspace(root: Path) -> Dict:
-    base = Path(root).resolve()
-    reject_symlink_components(base, "workspace snapshot")
+    requested_root = Path(root).expanduser()
+    reject_symlink_components(requested_root, "workspace snapshot")
+    base = requested_root.resolve()
     files = []
     total_bytes = 0
     for current, directories, filenames in os.walk(base, topdown=True, followlinks=False):
@@ -172,6 +268,52 @@ def snapshot_workspace(root: Path) -> Dict:
         "fingerprint_sha256": sha256_bytes(payload),
         "excluded_directories": sorted(EXCLUDED_DIRECTORIES),
     }
+
+
+def validate_stage_workspace(root: Path) -> Dict:
+    """Account for the complete stage tree, including normally excluded roots."""
+    requested_root = Path(root).expanduser()
+    reject_symlink_components(requested_root, "stage quota scan")
+    base = requested_root.resolve()
+    if not base.is_dir():
+        raise ValidationError("stage quota scan root must be a directory")
+    entries = 0
+    total_bytes = 0
+    excluded: list[str] = []
+    pending = [base]
+    while pending:
+        current_path = pending.pop()
+        try:
+            iterator = os.scandir(current_path)
+        except OSError as exc:
+            raise ValidationError("cannot scan staged workspace") from exc
+        with iterator:
+            for entry in iterator:
+                path = Path(entry.path)
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError as exc:
+                    raise ValidationError("cannot inspect staged workspace") from exc
+                entries += 1
+                if entries > MAX_STAGE_ENTRIES:
+                    raise ValidationError("stage exceeds %d total entries" % MAX_STAGE_ENTRIES)
+                if stat.S_ISDIR(info.st_mode):
+                    relative = path.relative_to(base).as_posix()
+                    require_relative(relative, "stage directory")
+                    if entry.name in EXCLUDED_DIRECTORIES and len(excluded) < 8:
+                        excluded.append(relative)
+                    pending.append(path)
+                    continue
+                if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                    raise ValidationError("stage quota scan accepts only regular files and directories")
+                relative = path.relative_to(base).as_posix()
+                require_relative(relative, "stage file")
+                total_bytes += info.st_size
+                if total_bytes > MAX_STAGE_BYTES:
+                    raise ValidationError("stage exceeds %d total bytes" % MAX_STAGE_BYTES)
+    if excluded:
+        raise ValidationError("stage contains excluded directories: %s" % ", ".join(sorted(excluded)))
+    return {"entry_count": entries, "size_bytes": total_bytes}
 
 
 def workspace_delta(before: Dict, after: Dict) -> list:
@@ -220,7 +362,9 @@ def apply_verified_stage(
     validate_stage_evidence(evidence)
     if evidence["verification_status"] != "passed":
         raise ValidationError("stage evidence is not independently verified")
-    source = Path(workspace).resolve()
+    requested_source = Path(workspace).expanduser()
+    reject_symlink_components(requested_source, "source workspace")
+    source = requested_source.resolve()
     run_dir = require_external_state_path(
         _run_dir_from_evidence(evidence_file), source, "stage run directory"
     )
@@ -228,19 +372,20 @@ def apply_verified_stage(
     receipt = Path(receipt_path) if receipt_path is not None else evidence_file.with_name(evidence_file.stem + ".apply.json")
     receipt = require_external_state_path(receipt, source, "stage apply receipt")
     with run.lock():
-        run.reload()
-        run.verify_recorded_artifacts()
-        evidence_relative = _evidence_artifact_relative(evidence_file, run_dir)
-        if run.read_artifact(evidence_relative, 32 * 1024 * 1024) != evidence_payload:
-            raise ValidationError("stage evidence changed before application")
-        return _apply_verified_stage_locked(
-            evidence=evidence,
-            source=source,
-            run=run,
-            run_dir=run_dir,
-            receipt=receipt,
-            policy=active_policy,
-        )
+        with workspace_apply_lock(source):
+            run.reload()
+            run.verify_recorded_artifacts()
+            evidence_relative = _evidence_artifact_relative(evidence_file, run_dir)
+            if run.read_artifact(evidence_relative, 32 * 1024 * 1024) != evidence_payload:
+                raise ValidationError("stage evidence changed before application")
+            return _apply_verified_stage_locked(
+                evidence=evidence,
+                source=source,
+                run=run,
+                run_dir=run_dir,
+                receipt=receipt,
+                policy=active_policy,
+            )
 
 
 def _apply_verified_stage_locked(
@@ -257,6 +402,7 @@ def _apply_verified_stage_locked(
     if sha256_bytes(str(source).encode("utf-8")) != evidence["workspace_sha256"]:
         raise ValidationError("stage evidence belongs to another workspace")
     stage = resolve_under(run_dir, evidence["stage_subdir"], "stage directory")
+    validate_stage_workspace(stage)
     observed_stage = snapshot_workspace(stage)
     if observed_stage["fingerprint_sha256"] != evidence["after"]["fingerprint_sha256"]:
         raise ValidationError("staged workspace changed after verification")
@@ -456,7 +602,7 @@ def _validate_snapshot(value, label: str) -> None:
     for record in files:
         if not isinstance(record, dict) or set(record) != {"path", "sha256", "size_bytes", "mode"}:
             raise ValidationError("%s file record is invalid" % label)
-        relative = require_relative(record.get("path"), "%s file path" % label)
+        relative = require_relative(cast(str, record.get("path")), "%s file path" % label)
         digest = record.get("sha256")
         size = record.get("size_bytes")
         mode = record.get("mode")
@@ -478,6 +624,58 @@ def _validate_snapshot(value, label: str) -> None:
         raise ValidationError("%s byte count does not match" % label)
     if sha256_bytes(canonical_json_bytes(files)) != value["fingerprint_sha256"]:
         raise ValidationError("%s fingerprint does not match" % label)
+
+
+def _validate_pending_stage_descriptor(value) -> None:
+    fields = {
+        "schema",
+        "run_id",
+        "step_id",
+        "attempt",
+        "workspace_sha256",
+        "stage_subdir",
+        "stage_path_sha256",
+        "before_fingerprint_sha256",
+        "before_file_count",
+        "before_size_bytes",
+        "descriptor_sha256",
+    }
+    if (
+        not isinstance(value, dict)
+        or set(value) != fields
+        or value.get("schema") != PENDING_STAGE_SCHEMA
+    ):
+        raise ValidationError("pending stage descriptor fields are invalid")
+    if value.get("descriptor_sha256") != _with_hash(value, "descriptor_sha256")["descriptor_sha256"]:
+        raise ValidationError("pending stage descriptor hash does not match")
+    run_id = value.get("run_id")
+    step_id = value.get("step_id")
+    attempt = value.get("attempt")
+    if (
+        not isinstance(run_id, str)
+        or RUN_ID_RE.fullmatch(run_id) is None
+        or not isinstance(step_id, str)
+        or SAFE_ID_RE.fullmatch(step_id) is None
+        or isinstance(attempt, bool)
+        or not isinstance(attempt, int)
+        or not 1 <= attempt <= 1000
+        or value.get("stage_subdir") != "stages/%s/workspace" % step_id
+        or any(
+            not isinstance(value.get(field), str) or SHA256_RE.fullmatch(value[field]) is None
+            for field in (
+                "workspace_sha256",
+                "stage_path_sha256",
+                "before_fingerprint_sha256",
+            )
+        )
+        or isinstance(value.get("before_file_count"), bool)
+        or not isinstance(value.get("before_file_count"), int)
+        or not 0 <= value["before_file_count"] <= MAX_FILES
+        or isinstance(value.get("before_size_bytes"), bool)
+        or not isinstance(value.get("before_size_bytes"), int)
+        or not 0 <= value["before_size_bytes"] <= MAX_BYTES
+    ):
+        raise ValidationError("pending stage descriptor bindings are invalid")
 
 
 def validate_stage_evidence(value) -> None:
@@ -532,7 +730,7 @@ def validate_stage_evidence(value) -> None:
             "after_mode",
         }:
             raise ValidationError("stage evidence change record is invalid")
-        require_relative(change.get("path"), "stage change path")
+        require_relative(cast(str, change.get("path")), "stage change path")
         action = change.get("action")
         if not isinstance(action, str) or action not in {"added", "modified", "deleted"}:
             raise ValidationError("stage evidence change action is invalid")

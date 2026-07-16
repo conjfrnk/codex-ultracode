@@ -74,7 +74,7 @@ def build_direct_workflow(
 ) -> Dict:
     if not isinstance(task, str) or not task.strip() or len(task) > 65536:
         raise ValidationError("task must be non-empty text of at most 65536 characters")
-    worker = {
+    worker: Dict = {
         "id": "work",
         "kind": "codex_exec",
         "description": "Execute the task directly with the model.",
@@ -89,8 +89,8 @@ def build_direct_workflow(
         worker["model"] = model
     if effort:
         worker["effort"] = effort
-    steps = [worker]
-    dependencies = ["work"]
+    steps: List[Dict] = [worker]
+    dependencies: List[str] = ["work"]
     if check_command is not None:
         steps.append(
             {
@@ -117,7 +117,7 @@ def build_direct_workflow(
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 65536:
             raise ValidationError("check prompt must be non-empty bounded text")
         verifier_dependencies = list(dict.fromkeys(dependencies + ["work"]))
-        verifier = {
+        verifier: Dict = {
             "id": "verify",
             "kind": "codex_exec",
             "description": "Independently verify the direct result.",
@@ -138,7 +138,7 @@ def build_direct_workflow(
             verifier["effort"] = effort
         steps.append(verifier)
     workflow = {
-        "schema": "conductor.workflow.v1",
+        "schema": "conductor.core.workflow.v1",
         "name": slugify(name or "direct-task"),
         "description": "Direct model execution compiled by the automatic entry point.",
         "mode": "workspace_write" if writes else "read_only",
@@ -163,6 +163,7 @@ def run_direct(
     dry_run: bool = False,
     receipt_path: Optional[Path] = None,
     output_path: Optional[Path] = None,
+    replace_output: bool = False,
     iteration_context: Optional[str] = None,
     **workflow_options,
 ) -> AutoResult:
@@ -189,7 +190,7 @@ def run_direct(
         payload = run.read_artifact("result.md")
         result_path = run.artifact_path("result.md")
         if output_path is not None:
-            write_requested(Path(output_path), payload)
+            write_requested(Path(output_path), payload, replace=replace_output)
             result_path = Path(output_path)
     stage_relative = run.state["steps"]["work"].get("stage_evidence")
     stage_path = run.artifact_path(stage_relative) if stage_relative else None
@@ -209,7 +210,7 @@ def run_direct(
     }
     receipt["receipt_sha256"] = sha256_bytes(canonical_json_bytes(receipt))
     destination = requested_receipt if requested_receipt is not None else run.run_dir / "auto.json"
-    write_requested(destination, canonical_json_bytes(receipt))
+    write_requested(destination, canonical_json_bytes(receipt), replace=True)
     return AutoResult(
         status=run.state["status"],
         run_dir=run.run_dir,
@@ -231,9 +232,9 @@ def _worker_prompt(task: str, writes: bool) -> str:
     return "%s\n\nBEGIN_UNTRUSTED_TASK\n%s\nEND_UNTRUSTED_TASK" % (mode, clean)
 
 
-def write_requested(path: Path, payload: bytes) -> None:
+def write_requested(path: Path, payload: bytes, *, replace: bool = False) -> None:
     path = path.parent.resolve(strict=False) / path.name
-    if path.exists() and not path.is_symlink():
+    if replace and path.exists() and not path.is_symlink():
         replace_bytes(path, payload, "requested output")
     else:
         write_new_bytes(path, payload, "requested output")

@@ -2,9 +2,13 @@ import hashlib
 import json
 import sys
 import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
+from conductor_extras.runtime import security as runtime_security
 from conductor_extras.runtime.agent_lifecycle_hooks import (
     AGENT_LIFECYCLE_HOOK_INPUT_FIELDS,
     AGENT_LIFECYCLE_HOOK_INPUT_SCHEMA,
@@ -19,7 +23,10 @@ from conductor_extras.runtime.agent_lifecycle_stop_gate import (
     build_agent_lifecycle_stop_gate,
     claim_agent_lifecycle_stop_gate_hook,
     complete_agent_lifecycle_stop_gate_hook,
+    list_agent_lifecycle_stop_gates,
     load_agent_lifecycle_stop_gate,
+    replace_agent_lifecycle_stop_gate,
+    write_agent_lifecycle_stop_gate,
 )
 from conductor_extras.runtime.direct_workspace_transaction import (
     DIRECT_WORKSPACE_TRANSACTION_SCHEMA,
@@ -594,6 +601,144 @@ class AgentLifecycleHookContractTests(unittest.TestCase):
         changed["warning_count"] = 0
         with self.assertRaises(ValidationError):
             complete_agent_lifecycle_stop_gate_hook(changed, {})
+
+    def test_parallel_stop_gate_replace_stages_outside_strict_directory(self):
+        hooks = [
+            {
+                "id": "required",
+                "event": "agent_stop",
+                "command": ["cat"],
+                "on_failure": "block",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runner = FakeLifecycleRunner(
+                workflow=codex_workflow(hooks),
+                workspace=root,
+                base_run_dir=root / "runs",
+                policy=RuntimePolicy(allow_agent=True),
+            )
+            first_gate = build_agent_lifecycle_stop_gate(
+                lifecycle_input(attempt=1),
+                hooks,
+            )
+            second_gate = build_agent_lifecycle_stop_gate(
+                lifecycle_input(attempt=2),
+                hooks,
+            )
+            write_agent_lifecycle_stop_gate(runner.run, first_gate)
+
+            temp_created = threading.Barrier(2)
+            release_replace = threading.Barrier(2)
+            create_temp = runtime_security._create_temp_file_no_follow
+
+            def paused_create_temp(parent_fd, prefix, mode):
+                fd, name = create_temp(parent_fd, prefix, mode)
+                temp_created.wait(timeout=5)
+                release_replace.wait(timeout=5)
+                return fd, name
+
+            with patch.object(
+                runtime_security,
+                "_create_temp_file_no_follow",
+                side_effect=paused_create_temp,
+            ):
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    replacing = executor.submit(
+                        replace_agent_lifecycle_stop_gate,
+                        runner.run,
+                        first_gate,
+                    )
+                    temp_created.wait(timeout=5)
+                    try:
+                        gate_dir = (
+                            runner.run.artifacts_dir
+                            / ".agent-lifecycle-stop-gates"
+                        )
+                        temporary_paths = list(
+                            runner.run.artifacts_dir.rglob(
+                                ".agent-stop-gate-*.tmp"
+                            )
+                        )
+                        self.assertEqual(len(temporary_paths), 1)
+                        self.assertNotEqual(temporary_paths[0].parent, gate_dir)
+                        self.assertEqual(
+                            list_agent_lifecycle_stop_gates(runner.run),
+                            [first_gate],
+                        )
+                        write_agent_lifecycle_stop_gate(runner.run, second_gate)
+                    finally:
+                        release_replace.wait(timeout=5)
+                    replacing.result(timeout=5)
+
+            self.assertEqual(
+                {
+                    gate["invocation_sha256"]
+                    for gate in list_agent_lifecycle_stop_gates(runner.run)
+                },
+                {
+                    first_gate["invocation_sha256"],
+                    second_gate["invocation_sha256"],
+                },
+            )
+            self.assertEqual(
+                list(runner.run.artifacts_dir.rglob(".agent-stop-gate-*.tmp")),
+                [],
+            )
+
+    def test_stop_gate_temp_placement_preserves_count_and_symlink_guards(self):
+        hooks = [{"id": "required", "on_failure": "block"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runner = FakeLifecycleRunner(
+                workflow=codex_workflow(
+                    [
+                        {
+                            **hooks[0],
+                            "event": "agent_stop",
+                            "command": ["cat"],
+                        }
+                    ]
+                ),
+                workspace=root,
+                base_run_dir=root / "runs",
+                policy=RuntimePolicy(allow_agent=True),
+            )
+            first_gate = build_agent_lifecycle_stop_gate(
+                lifecycle_input(attempt=1),
+                hooks,
+            )
+            gate_path = write_agent_lifecycle_stop_gate(runner.run, first_gate)
+            second_gate = build_agent_lifecycle_stop_gate(
+                lifecycle_input(attempt=2),
+                hooks,
+            )
+            with patch(
+                "conductor_extras.runtime.agent_lifecycle_stop_gate."
+                "MAX_AGENT_LIFECYCLE_STOP_GATES",
+                1,
+            ):
+                with self.assertRaisesRegex(ValidationError, "count exceeds"):
+                    write_agent_lifecycle_stop_gate(runner.run, second_gate)
+
+            outside = root / "outside"
+            outside.mkdir()
+            temp_directory = (
+                runner.run.artifacts_dir
+                / ".agent-lifecycle-stop-gate-temporary"
+            )
+            try:
+                temp_directory.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlinks are not supported")
+            with self.assertRaisesRegex(ValidationError, "symlink"):
+                replace_agent_lifecycle_stop_gate(
+                    runner.run,
+                    first_gate,
+                )
+            self.assertEqual(list(outside.iterdir()), [])
+            self.assertEqual(load_agent_lifecycle_stop_gate(gate_path), first_gate)
 
 
 class AgentLifecycleWorkflowTests(unittest.TestCase):

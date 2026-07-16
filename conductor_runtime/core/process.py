@@ -7,9 +7,47 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Mapping, Optional
 
 from ..errors import ValidationError
+
+
+SUBPROCESS_ENVIRONMENT_KEYS = frozenset(
+    {
+        "APPDATA",
+        "COLORTERM",
+        "COMSPEC",
+        "HOME",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "LANG",
+        "LANGUAGE",
+        "LC_ALL",
+        "LC_CTYPE",
+        "LOCALAPPDATA",
+        "LOGNAME",
+        "NO_COLOR",
+        "PATH",
+        "PATHEXT",
+        "PROGRAMDATA",
+        "ProgramData",
+        "SHELL",
+        "SYSTEMROOT",
+        "SystemRoot",
+        "TEMP",
+        "TERM",
+        "TMP",
+        "TMPDIR",
+        "TZ",
+        "USER",
+        "USERPROFILE",
+        "WINDIR",
+        "XDG_CACHE_HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -49,7 +87,7 @@ def run_process(
     input_text: str = "",
     timeout_seconds: int = 900,
     output_limit_bytes: int = 1024 * 1024,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[Mapping[str, str]] = None,
 ) -> ProcessResult:
     if not isinstance(argv, list) or not argv or not all(isinstance(value, str) and value for value in argv):
         raise ValidationError("process argv must contain non-empty strings")
@@ -69,12 +107,15 @@ def run_process(
         or output_limit_bytes > 10 * 1024 * 1024
     ):
         raise ValidationError("process output limit is invalid")
+    process_environment = (
+        sanitized_subprocess_environment() if env is None else _copy_environment(env)
+    )
     started = time.monotonic()
     try:
         process = subprocess.Popen(
             argv,
             cwd=Path(cwd),
-            env=env,
+            env=process_environment,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -134,6 +175,42 @@ def run_process(
         timed_out=timed_out,
         duration_ms=duration_ms,
     )
+
+
+def sanitized_subprocess_environment(
+    *,
+    extra_keys: Iterable[str] = (),
+    source: Optional[Mapping[str, str]] = None,
+) -> Dict[str, str]:
+    """Copy only explicitly supported ambient values into a child process."""
+    allowed = set(SUBPROCESS_ENVIRONMENT_KEYS)
+    for key in extra_keys:
+        if not isinstance(key, str) or not key or "=" in key or "\x00" in key:
+            raise ValidationError("process environment allowlist contains an invalid name")
+        allowed.add(key)
+    ambient = os.environ if source is None else source
+    selected = {key: ambient[key] for key in allowed if key in ambient}
+    if "PATH" not in selected:
+        selected["PATH"] = os.defpath
+    return _copy_environment(selected)
+
+
+def _copy_environment(environment: Mapping[str, str]) -> Dict[str, str]:
+    if not isinstance(environment, Mapping):
+        raise ValidationError("process environment must be a string mapping")
+    copied = {}
+    for key, value in environment.items():
+        if (
+            not isinstance(key, str)
+            or not key
+            or "=" in key
+            or "\x00" in key
+            or not isinstance(value, str)
+            or "\x00" in value
+        ):
+            raise ValidationError("process environment must contain valid string entries")
+        copied[key] = value
+    return copied
 
 
 def _read_stream(stream, buffer: _BoundedBuffer) -> None:

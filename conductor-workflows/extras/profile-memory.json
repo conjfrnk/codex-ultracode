@@ -1,0 +1,48 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "profile-memory",
+  "description": "Promote one verified run artifact into bounded external profile memory for future runs.",
+  "mode": "custom",
+  "risk": "medium",
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "correctness-reviewer",
+      "description": "A reviewer with explicitly approved workspace-scoped retained knowledge.",
+      "instructions": "Verify retained knowledge against the current workspace and report stale or contradictory entries.",
+      "sandbox": "read-only",
+      "tool_policy": "isolated",
+      "risk": "medium",
+      "memory": {
+        "mode": "read-write",
+        "selection": "relevant",
+        "max_entries": 16,
+        "max_bytes": 32768
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "verified-note",
+      "kind": "write_artifact",
+      "description": "Example durable fact normally produced after project-native verification.",
+      "output": "verified-memory-note.md",
+      "content": "Re-check boundary behavior whenever retry policy signatures change.\n"
+    },
+    {
+      "id": "remember-note",
+      "kind": "agent_memory",
+      "description": "Append the bounded note to the external profile store for future runs.",
+      "risk": "medium",
+      "agent_profile": "correctness-reviewer",
+      "source_artifact": "verified-memory-note.md",
+      "tags": [
+        "retry",
+        "verification"
+      ],
+      "depends_on": [
+        "verified-note"
+      ]
+    }
+  ]
+}

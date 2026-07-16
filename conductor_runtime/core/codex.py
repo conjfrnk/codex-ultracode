@@ -4,11 +4,11 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from ..errors import StepExecutionError, ValidationError
-from ..redaction import redact_text
-from .process import ProcessResult, run_process
+from ..redaction import ExactSecretRedactionScope, redact_text
+from .process import ProcessResult, run_process, sanitized_subprocess_environment
 from .safe import canonical_json_bytes, ensure_directory, read_regular_bytes, sha256_bytes
 from .state import RunState, utc_now
 
@@ -36,6 +36,45 @@ DISABLED_FEATURES = (
     "remote_plugin",
     "standalone_web_search",
     "tool_suggest",
+)
+CODEX_ENVIRONMENT_KEYS = frozenset(
+    {
+        "ALL_PROXY",
+        "CODEX_API_KEY",
+        "CODEX_HOME",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "OPENAI_ORGANIZATION",
+        "OPENAI_ORG_ID",
+        "OPENAI_PROJECT",
+        "OPENAI_PROJECT_ID",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "all_proxy",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    }
+)
+CODEX_SECRET_ENVIRONMENT_KEYS = frozenset(
+    {
+        "ALL_PROXY",
+        "CODEX_API_KEY",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "OPENAI_ORGANIZATION",
+        "OPENAI_ORG_ID",
+        "OPENAI_PROJECT",
+        "OPENAI_PROJECT_ID",
+        "all_proxy",
+        "http_proxy",
+        "https_proxy",
+    }
 )
 
 
@@ -120,91 +159,125 @@ def invoke_codex(
         "approval_values_persisted": False,
     }
     run.write_artifact(launch_relative, canonical_json_bytes(launch))
+    environment = sanitized_subprocess_environment(extra_keys=CODEX_ENVIRONMENT_KEYS)
     try:
-        process = run_process(
-            command,
-            cwd=workspace,
-            input_text=SAFETY_PREAMBLE + prompt,
-            timeout_seconds=timeout_seconds,
-            output_limit_bytes=output_limit_bytes,
-        )
-        analysis = analyze_stream(process.stdout)
-        redacted_stream = redact_text(process.stdout)
-        stream_relative = ".receipts/%s-attempt-%d-stream.jsonl" % (receipt_id, attempt)
-        run.write_artifact(stream_relative, redacted_stream)
-        session_id = analysis.get("session_id") or ""
-        terminal_missing = analysis.get("terminal_status") == "missing"
-        if process.timed_out:
-            raise CodexInvocationError(
-                "Codex step timed out",
-                session_id=session_id,
-                resumable=bool(session_id and terminal_missing),
+        with ExactSecretRedactionScope() as secret_scope:
+            secret_scope.add(
+                environment[key]
+                for key in CODEX_SECRET_ENVIRONMENT_KEYS
+                if key in environment
             )
-        if process.stdout_truncated or process.stderr_truncated:
-            raise CodexInvocationError(
-                "Codex process output exceeded its configured limit",
-                session_id=session_id,
-                resumable=bool(session_id and terminal_missing),
+            process = run_process(
+                command,
+                cwd=workspace,
+                input_text=SAFETY_PREAMBLE + prompt,
+                timeout_seconds=timeout_seconds,
+                output_limit_bytes=output_limit_bytes,
+                env=environment,
             )
-        if analysis["parse_error"]:
-            raise CodexInvocationError(
-                "Codex stream is invalid: %s" % analysis["parse_error"],
-                session_id=session_id,
-                resumable=bool(session_id and terminal_missing),
+            analysis = analyze_stream(process.stdout)
+            redacted_stream = redact_text(process.stdout)
+            stream_relative = ".receipts/%s-attempt-%d-stream.jsonl" % (receipt_id, attempt)
+            run.write_artifact(stream_relative, redacted_stream)
+            session_id = analysis.get("session_id") or ""
+            if redact_text(session_id) != session_id:
+                raise CodexInvocationError("Codex stream contains an unsafe session id")
+            terminal_missing = analysis.get("terminal_status") == "missing"
+            if process.timed_out:
+                raise CodexInvocationError(
+                    "Codex step timed out",
+                    session_id=session_id,
+                    resumable=bool(session_id and terminal_missing),
+                )
+            if process.stdout_truncated or process.stderr_truncated:
+                raise CodexInvocationError(
+                    "Codex process output exceeded its configured limit",
+                    session_id=session_id,
+                    resumable=bool(session_id and terminal_missing),
+                )
+            if analysis["parse_error"]:
+                raise CodexInvocationError(
+                    "Codex stream is invalid: %s" % analysis["parse_error"],
+                    session_id=session_id,
+                    resumable=bool(session_id and terminal_missing),
+                )
+            if process.returncode != 0 or analysis["terminal_status"] != "completed":
+                raise CodexInvocationError(
+                    "Codex step did not complete successfully", session_id=session_id
+                )
+            total_tokens = analysis["usage"].get("total_tokens")
+            if not isinstance(total_tokens, int):
+                raise CodexInvocationError("Codex terminal usage is missing", session_id=session_id)
+            if total_tokens > max_tokens:
+                raise CodexInvocationError(
+                    "Codex terminal usage exceeded the runtime token cap", session_id=session_id
+                )
+            try:
+                output_payload = read_regular_bytes(
+                    temporary_output, "Codex last message", output_limit_bytes
+                )
+            except ValidationError as exc:
+                raise CodexInvocationError(
+                    "Codex did not produce a bounded last message", session_id=session_id
+                ) from exc
+            try:
+                output = redact_text(output_payload.decode("utf-8"))
+            except UnicodeDecodeError as exc:
+                raise CodexInvocationError(
+                    "Codex last message is not UTF-8", session_id=session_id
+                ) from exc
+            if not output.strip():
+                raise CodexInvocationError("Codex last message is empty", session_id=session_id)
+            if step.get("completion_verdict") == "strict-v1":
+                verdict = validate_completion_verdict(output)
+                if not verdict["satisfied"]:
+                    raise CodexInvocationError(
+                        "Codex completion verdict is unsatisfied", session_id=session_id
+                    )
+            run.write_artifact(output_relative, output, replace=True)
+            finished = utc_now()
+            receipt_relative = ".receipts/%s-attempt-%d-result.json" % (receipt_id, attempt)
+            receipt = {
+                "schema": "conductor.core_codex_result.v1",
+                "step_id": step["id"],
+                "attempt": attempt,
+                "launch_sha256": run.state["artifacts"][launch_relative]["sha256"],
+                "stream_sha256": run.state["artifacts"][stream_relative]["sha256"],
+                "output_sha256": sha256_bytes(output.encode("utf-8")),
+                "output_bytes": len(output.encode("utf-8")),
+                "session_id_sha256": sha256_bytes(analysis["session_id"].encode("utf-8")),
+                "started_at_utc": launch["started_at_utc"],
+                "finished_at_utc": finished,
+                "duration_ms": process.duration_ms,
+                "returncode": process.returncode,
+                "terminal_status": analysis["terminal_status"],
+                "usage": analysis["usage"],
+                "max_tokens": max_tokens,
+            }
+            run.write_artifact(receipt_relative, canonical_json_bytes(receipt))
+            return CodexResult(
+                output=output,
+                output_sha256=receipt["output_sha256"],
+                session_id=analysis["session_id"],
+                usage=analysis["usage"],
+                process=_redacted_process_result(process),
+                terminal_status=analysis["terminal_status"],
+                receipt_relative=receipt_relative,
             )
-        if process.returncode != 0 or analysis["terminal_status"] != "completed":
-            raise CodexInvocationError("Codex step did not complete successfully", session_id=session_id)
-        total_tokens = analysis["usage"].get("total_tokens")
-        if not isinstance(total_tokens, int):
-            raise CodexInvocationError("Codex terminal usage is missing", session_id=session_id)
-        if total_tokens > max_tokens:
-            raise CodexInvocationError("Codex terminal usage exceeded the runtime token cap", session_id=session_id)
-        try:
-            output_payload = read_regular_bytes(temporary_output, "Codex last message", output_limit_bytes)
-        except ValidationError as exc:
-            raise CodexInvocationError("Codex did not produce a bounded last message", session_id=session_id) from exc
-        try:
-            output = redact_text(output_payload.decode("utf-8"))
-        except UnicodeDecodeError as exc:
-            raise CodexInvocationError("Codex last message is not UTF-8", session_id=session_id) from exc
-        if not output.strip():
-            raise CodexInvocationError("Codex last message is empty", session_id=session_id)
-        if step.get("completion_verdict") == "strict-v1":
-            verdict = validate_completion_verdict(output)
-            if not verdict["satisfied"]:
-                raise CodexInvocationError("Codex completion verdict is unsatisfied", session_id=session_id)
-        run.write_artifact(output_relative, output, replace=True)
-        finished = utc_now()
-        receipt_relative = ".receipts/%s-attempt-%d-result.json" % (receipt_id, attempt)
-        receipt = {
-            "schema": "conductor.core_codex_result.v1",
-            "step_id": step["id"],
-            "attempt": attempt,
-            "launch_sha256": run.state["artifacts"][launch_relative]["sha256"],
-            "stream_sha256": run.state["artifacts"][stream_relative]["sha256"],
-            "output_sha256": sha256_bytes(output.encode("utf-8")),
-            "output_bytes": len(output.encode("utf-8")),
-            "session_id_sha256": sha256_bytes(analysis["session_id"].encode("utf-8")),
-            "started_at_utc": launch["started_at_utc"],
-            "finished_at_utc": finished,
-            "duration_ms": process.duration_ms,
-            "returncode": process.returncode,
-            "terminal_status": analysis["terminal_status"],
-            "usage": analysis["usage"],
-            "max_tokens": max_tokens,
-        }
-        run.write_artifact(receipt_relative, canonical_json_bytes(receipt))
-        return CodexResult(
-            output=output,
-            output_sha256=receipt["output_sha256"],
-            session_id=analysis["session_id"],
-            usage=analysis["usage"],
-            process=process,
-            terminal_status=analysis["terminal_status"],
-            receipt_relative=receipt_relative,
-        )
     finally:
         _remove_temporary_output(temporary_root, temporary_attempt)
+
+
+def _redacted_process_result(process: ProcessResult) -> ProcessResult:
+    return ProcessResult(
+        returncode=process.returncode,
+        stdout=redact_text(process.stdout),
+        stderr=redact_text(process.stderr),
+        stdout_truncated=process.stdout_truncated,
+        stderr_truncated=process.stderr_truncated,
+        timed_out=process.timed_out,
+        duration_ms=process.duration_ms,
+    )
 
 
 def build_codex_command(
@@ -278,8 +351,8 @@ def build_codex_command(
 
 def analyze_stream(text: str) -> Dict:
     events = 0
-    thread_ids = []
-    terminal = []
+    thread_ids: List[str] = []
+    terminal: List[str] = []
     usage = None
     parse_error = None
     for line_number, raw in enumerate(str(text or "").splitlines(), start=1):

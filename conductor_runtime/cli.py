@@ -9,7 +9,18 @@ from pathlib import Path
 from . import __version__
 
 
-CANONICAL_COMMANDS = ("auto", "run", "validate", "status", "list", "apply", "doctor")
+CANONICAL_COMMANDS = (
+    "auto",
+    "run",
+    "validate",
+    "schema",
+    "init",
+    "migrate",
+    "status",
+    "list",
+    "apply",
+    "doctor",
+)
 EFFORTS = ("low", "medium", "high", "xhigh", "ultra")
 
 
@@ -25,6 +36,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = commands.add_parser("validate", help="Validate core workflow JSON without execution.")
     validate.add_argument("paths", nargs="+", type=Path)
+
+    schema = commands.add_parser("schema", help="Print the core workflow JSON Schema.")
+    schema.add_argument("--output", type=Path, help="Write a new schema file instead of printing to stdout.")
+
+    init = commands.add_parser("init", help="Write a new validated core workflow example.")
+    init.add_argument("path", type=Path)
+    init.add_argument("--template", choices=("read-only", "staged-write"), default="read-only")
+
+    migrate = commands.add_parser("migrate", help="Convert a legacy core-shaped workflow to the core schema.")
+    migrate.add_argument("workflow", type=Path)
+    migrate.add_argument("--output", type=Path, help="Write a new migrated file instead of printing to stdout.")
 
     status = commands.add_parser("status", help="Verify and inspect one external run record.")
     status.add_argument("run_dir", type=Path)
@@ -47,39 +69,70 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _add_auto_parser(commands) -> None:
-    auto = commands.add_parser("auto", help="Execute a task directly with the model.")
+    auto = commands.add_parser(
+        "auto",
+        help="Execute a task directly or through an explicit bounded strategy.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        epilog=(
+            "Examples: direct: auto --task TASK --allow-agent; goal: auto --strategy goal "
+            "--task TASK --allow-agent --allow-writes; workflow: auto --strategy workflow "
+            "--task TASK --allow-agent --allow-parallel"
+        ),
+    )
     task = auto.add_mutually_exclusive_group(required=True)
     task.add_argument("--task", help="Untrusted task text.")
     task.add_argument("--task-file", type=Path, help="File containing untrusted task text.")
-    auto.add_argument("--strategy", choices=("auto", "direct", "goal", "workflow"), default="auto")
+    auto.add_argument(
+        "--strategy",
+        choices=("auto", "direct", "goal", "workflow"),
+        default="direct",
+        help="Execution route; 'auto' is a deprecated alias for 'direct'.",
+    )
     auto.add_argument("--check-command-json", help="Verification command as a JSON argv array.")
     verifier = auto.add_mutually_exclusive_group()
     verifier.add_argument("--check-prompt")
     verifier.add_argument("--check-prompt-file", type=Path)
-    auto.add_argument("--workspace", type=Path, default=Path("."))
-    auto.add_argument("--runs-dir", type=Path)
-    auto.add_argument("--output", type=Path)
-    auto.add_argument("--receipt", type=Path)
-    auto.add_argument("--run-id")
-    auto.add_argument("--resume", type=Path)
-    auto.add_argument("--goals-dir", type=Path)
-    auto.add_argument("--goal-id")
-    auto.add_argument("--resume-goal", type=Path)
-    auto.add_argument("--max-iterations", type=int, default=3)
-    auto.add_argument("--name")
-    auto.add_argument("--model")
-    auto.add_argument("--effort", choices=EFFORTS)
-    auto.add_argument("--max-tokens", type=int, default=20000)
-    auto.add_argument("--verifier-max-tokens", type=int, default=8000)
-    auto.add_argument("--planner-max-tokens", type=int, default=12000)
-    auto.add_argument("--execution-max-tokens", type=int, default=120000)
-    auto.add_argument("--max-steps", type=int, default=32)
-    auto.add_argument("--max-items", type=int, default=1000)
-    auto.add_argument("--max-workers", type=int, default=8)
-    auto.add_argument("--timeout-seconds", type=int, default=900)
-    auto.add_argument("--check-timeout-seconds", type=int, default=300)
-    auto.add_argument("--output-limit-bytes", type=int, default=1024 * 1024)
-    auto.add_argument("--plan-only", action="store_true")
+    auto.add_argument("--workspace", type=Path, default=Path("."), help="Source workspace to inspect.")
+    auto.add_argument("--runs-dir", type=Path, help="External run-state directory override.")
+    auto.add_argument(
+        "--output",
+        type=Path,
+        help="Explicit result export path; may be inside the workspace and is no-clobber by default.",
+    )
+    auto.add_argument(
+        "--replace-output",
+        action="store_true",
+        help="Allow --output to replace an existing regular file.",
+    )
+    auto.add_argument("--receipt", type=Path, help="External automatic-run receipt path.")
+    auto.add_argument("--run-id", help="Safe identifier for a new direct run.")
+    auto.add_argument("--resume", type=Path, help="Resume an exact direct run directory.")
+    auto.add_argument("--goals-dir", type=Path, help="External goal-state directory override.")
+    auto.add_argument("--goal-id", help="Safe identifier for a new goal.")
+    auto.add_argument("--resume-goal", type=Path, help="Resume an exact goal-state file.")
+    auto.add_argument("--max-iterations", type=int, default=3, help="Goal verifier-repair attempt cap.")
+    auto.add_argument("--name", help="Generated workflow name.")
+    auto.add_argument("--model", help="Codex model override.")
+    auto.add_argument("--effort", choices=EFFORTS, help="Codex reasoning effort override.")
+    auto.add_argument("--max-tokens", type=int, default=20000, help="Direct worker token cap.")
+    auto.add_argument("--verifier-max-tokens", type=int, default=8000, help="Verifier token cap.")
+    auto.add_argument("--planner-max-tokens", type=int, default=12000, help="Workflow planner token cap.")
+    auto.add_argument(
+        "--execution-max-tokens", type=int, default=120000, help="Aggregate planned execution token cap."
+    )
+    auto.add_argument("--max-steps", type=int, default=32, help="Generated workflow step cap.")
+    auto.add_argument("--max-items", type=int, default=1000, help="Generated map item cap.")
+    auto.add_argument("--max-workers", type=int, default=8, help="Generated workflow worker cap.")
+    auto.add_argument("--timeout-seconds", type=int, default=900, help="Provider call timeout.")
+    auto.add_argument("--check-timeout-seconds", type=int, default=300, help="Shell verifier timeout.")
+    auto.add_argument(
+        "--output-limit-bytes", type=int, default=1024 * 1024, help="Per-stream and result byte cap."
+    )
+    auto.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Persist without direct execution; workflow strategy still launches its planner.",
+    )
     _add_policy_arguments(auto)
 
 
@@ -97,12 +150,12 @@ def _add_run_parser(commands) -> None:
 
 
 def _add_policy_arguments(parser) -> None:
-    parser.add_argument("--allow-writes", action="store_true")
-    parser.add_argument("--allow-destructive", action="store_true")
-    parser.add_argument("--allow-network", action="store_true")
-    parser.add_argument("--allow-agent", action="store_true")
-    parser.add_argument("--allow-parallel", action="store_true")
-    parser.add_argument("--approve", action="append", default=[])
+    parser.add_argument("--allow-writes", action="store_true", help="Permit staged workspace-write workers.")
+    parser.add_argument("--allow-destructive", action="store_true", help="Permit declared destructive steps.")
+    parser.add_argument("--allow-network", action="store_true", help="Permit declared network steps.")
+    parser.add_argument("--allow-agent", action="store_true", help="Permit Codex provider calls.")
+    parser.add_argument("--allow-parallel", action="store_true", help="Permit more than one agent worker.")
+    parser.add_argument("--approve", action="append", default=[], help="Add one exact approval token.")
 
 
 def main(argv=None) -> int:
@@ -122,6 +175,9 @@ def main(argv=None) -> int:
             "auto": _auto,
             "run": _run,
             "validate": _validate,
+            "schema": _schema,
+            "init": _init,
+            "migrate": _migrate,
             "status": _status,
             "list": _list,
             "apply": _apply,
@@ -142,6 +198,12 @@ def _auto(args) -> int:
     from .core.safe import read_regular_text
     from .redaction import redact_terminal_text as redact_text
 
+    from .errors import ValidationError
+
+    if args.replace_output and args.output is None:
+        raise ValidationError("--replace-output requires --output")
+    if args.strategy == "auto":
+        print("WARNING: --strategy auto is deprecated; use --strategy direct", file=sys.stderr)
     task = read_regular_text(args.task_file, "task file", 65536) if args.task_file else args.task
     check_prompt = args.check_prompt
     if args.check_prompt_file is not None:
@@ -178,6 +240,7 @@ def _auto(args) -> int:
             policy=_runtime_policy(args),
             runs_dir=args.runs_dir,
             output_path=args.output,
+            replace_output=args.replace_output,
             receipt_path=args.receipt,
             plan_only=args.plan_only,
             model=args.model,
@@ -218,6 +281,7 @@ def _auto(args) -> int:
             goal_id=args.goal_id,
             resume_goal=args.resume_goal,
             output_path=args.output,
+            replace_output=args.replace_output,
             **options,
         )
         result = goal.latest
@@ -235,6 +299,7 @@ def _auto(args) -> int:
             dry_run=args.plan_only,
             receipt_path=args.receipt,
             output_path=args.output,
+            replace_output=args.replace_output,
             **options,
         )
         status = result.status
@@ -302,6 +367,47 @@ def _validate(args) -> int:
     return 0
 
 
+def _schema(args) -> int:
+    from .core.safe import canonical_json_bytes, write_new_bytes
+    from .core.workflow import workflow_json_schema
+
+    payload = canonical_json_bytes(workflow_json_schema())
+    if args.output is None:
+        sys.stdout.write(payload.decode("utf-8"))
+    else:
+        write_new_bytes(args.output, payload, "workflow schema", mode=0o644)
+        print("Wrote: %s" % args.output)
+    return 0
+
+
+def _init(args) -> int:
+    from .core.safe import canonical_json_bytes, write_new_bytes
+    from .core.workflow import validate_workflow, workflow_template
+
+    workflow = workflow_template(args.template)
+    validate_workflow(workflow, source="generated workflow")
+    write_new_bytes(args.path, canonical_json_bytes(workflow), "workflow", mode=0o644)
+    print("Wrote: %s" % args.path)
+    return 0
+
+
+def _migrate(args) -> int:
+    from .core.safe import canonical_json_bytes, read_regular_bytes, strict_json_bytes, write_new_bytes
+    from .core.workflow import MAX_WORKFLOW_BYTES, migrate_legacy_workflow
+    from .errors import ValidationError
+
+    value = strict_json_bytes(read_regular_bytes(args.workflow, "workflow", MAX_WORKFLOW_BYTES), "workflow")
+    if not isinstance(value, dict):
+        raise ValidationError("workflow must contain a JSON object")
+    payload = canonical_json_bytes(migrate_legacy_workflow(value, source=str(args.workflow)))
+    if args.output is None:
+        sys.stdout.write(payload.decode("utf-8"))
+    else:
+        write_new_bytes(args.output, payload, "migrated workflow", mode=0o644)
+        print("Wrote: %s" % args.output)
+    return 0
+
+
 def _status(args) -> int:
     from .core.state import RunState
     from .redaction import redact_json_value
@@ -364,9 +470,9 @@ def _doctor(args) -> int:
 
         print(json.dumps(redact_json_value(payload), indent=2, sort_keys=True))
     else:
-        print("python: %s" % redact_terminal_text(payload["python"]))
-        print("codex: %s" % redact_terminal_text(payload["codex_executable"] or "not found"))
-        print("status: %s" % redact_terminal_text(payload["status"]))
+        print("python: %s" % redact_terminal_text(str(payload["python"])))
+        print("codex: %s" % redact_terminal_text(str(payload["codex_executable"] or "not found")))
+        print("status: %s" % redact_terminal_text(str(payload["status"])))
     return 0 if payload["status"] == "ready" else 1
 
 

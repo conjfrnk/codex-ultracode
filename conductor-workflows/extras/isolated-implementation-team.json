@@ -1,0 +1,164 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "isolated-implementation-team",
+  "description": "Coordinate bounded implementation and test work in isolated teammate workspaces with deterministic parent-owned merges.",
+  "mode": "workspace_write",
+  "risk": "medium",
+  "max_workers": 3,
+  "max_items": 6,
+  "agent_effort": "ultra",
+  "agent_max_tokens": 20000,
+  "agent_profiles": [
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "implementation-lead",
+      "description": "Scopes the implementation, resolves cross-module contracts, and owns integration.",
+      "instructions": "Inspect the requested implementation and repository contracts. Keep delegation minimal, challenge specialist assumptions, and make only task-authorized edits. On integration tasks, reconcile behavior and tests against the merged workspace rather than repeating completed work.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "sandbox": "workspace-write",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "implementation-specialist",
+      "description": "Implements one bounded code path against explicit repository contracts.",
+      "instructions": "Implement only the assigned behavior. Trace callers and compatibility constraints before editing, keep the patch scoped, and run the smallest relevant checks available in the isolated workspace.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "sandbox": "workspace-write",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    },
+    {
+      "schema": "conductor.agent_profile.v1",
+      "name": "test-specialist",
+      "description": "Adds or tightens focused tests and challenges implementation edge cases.",
+      "instructions": "Work only on the assigned verification surface. Add focused tests when warranted, exercise boundary and failure behavior, and report concrete commands and outcomes without broad cleanup.",
+      "model": "gpt-5.6-sol",
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "sandbox": "workspace-write",
+      "tool_policy": "isolated",
+      "tool_output_token_limit": 4000,
+      "risk": "medium",
+      "timeout_seconds": 1200
+    }
+  ],
+  "hooks": [
+    {
+      "id": "final-team-tests",
+      "event": "team_task_completed",
+      "steps": [
+        "implement-as-team"
+      ],
+      "tasks": [
+        "integrate-and-review"
+      ],
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "timeout_seconds": 1200,
+      "on_failure": "block"
+    }
+  ],
+  "steps": [
+    {
+      "id": "approve-isolated-team-write",
+      "kind": "manual_gate",
+      "description": "Require explicit approval before any teammate receives an isolated write sandbox.",
+      "risk": "medium",
+      "approval_id": "isolated-team-write",
+      "prompt": "Approve bounded isolated teammate edits and deterministic parent-owned merges."
+    },
+    {
+      "id": "implement-as-team",
+      "kind": "agent_team",
+      "description": "Scope, implement, test, and integrate the requested change through isolated teammate workspaces.",
+      "risk": "medium",
+      "depends_on": [
+        "approve-isolated-team-write"
+      ],
+      "sandbox": "workspace-write",
+      "members": [
+        {
+          "id": "lead",
+          "role": "implementation and integration lead",
+          "instructions": "Own scope, dependency-safe task proposals, cross-module contracts, and final integration checks.",
+          "agent_profile": "implementation-lead",
+          "lead": true
+        },
+        {
+          "id": "implementer",
+          "role": "bounded implementation specialist",
+          "instructions": "Implement the assigned code path with minimal changes and focused checks.",
+          "agent_profile": "implementation-specialist",
+          "lead": false
+        },
+        {
+          "id": "tester",
+          "role": "adversarial test specialist",
+          "instructions": "Add or tighten focused tests and challenge failure and boundary behavior.",
+          "agent_profile": "test-specialist",
+          "lead": false
+        }
+      ],
+      "tasks": [
+        {
+          "id": "scope-contracts",
+          "description": "Inspect the requested change and repository contracts, then produce a bounded implementation plan and propose only material follow-up tasks if the static graph is insufficient.",
+          "assignee": "lead",
+          "depends_on": []
+        },
+        {
+          "id": "implement-core",
+          "description": "Implement the scoped requested behavior while preserving relevant callers, compatibility, and failure semantics.",
+          "assignee": "implementer",
+          "depends_on": [
+            "scope-contracts"
+          ]
+        },
+        {
+          "id": "verify-boundaries",
+          "description": "Add or tighten focused tests for the scoped behavior, including material edge and failure cases, and run the smallest relevant checks.",
+          "assignee": "tester",
+          "depends_on": [
+            "scope-contracts"
+          ]
+        },
+        {
+          "id": "integrate-and-review",
+          "description": "Review the deterministically merged implementation and tests, resolve remaining contract mismatches, and run focused integration checks.",
+          "assignee": "lead",
+          "depends_on": [
+            "implement-core",
+            "verify-boundaries"
+          ]
+        }
+      ],
+      "max_workers": 3,
+      "max_rounds": 5,
+      "max_dynamic_tasks": 2,
+      "max_operator_tasks": 2,
+      "effort": "ultra",
+      "max_tokens": 20000,
+      "max_total_tokens": 120000,
+      "timeout_seconds": 1200,
+      "capture_dir": "isolated-implementation-team-internal",
+      "report": "isolated-implementation-team.md"
+    }
+  ]
+}

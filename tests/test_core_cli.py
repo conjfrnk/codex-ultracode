@@ -1,13 +1,14 @@
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from conductor_runtime.cli import main
+from conductor_runtime.cli import build_parser, main
 from conductor_runtime.core.auto import run_direct
 from conductor_runtime.core.policy import RuntimePolicy
 
@@ -83,11 +84,89 @@ class CoreCliTests(unittest.TestCase):
         self.assertRegex(output, r"conductor-runtime \d+\.\d+\.\d+")
         self.assertEqual(error, "")
 
+    def test_auto_defaults_to_direct_and_documents_strategy_costs(self):
+        parser = build_parser()
+        parsed = parser.parse_args(["auto", "--task", "Inspect."])
+        self.assertEqual(parsed.strategy, "direct")
+
+        with self.assertRaises(SystemExit) as caught:
+            with redirect_stdout(output := io.StringIO()):
+                main(["auto", "--help"])
+        self.assertEqual(caught.exception.code, 0)
+        help_text = output.getvalue()
+        self.assertIn("Examples: direct:", help_text)
+        self.assertIn("Goal verifier-repair attempt cap", help_text)
+        self.assertRegex(help_text, r"workflow strategy\s+still launches its planner")
+
+        status, output_text, error = self._main(
+            [
+                "auto",
+                "--task",
+                "Inspect.",
+                "--strategy",
+                "auto",
+                "--plan-only",
+                "--allow-agent",
+                "--workspace",
+                str(self.workspace),
+            ]
+        )
+        self.assertEqual(status, 0)
+        self.assertIn("Route: direct", output_text)
+        self.assertIn("deprecated; use --strategy direct", error)
+
     def test_validate_and_list_report_validity_and_sanitize_paths(self):
         valid = self._write_workflow("valid.json")
         status, output, error = self._main(["validate", str(valid)])
         self.assertEqual(status, 0)
         self.assertIn("OK:", output)
+        self.assertEqual(error, "")
+
+    def test_schema_init_and_legacy_migration_are_dependency_free_and_no_clobber(self):
+        status, output, error = self._main(["schema"])
+        self.assertEqual(status, 0)
+        schema = json.loads(output)
+        self.assertEqual(schema["properties"]["schema"]["const"], "conductor.core.workflow.v1")
+        self.assertEqual(len(schema["$defs"]["step"]["oneOf"]), 6)
+        manual_gate = next(
+            step for step in schema["$defs"]["step"]["oneOf"] if step["properties"]["kind"] == {"const": "manual_gate"}
+        )
+        self.assertIsNotNone(re.fullmatch(manual_gate["properties"]["approval_id"]["pattern"], "approve"))
+        self.assertEqual(error, "")
+
+        schema_path = self.root / "core-workflow.schema.json"
+        status, _, error = self._main(["schema", "--output", str(schema_path)])
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(schema_path.read_text())["title"], "Codex Conductor core workflow v1")
+        self.assertEqual(error, "")
+        status, _, error = self._main(["schema", "--output", str(schema_path)])
+        self.assertEqual(status, 2)
+        self.assertIn("already exists", error)
+
+        for template in ("read-only", "staged-write"):
+            path = self.root / (template + ".json")
+            status, _, error = self._main(["init", str(path), "--template", template])
+            self.assertEqual(status, 0)
+            self.assertEqual(json.loads(path.read_text())["schema"], "conductor.core.workflow.v1")
+            self.assertEqual(self._main(["validate", str(path)])[0], 0)
+            self.assertEqual(error, "")
+
+        legacy = self.root / "legacy.json"
+        value = self._workflow()
+        value["schema"] = "conductor.workflow.v1"
+        legacy.write_text(json.dumps(value), encoding="utf-8")
+        status, _, error = self._main(["validate", str(legacy)])
+        self.assertEqual(status, 2)
+        self.assertIn("conductor-runtime migrate", error)
+
+        status, output, error = self._main(["migrate", str(legacy)])
+        self.assertEqual(status, 0)
+        self.assertEqual(json.loads(output)["schema"], "conductor.core.workflow.v1")
+        self.assertEqual(error, "")
+        migrated = self.root / "migrated.json"
+        status, _, error = self._main(["migrate", str(legacy), "--output", str(migrated)])
+        self.assertEqual(status, 0)
+        self.assertEqual(self._main(["validate", str(migrated)])[0], 0)
         self.assertEqual(error, "")
 
         secret = "ghp_" + "a" * 36
@@ -170,6 +249,43 @@ class CoreCliTests(unittest.TestCase):
         self.assertEqual(requested.read_text(), "model-result")
         self.assertEqual(error, "")
 
+        status, _, error = self._main(
+            [
+                "auto",
+                "--task",
+                "Inspect again.",
+                "--workspace",
+                str(self.workspace),
+                "--allow-agent",
+                "--output",
+                str(requested),
+            ]
+        )
+        self.assertEqual(status, 2)
+        self.assertIn("already exists", error)
+        self.assertEqual(requested.read_text(), "model-result")
+
+        status, _, error = self._main(
+            [
+                "auto",
+                "--task",
+                "Inspect and replace.",
+                "--workspace",
+                str(self.workspace),
+                "--allow-agent",
+                "--output",
+                str(requested),
+                "--replace-output",
+            ]
+        )
+        self.assertEqual(status, 0)
+        self.assertEqual(error, "")
+        self.assertEqual(requested.read_text(), "model-result")
+
+        status, _, error = self._main(["auto", "--task", "Inspect.", "--allow-agent", "--replace-output"])
+        self.assertEqual(status, 2)
+        self.assertIn("requires --output", error)
+
     def test_apply_command_is_verified_and_idempotent(self):
         result = run_direct(
             "Create made.txt.",
@@ -214,7 +330,7 @@ class CoreCliTests(unittest.TestCase):
     @staticmethod
     def _workflow():
         return {
-            "schema": "conductor.workflow.v1",
+            "schema": "conductor.core.workflow.v1",
             "name": "cli-workflow",
             "result_artifact": "result.txt",
             "steps": [

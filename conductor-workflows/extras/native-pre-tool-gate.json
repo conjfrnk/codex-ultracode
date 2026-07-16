@@ -1,0 +1,27 @@
+{
+  "schema": "conductor.workflow.v1",
+  "name": "native-pre-tool-gate",
+  "description": "Run one read-only Codex turn while denying provider-native Bash and apply_patch calls.",
+  "mode": "read_only",
+  "hooks": [
+    {
+      "id": "native-tool-verifier",
+      "event": "agent_pre_tool",
+      "command": ["false"],
+      "tools": ["Bash", "apply_patch"],
+      "steps": ["inspect"],
+      "scopes": ["codex_exec"],
+      "on_failure": "block",
+      "timeout_seconds": 5
+    }
+  ],
+  "steps": [
+    {
+      "id": "inspect",
+      "kind": "codex_exec",
+      "prompt": "Inspect the workspace and report the highest-risk finding with file references.",
+      "sandbox": "read-only",
+      "capture": "native-pre-tool-review.md"
+    }
+  ]
+}

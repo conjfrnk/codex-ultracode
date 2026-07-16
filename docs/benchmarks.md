@@ -2,9 +2,13 @@
 
 Benchmark and comparison tooling is optional development infrastructure. It is
 excluded from the default runtime and available through `conductor_extras`.
+The extras layer is in compatibility maintenance: security and correctness
+fixes continue, while new product work belongs in the small core unless a
+specialist facility already exists here.
 
 ```sh
 python3 dist/conductor-extras.pyz --help
+python3 dist/conductor-extras.pyz benchmark --help
 ```
 
 The repository retains deterministic fixtures for provider runs,

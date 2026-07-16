@@ -1,13 +1,13 @@
 {
   "installer": {
     "path": "install.py",
-    "sha256": "4795be9e1a9f54300a41f21ed0209be71fd312a7a1792b2f104051dd2ce77ea8",
-    "size_bytes": 25053
+    "sha256": "3c04448ecc154b9332be9dadc229a5704547127375dcd47353a7d918e4c918d1",
+    "size_bytes": 25759
   },
   "runtime": {
     "path": "conductor-runtime.pyz",
-    "sha256": "dbdaf010ffa79696b50d0f94e401f62db7d9af280e6bf43da7729812d2ae1dba",
-    "size_bytes": 53547
+    "sha256": "60234a87d2a84db7af8ca4d0187033c41f05da17df1dc4afa36dfe528c8c1c77",
+    "size_bytes": 63079
   },
   "schema": "conductor.release_bundle.v1",
   "skill": {
@@ -24,8 +24,8 @@
       },
       {
         "path": "references/runtime.md",
-        "sha256": "bb055aeb21c763a5e101b354786c4e07bfab303ce92e5675505aef781acd6c53",
-        "size_bytes": 2651
+        "sha256": "633fa0637851b3860fa6946a24d4ea7d00408916fb5e8d9db9cdba9bb49b75c8",
+        "size_bytes": 5234
       },
       {
         "path": "references/security-gates.md",
@@ -39,7 +39,7 @@
       }
     ],
     "path": "codex-conductor",
-    "tree_sha256": "53177fa39b4855ecbe414f37f54bf02f1ebc608b9ae0fde0cccd2f9304441534"
+    "tree_sha256": "6f725391a3d3555bd4e4f8d8fe2d9bf670c25754efaf9eac96064c43ee2fdc19"
   },
-  "version": "0.173.1"
+  "version": "0.174.0"
 }

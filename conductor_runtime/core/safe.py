@@ -10,6 +10,7 @@ from ..errors import ValidationError
 
 
 MAX_JSON_BYTES = 8 * 1024 * 1024
+MAX_RELATIVE_PATH_CHARS = 4096
 
 
 def sha256_bytes(payload: bytes) -> str:
@@ -35,7 +36,12 @@ def strict_json_bytes(payload: bytes, label: str):
 
 
 def require_relative(value: str, label: str = "path") -> str:
-    if not isinstance(value, str) or not value or "\x00" in value:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > MAX_RELATIVE_PATH_CHARS
+        or "\x00" in value
+    ):
         raise ValidationError("%s must be a non-empty relative path" % label)
     path = Path(value)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):

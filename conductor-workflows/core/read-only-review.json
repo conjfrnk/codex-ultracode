@@ -1,0 +1,18 @@
+{
+  "agent_max_tokens": 20000,
+  "description": "Inspect the workspace and save a concise review.",
+  "mode": "read_only",
+  "name": "read-only-review",
+  "result_artifact": "review.md",
+  "schema": "conductor.core.workflow.v1",
+  "steps": [
+    {
+      "capture": "review.md",
+      "id": "review",
+      "kind": "codex_exec",
+      "max_tokens": 20000,
+      "prompt": "Review this workspace. Report concrete findings with file-level evidence.",
+      "sandbox": "read-only"
+    }
+  ]
+}

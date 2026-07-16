@@ -18,7 +18,7 @@ PLANNER_SCHEMA = {
     "type": "object",
     "required": ["schema", "name", "steps"],
     "properties": {
-        "schema": {"const": "conductor.workflow.v1"},
+        "schema": {"const": "conductor.core.workflow.v1"},
         "name": {"type": "string", "minLength": 1, "maxLength": 128},
         "steps": {"type": "array", "minItems": 1, "maxItems": MAX_STEPS},
     },
@@ -42,6 +42,7 @@ def run_planned_workflow(
     policy: RuntimePolicy,
     runs_dir: Optional[Path] = None,
     output_path: Optional[Path] = None,
+    replace_output: bool = False,
     receipt_path: Optional[Path] = None,
     plan_only: bool = False,
     model: Optional[str] = None,
@@ -80,7 +81,7 @@ def run_planned_workflow(
     if effort:
         planner_step["effort"] = effort
     planner_workflow = {
-        "schema": "conductor.workflow.v1",
+        "schema": "conductor.core.workflow.v1",
         "name": "workflow-planner",
         "mode": "read_only",
         "result_artifact": "planned-workflow.json",
@@ -107,7 +108,7 @@ def run_planned_workflow(
     _enforce_plan_limits(planned, policy, max_steps, max_items, max_workers, execution_max_tokens)
     if plan_only:
         planned_path = planning_run.run_dir / "planned-workflow.json"
-        write_requested(planned_path, canonical_json_bytes(planned))
+        write_requested(planned_path, canonical_json_bytes(planned), replace=True)
         return _result(
             "planned",
             planning_run,
@@ -130,7 +131,7 @@ def run_planned_workflow(
         payload = execution.read_artifact(relative)
         result_path = execution.artifact_path(relative)
         if output_path is not None:
-            write_requested(Path(output_path), payload)
+            write_requested(Path(output_path), payload, replace=replace_output)
             result_path = Path(output_path)
     return _result(
         execution.state["status"],
@@ -164,7 +165,7 @@ def _result(status, planning_run, execution, result_path, requested_receipt, pla
     }
     receipt["receipt_sha256"] = sha256_bytes(canonical_json_bytes(receipt))
     path = Path(requested_receipt) if requested_receipt is not None else planning_run.run_dir / "workflow-auto.json"
-    write_requested(path, canonical_json_bytes(receipt))
+    write_requested(path, canonical_json_bytes(receipt), replace=True)
     return WorkflowAutoResult(
         status=status,
         planner_run_dir=planning_run.run_dir,
@@ -204,7 +205,7 @@ def _planner_prompt(task, policy, max_steps, max_items, max_workers, token_cap):
     task = task.replace("BEGIN_UNTRUSTED_TASK", "[escaped-task-begin]").replace(
         "END_UNTRUSTED_TASK", "[escaped-task-end]"
     )
-    return """Design one strict conductor.workflow.v1 JSON workflow for the task below.
+    return """Design one strict conductor.core.workflow.v1 JSON workflow for the task below.
 
 Use direct sequential steps unless independent investigation over multiple items is materially useful. For parallel work, use exactly this bounded shape: one read-only agent_map, one collect_results step, then one codex_exec synthesis step that directly depends on and uses context_from the collector. Map workers must be read-only. Every Codex call needs max_tokens; every map needs max_total_tokens. A workspace-write Codex step is allowed only when writes_allowed is true and must have a downstream read-only shell check or strict-v1 Codex verifier. Use at most {steps} steps, {items} items, {workers} workers, and {tokens} aggregate declared execution tokens. Use argv arrays for shell commands. Set result_artifact. Return only the workflow JSON.
 

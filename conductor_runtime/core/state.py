@@ -5,21 +5,24 @@ import hashlib
 import os
 import re
 import secrets
+import stat
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 
 from ..errors import ValidationError
 from ..redaction import redact_text
 from .policy import RuntimePolicy, policy_fingerprint
 from .safe import (
     canonical_json_bytes,
+    conductor_home,
     ensure_directory,
     external_runs_dir,
     load_json,
     read_regular_bytes,
+    reject_symlink_components,
     replace_json,
     require_external_state_path,
     require_relative,
@@ -54,6 +57,7 @@ STEP_RECORD_FIELDS = {
     "resume_available",
     "session_id_sha256",
     "stage_evidence",
+    "pending_stage",
     "packets",
     "source_outputs",
 }
@@ -61,6 +65,48 @@ STEP_RECORD_FIELDS = {
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+@contextmanager
+def workspace_apply_lock(workspace: Path):
+    """Serialize source mutations using the canonical workspace identity."""
+    requested_source = Path(workspace).expanduser()
+    reject_symlink_components(requested_source, "workspace apply lock source")
+    source = requested_source.resolve()
+    lock_root = require_external_state_path(
+        conductor_home() / "locks",
+        source,
+        "workspace apply lock directory",
+    )
+    lock_root = ensure_directory(lock_root, "workspace apply lock directory")
+    identity = hashlib.sha256(str(source).encode("utf-8")).hexdigest()
+    path = lock_root / ("stage-apply-%s.lock" % identity)
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise ValidationError("cannot open workspace apply lock") from exc
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValidationError("workspace apply lock must be a private regular file")
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            observed = path.lstat()
+        except OSError as exc:
+            raise ValidationError("cannot inspect workspace apply lock") from exc
+        if (observed.st_dev, observed.st_ino) != (info.st_dev, info.st_ino):
+            raise ValidationError("workspace apply lock changed while acquiring it")
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 class RunState:
@@ -243,7 +289,11 @@ class RunState:
             record = dict(self.state["steps"][step_id])
             previous = record["status"]
             if status == "running":
-                if previous not in {"pending", "failed", "blocked", "planned"}:
+                resumable_interruption = previous == "running" and isinstance(
+                    record.get("pending_stage"),
+                    str,
+                )
+                if previous not in {"pending", "failed", "blocked", "planned"} and not resumable_interruption:
                     raise ValidationError("step %s cannot start from %s" % (step_id, previous))
                 record["attempt"] = int(record.get("attempt", 0)) + 1
                 record["started_at_utc"] = utc_now()
@@ -540,6 +590,9 @@ def _validate_step_record(record: Dict) -> None:
         raise ValidationError("run state session hash is invalid")
     if "stage_evidence" in record:
         require_relative(record["stage_evidence"], "run state stage evidence")
+    pending_stage = record.get("pending_stage")
+    if pending_stage is not None:
+        require_relative(pending_stage, "run state pending stage")
     source_outputs = record.get("source_outputs")
     if source_outputs is not None and (
         isinstance(source_outputs, bool)
@@ -611,8 +664,8 @@ def _validate_packet_records(value) -> None:
             or re.fullmatch(r"[0-9a-f]{64}", packet["session_id_sha256"]) is None
         ):
             raise ValidationError("run state completed map packet is invalid")
-        require_relative(packet.get("output"), "run state map packet output")
-        require_relative(packet.get("receipt"), "run state map packet receipt")
+        require_relative(cast(str, packet.get("output")), "run state map packet output")
+        require_relative(cast(str, packet.get("receipt")), "run state map packet receipt")
 
 
 def _bounded_timestamp(value, label: str) -> None:
