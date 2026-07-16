@@ -1712,7 +1712,10 @@ class AgentToolPolicyTests(unittest.TestCase):
             script_path.chmod(0o700)
             with self.assertRaisesRegex(ValidationError, "routine target changed"):
                 _validate_current_target(load_routine_manifest(manifest_path))
-            with self.assertRaisesRegex(ValidationError, "changed after run binding"):
+            with mock.patch(
+                "conductor_extras.runtime.runner.prepare_restricted_hook_state",
+                return_value=preflight,
+            ), self.assertRaisesRegex(ValidationError, "changed after run binding"):
                 drifting.execute()
             self.assertEqual(drifting.commands, [])
 

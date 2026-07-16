@@ -319,7 +319,14 @@ class SkillMcpStdioTests(unittest.TestCase):
                     policy=RuntimePolicy(allow_agent=True),
                 )
 
-    def test_direct_map_team_and_same_thread_recovery_receive_fresh_proxy_routes(self):
+    @mock.patch(
+        "conductor_extras.runtime.skill_mcp_stdio._supported_sandbox",
+        return_value=("linux-bwrap", "/usr/bin/bwrap"),
+    )
+    def test_direct_map_team_and_same_thread_recovery_receive_fresh_proxy_routes(
+        self,
+        supported_sandbox,
+    ):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             skill = ".agents/skills/local-docs"
@@ -513,6 +520,7 @@ class SkillMcpStdioTests(unittest.TestCase):
                 team.execute()
             _assert_proxy_commands(self, team.commands)
             team_state = team.run.read_state()
+            self.assertGreaterEqual(supported_sandbox.call_count, 4)
             self.assertEqual(team_state["status"], "completed")
             self.assertEqual(
                 team_state["steps"]["team"][

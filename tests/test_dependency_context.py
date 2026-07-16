@@ -65,6 +65,8 @@ class RecordingCodexRunner(WorkflowRunner):
         stdout_line_callback=None,
         interrupt_check=None,
     ):
+        if argv == ["rg", "--files"]:
+            return ProcessResult(returncode=0, stdout="a.txt\n", stderr="")
         if argv[0] != "fake-codex":
             return super()._run_process(
                 argv,

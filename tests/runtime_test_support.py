@@ -22798,7 +22798,10 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 hashlib.sha256(provider_kwargs["input_text"].encode("utf-8")).hexdigest(),
             )
             verifier_command, verifier_kwargs = calls[1]
-            self.assertEqual(verifier_command[0], "/usr/bin/sandbox-exec")
+            self.assertEqual(
+                verifier_command[0],
+                "/usr/bin/sandbox-exec" if sys.platform == "darwin" else shutil.which("bwrap"),
+            )
             self.assertEqual(verifier_kwargs["env"]["PYTHONNOUSERSITE"], "1")
 
             scored = score_benchmark_report(report, fixtures, score_input_fixture(independent=True))
@@ -26142,7 +26145,10 @@ def normalize_slug(value: str) -> str:
                 hashlib.sha256(provider_kwargs["input_text"].encode("utf-8")).hexdigest(),
             )
             verifier_command, verifier_kwargs = calls[1]
-            self.assertEqual(verifier_command[0], "/usr/bin/sandbox-exec")
+            self.assertEqual(
+                verifier_command[0],
+                "/usr/bin/sandbox-exec" if sys.platform == "darwin" else shutil.which("bwrap"),
+            )
             self.assertEqual(verifier_kwargs["env"]["PYTHONNOUSERSITE"], "1")
             self.assertNotIn("ephemeral-staged-approval", json.dumps(verifier_kwargs["env"]))
             validate_benchmark_report(report)
