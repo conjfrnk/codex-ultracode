@@ -7,6 +7,7 @@ import shutil
 import stat
 import sys
 import tempfile
+import time
 import zipapp
 import zipfile
 
@@ -23,8 +24,8 @@ bundle_output = dist / "codex-conductor-bundle.zip"
 manifest_output = dist / "release-manifest.json"
 plugin_output = dist / "codex-conductor-marketplace.zip"
 installer_source = project_root / "tools" / "install_bundle.py"
-REPRODUCIBLE_MTIME = 315619200  # 1980-01-02 UTC, portable across local ZIP time zones.
 REPRODUCIBLE_ZIP_DATETIME = (1980, 1, 2, 0, 0, 0)
+REPRODUCIBLE_MTIME = 315619200  # Fixed mtime for the output files themselves.
 MAX_DEFAULT_RUNTIME_BYTES = 500 * 1024
 CORE_RUNTIME_FILES = (
     "__init__.py",
@@ -44,9 +45,12 @@ def runtime_version() -> str:
 
 
 def normalize_tree_mtimes(root: Path) -> None:
+    # zipfile records filesystem mtimes as local wall-clock values. Derive the
+    # epoch for the fixed ZIP timestamp in the builder's current timezone.
+    zip_mtime = time.mktime((*REPRODUCIBLE_ZIP_DATETIME, 0, 0, -1))
     for path in sorted(root.rglob("*"), reverse=True):
-        os.utime(path, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
-    os.utime(root, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
+        os.utime(path, (zip_mtime, zip_mtime), follow_symlinks=False)
+    os.utime(root, (zip_mtime, zip_mtime), follow_symlinks=False)
 
 
 def write_reproducible_file(archive: zipfile.ZipFile, arcname: str, path: Path, mode: int) -> None:

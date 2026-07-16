@@ -1,8 +1,10 @@
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
@@ -15,6 +17,7 @@ from tools.render_release_report import BEGIN, END, ReportError, generated_secti
 from tools.verify import (
     ARTIFACT_REFRESH_COMMANDS,
     COVERAGE_MINIMUM_PERCENT,
+    DIST_ARTIFACTS,
     VerificationError,
     _evidence_payload,
     _expected_checks,
@@ -28,6 +31,58 @@ from tools.verify import (
 
 
 class VerificationToolTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "timezone packaging coverage requires POSIX TZ")
+    def test_release_archives_are_timezone_independent(self):
+        project_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            builds = []
+            for index, timezone in enumerate(("UTC0", "PST8")):
+                dist = root / ("dist-%d" % index)
+                environment = dict(os.environ)
+                environment["TZ"] = timezone
+                commands = (
+                    [sys.executable, "-B", "tools/package_runtime.py", str(dist)],
+                    [sys.executable, "-B", "tools/package_extras.py", str(dist)],
+                    [
+                        sys.executable,
+                        "-B",
+                        "tools/package_skill.py",
+                        "codex-conductor",
+                        str(dist),
+                    ],
+                    [sys.executable, "-B", "tools/write_checksums.py", str(dist)],
+                )
+                for command in commands:
+                    completed = subprocess.run(
+                        command,
+                        cwd=project_root,
+                        env=environment,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=30,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                builds.append(dist)
+
+            for name in DIST_ARTIFACTS:
+                self.assertEqual(
+                    (builds[0] / name).read_bytes(),
+                    (builds[1] / name).read_bytes(),
+                    name,
+                )
+            for name in (
+                "conductor-runtime.pyz",
+                "conductor-extras.pyz",
+                "codex-conductor-marketplace.zip",
+            ):
+                with zipfile.ZipFile(builds[0] / name) as archive:
+                    self.assertEqual(
+                        {item.date_time for item in archive.infolist()},
+                        {(1980, 1, 2, 0, 0, 0)},
+                    )
+
     def test_release_report_tool_starts_as_a_direct_script(self):
         project_root = Path(__file__).resolve().parents[1]
         result = subprocess.run(

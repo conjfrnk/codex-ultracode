@@ -8,6 +8,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -22,6 +23,7 @@ MARKETPLACE_NAME = "codex-conductor-local"
 MARKETPLACE_DIR_NAME = "codex-conductor-marketplace"
 PLUGIN_BUNDLE_SCHEMA = "conductor.plugin_bundle.v1"
 REPRODUCIBLE_MTIME = 315619200
+REPRODUCIBLE_ZIP_DATETIME = (1980, 1, 2, 0, 0, 0)
 MAX_ARCHIVE_BYTES = 25 * 1024 * 1024
 
 
@@ -209,9 +211,10 @@ def validate_plugin_integrity(plugin_root: Path):
 
 
 def _normalize_tree_mtimes(root: Path) -> None:
+    zip_mtime = time.mktime((*REPRODUCIBLE_ZIP_DATETIME, 0, 0, -1))
     for path in sorted(root.rglob("*"), reverse=True):
-        os.utime(path, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
-    os.utime(root, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
+        os.utime(path, (zip_mtime, zip_mtime), follow_symlinks=False)
+    os.utime(root, (zip_mtime, zip_mtime), follow_symlinks=False)
 
 
 def main(argv=None) -> int:

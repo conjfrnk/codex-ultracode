@@ -6,7 +6,7 @@
   },
   "runtime": {
     "path": "conductor-runtime.pyz",
-    "sha256": "60234a87d2a84db7af8ca4d0187033c41f05da17df1dc4afa36dfe528c8c1c77",
+    "sha256": "407f46f0e239fdad09d2ae38d07ac254c60b7c818ea6583f9a68650fc8e23feb",
     "size_bytes": 63079
   },
   "schema": "conductor.release_bundle.v1",

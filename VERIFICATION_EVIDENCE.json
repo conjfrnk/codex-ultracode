@@ -2,23 +2,23 @@
   "artifacts": [
     {
       "name": "codex-conductor-bundle.zip",
-      "sha256": "db25c137f862af1157f4c9dc30e424a5f1e59edf6d36fadc74ff751219fa1f85"
+      "sha256": "8924e8974e742680c44828fbc5b1df4d3d5fa9c3108e45b1c0e5a12769530a99"
     },
     {
       "name": "codex-conductor-marketplace.zip",
-      "sha256": "f69fd420f1e4636bc2518338090b7463dd44078cb64c7da579735bc157c12b78"
+      "sha256": "352d1162714a5b38b7c2e3a66856e2244902626e46680f9d12295259ad0abd17"
     },
     {
       "name": "conductor-extras.pyz",
-      "sha256": "e7be8d3c2b42c975fc037db8b3e5980c8a4ef3da508e704e75fc9bf447700b4b"
+      "sha256": "0ec227fad7e0479bf5714cdc8dd6687fd38a0ec29b448adf14ec0deb9a9340fd"
     },
     {
       "name": "conductor-runtime.pyz",
-      "sha256": "60234a87d2a84db7af8ca4d0187033c41f05da17df1dc4afa36dfe528c8c1c77"
+      "sha256": "407f46f0e239fdad09d2ae38d07ac254c60b7c818ea6583f9a68650fc8e23feb"
     },
     {
       "name": "release-manifest.json",
-      "sha256": "d4141b091a4e1340a444be0b8d8ed225328738c86a7c35d4153f7be17e69fb34"
+      "sha256": "cc1a33f0a1a6dce0344669b81bfb11366a72a77893a0b90f76a5bae0f3f42050"
     },
     {
       "name": "skill.zip",
@@ -84,7 +84,7 @@
       "status": "passed"
     }
   ],
-  "checksums_sha256": "359deb8d80faa79d397b6bf218370f69ced445f3625ecd064046f907e09df1a0",
+  "checksums_sha256": "c0675da4d7f12f6deede6d1b3b7c9a24f01cc2a861bc3cd07d514ab2fa8c7138",
   "core_archive_bytes": 63079,
   "coverage_minimum_percent": 80,
   "environment": {
@@ -103,10 +103,10 @@
   "report_template_sha256": "c0d2bf6a8c3c46265f40134f788df4395cedcd26fcda3ede7fa0d9f20f60e1d0",
   "runtime_version": "0.174.0",
   "schema": "conductor.verification_evidence.v1",
-  "source_sha256": "eb32d130e5ebf5be7b2d9891da86121050d7a15210c83754974b775e47ce8e65",
+  "source_sha256": "129325a3c3374beee9665f03fc0a2d444fbe93b0f3310d9f1d99355f0131b77c",
   "test_counts": {
-    "core_gate": 139,
-    "repository": 1199
+    "core_gate": 140,
+    "repository": 1200
   },
   "tools": {
     "coverage": "7.15.0",

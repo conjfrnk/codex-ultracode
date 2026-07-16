@@ -5,12 +5,14 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import zipapp
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPRODUCIBLE_MTIME = 315619200
+REPRODUCIBLE_ZIP_DATETIME = (1980, 1, 2, 0, 0, 0)
 
 
 def main(argv=None) -> int:
@@ -44,9 +46,10 @@ def main(argv=None) -> int:
             "from conductor_extras.__main__ import entrypoint\n\nraise SystemExit(entrypoint())\n",
             encoding="utf-8",
         )
+        zip_mtime = time.mktime((*REPRODUCIBLE_ZIP_DATETIME, 0, 0, -1))
         for path in sorted(staging.rglob("*"), reverse=True):
-            os.utime(path, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
-        os.utime(staging, (REPRODUCIBLE_MTIME, REPRODUCIBLE_MTIME), follow_symlinks=False)
+            os.utime(path, (zip_mtime, zip_mtime), follow_symlinks=False)
+        os.utime(staging, (zip_mtime, zip_mtime), follow_symlinks=False)
         zipapp.create_archive(
             staging,
             target=output,
