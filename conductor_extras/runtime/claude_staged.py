@@ -7,6 +7,7 @@ import shutil
 import sys
 import time
 from pathlib import Path
+from shutil import which as _which_sandbox_executable
 from typing import Dict, List, Optional
 
 from .benchmark import (
@@ -931,7 +932,7 @@ def _prepare_verifier(check_command: List[str], stage: Path) -> Dict:
         sandbox = "macos-seatbelt"
         visible_stage = stage_path
     elif system == "Linux":
-        bwrap = shutil.which("bwrap")
+        bwrap = _which_sandbox_executable("bwrap")
         if not bwrap:
             raise ValidationError("strict staged verification requires bubblewrap on Linux")
         command = [

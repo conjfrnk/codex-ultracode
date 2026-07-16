@@ -57,7 +57,7 @@ jobs:
         if: ${{ matrix.shard == 'benchmark' }}
         run: |
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap
+          sudo apt-get install --yes bubblewrap patch
           # Ubuntu 24.04 otherwise denies bwrap capabilities inside its user namespace.
           sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
           bwrap \
@@ -95,7 +95,7 @@ jobs:
         if: ${{ runner.os == 'Linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap
+          sudo apt-get install --yes bubblewrap patch
           # Ubuntu 24.04 otherwise denies bwrap capabilities inside its user namespace.
           sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
           bwrap \
