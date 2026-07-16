@@ -58,6 +58,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes bubblewrap
+          # Ubuntu 24.04 otherwise denies bwrap capabilities inside its user namespace.
+          sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
           bwrap \
             --die-with-parent \
             --unshare-net \
@@ -94,6 +96,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes bubblewrap
+          # Ubuntu 24.04 otherwise denies bwrap capabilities inside its user namespace.
+          sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
           bwrap \
             --die-with-parent \
             --unshare-net \

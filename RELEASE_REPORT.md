@@ -25,7 +25,7 @@ The table below is rendered from `VERIFICATION_EVIDENCE.json` rather than mainta
 | Core coverage floor | `80%` |
 | Hash seeds | `0, 1, 42, random` |
 | Release artifacts checked | `true` |
-| Source SHA-256 | `f4b1770f3c97da0789bc563833276a2a301ea80999a29ace20e7005e2fc26eaa` |
+| Source SHA-256 | `351bee2a8197f686a833cdf5d59c6ad8d2bd0607b39b857818f2b3cc363533d9` |
 | Report-template SHA-256 | `c0d2bf6a8c3c46265f40134f788df4395cedcd26fcda3ede7fa0d9f20f60e1d0` |
 | Checksum-manifest SHA-256 | `e037f893c16b97736235a65c76a5976a64d8c13187529f0c77844319ada87eef` |
 | Repository tests | `1198` |
