@@ -32171,6 +32171,50 @@ def dedupe_subscriptions(names: list) -> list:
             self.assertIn("Automatic Orchestration", live_html)
             self.assertIn("background-auto.json", live_html)
 
+    def test_auto_background_terminal_child_is_not_active_handoff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipt_path = root / "auto-terminal-background.json"
+            child_result = {
+                "status": "completed",
+                "artifacts": [],
+                "artifact_paths": [],
+                "execution_started": True,
+                "iterations": 1,
+                "run_count": 0,
+                "run_dir": None,
+                "goal_path": root / "goals" / "completed.json",
+                "background_pid": 12345,
+                "error_class": "",
+            }
+            with patch(
+                "conductor_extras.runtime.auto_orchestrator._run_auto_goal",
+                return_value=child_result,
+            ):
+                result = run_auto_orchestration(
+                    task="Complete one detached direct review.",
+                    workspace=root,
+                    runs_dir=root / "runs",
+                    goals_dir=root / "goals",
+                    policy=RuntimePolicy(
+                        allow_agent=True,
+                        approvals={MODEL_WORKFLOW_EXECUTE_APPROVAL},
+                    ),
+                    strategy="direct",
+                    background=True,
+                    check_command=["true"],
+                    receipt_path=receipt_path,
+                )
+
+            self.assertEqual(result.status, "completed")
+            self.assertEqual(result.background_pid, 12345)
+            self.assertFalse(result.receipt["result"]["background_handoff"])
+            self.assertFalse(
+                load_auto_orchestration_receipt(receipt_path)["result"][
+                    "background_handoff"
+                ]
+            )
+
     def test_auto_orchestration_routes_explicit_verifier_to_adaptive_goal(self):
         generated = {
             "schema": "conductor.workflow.v1",

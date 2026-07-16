@@ -4046,10 +4046,19 @@ class AgentTeamTests(unittest.TestCase):
             thread = threading.Thread(target=execute_team)
             thread.start()
             self.assertTrue(first_turn_started.wait(timeout=5))
-            active_transcripts = list_team_transcripts(
-                runner.run.run_dir,
-                "team-debug",
-            )["transcripts"]
+            deadline = time.monotonic() + 5
+            active_transcripts = []
+            while time.monotonic() < deadline:
+                active_transcripts = list_team_transcripts(
+                    runner.run.run_dir,
+                    "team-debug",
+                )["transcripts"]
+                if (
+                    active_transcripts
+                    and active_transcripts[0]["session_id_sha256"] is not None
+                ):
+                    break
+                time.sleep(0.01)
             self.assertEqual(len(active_transcripts), 1)
             self.assertEqual(active_transcripts[0]["status"], "active")
             self.assertIsNotNone(active_transcripts[0]["session_id_sha256"])

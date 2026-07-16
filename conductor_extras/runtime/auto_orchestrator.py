@@ -441,7 +441,9 @@ def run_auto_orchestration(
         status=result["status"],
         artifacts=result["artifacts"],
         execution_started=result["execution_started"],
-        background_handoff=result["background_pid"] is not None,
+        background_handoff=(
+            result["background_pid"] is not None and result["status"] == "running"
+        ),
         iterations=result["iterations"],
         run_count=result["run_count"],
         error_class=result["error_class"],

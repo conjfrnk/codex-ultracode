@@ -378,6 +378,7 @@ RUNTIME_TEST_SHARDS = {
     ),
     "background_routine": (
         "test_active_background_supervisor_observes_pause_resume_and_schedule_update",
+        "test_auto_background_terminal_child_is_not_active_handoff",
         "test_auto_direct_adaptive_background_preserves_zero_planner_contract",
         "test_auto_orchestration_background_handoff_records_mutable_child_receipt",
         "test_auto_progressive_background_preserves_direct_first_contract",
