@@ -952,18 +952,19 @@ def _prepare_verifier(check_command: List[str], stage: Path) -> Dict:
             "/proc",
             "--dev",
             "/dev",
+            # Root is read-only, so create the stage mount beneath the private tmpfs.
             "--dir",
-            "/workspace",
+            "/tmp/workspace",
             "--bind",
             stage_path,
-            "/workspace",
+            "/tmp/workspace",
             "--chdir",
-            "/workspace",
+            "/tmp/workspace",
             "--",
             *user_argv,
         ]
         sandbox = "linux-bwrap"
-        visible_stage = "/workspace"
+        visible_stage = "/tmp/workspace"
     else:
         raise ValidationError("strict staged verification is not supported on %s" % (system or "this host"))
     return {

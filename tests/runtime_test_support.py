@@ -22802,6 +22802,14 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 verifier_command[0],
                 "/usr/bin/sandbox-exec" if sys.platform == "darwin" else shutil.which("bwrap"),
             )
+            if sys.platform.startswith("linux"):
+                self.assertEqual(verifier_command[verifier_command.index("--dir") + 1], "/tmp/workspace")
+                self.assertEqual(verifier_command[verifier_command.index("--bind") + 2], "/tmp/workspace")
+                self.assertEqual(verifier_command[verifier_command.index("--chdir") + 1], "/tmp/workspace")
+                self.assertEqual(
+                    verifier_kwargs["env"]["HOME"],
+                    "/tmp/workspace/.conductor-verifier-home",
+                )
             self.assertEqual(verifier_kwargs["env"]["PYTHONNOUSERSITE"], "1")
 
             scored = score_benchmark_report(report, fixtures, score_input_fixture(independent=True))
@@ -26149,6 +26157,14 @@ def normalize_slug(value: str) -> str:
                 verifier_command[0],
                 "/usr/bin/sandbox-exec" if sys.platform == "darwin" else shutil.which("bwrap"),
             )
+            if sys.platform.startswith("linux"):
+                self.assertEqual(verifier_command[verifier_command.index("--dir") + 1], "/tmp/workspace")
+                self.assertEqual(verifier_command[verifier_command.index("--bind") + 2], "/tmp/workspace")
+                self.assertEqual(verifier_command[verifier_command.index("--chdir") + 1], "/tmp/workspace")
+                self.assertEqual(
+                    verifier_kwargs["env"]["HOME"],
+                    "/tmp/workspace/.conductor-verifier-home",
+                )
             self.assertEqual(verifier_kwargs["env"]["PYTHONNOUSERSITE"], "1")
             self.assertNotIn("ephemeral-staged-approval", json.dumps(verifier_kwargs["env"]))
             validate_benchmark_report(report)

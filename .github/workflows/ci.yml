@@ -60,7 +60,20 @@ jobs:
           sudo apt-get install --yes bubblewrap patch
           # Ubuntu 24.04 otherwise denies bwrap capabilities inside its user namespace.
           sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
-          bwrap \
+          sandbox_stage="$(mktemp -d)"
+          mkdir -p \
+            "${sandbox_stage}/.conductor-verifier-home" \
+            "${sandbox_stage}/.conductor-verifier-tmp"
+          env -i \
+            HOME=/tmp/workspace/.conductor-verifier-home \
+            LANG=C.UTF-8 \
+            LC_ALL=C.UTF-8 \
+            NO_COLOR=1 \
+            PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+            PYTHONDONTWRITEBYTECODE=1 \
+            PYTHONNOUSERSITE=1 \
+            TMPDIR=/tmp/workspace/.conductor-verifier-tmp \
+            bwrap \
             --die-with-parent \
             --unshare-net \
             --ro-bind / / \
@@ -69,7 +82,11 @@ jobs:
             --tmpfs /root \
             --proc /proc \
             --dev /dev \
-            -- /bin/true
+            --dir /tmp/workspace \
+            --bind "${sandbox_stage}" /tmp/workspace \
+            --chdir /tmp/workspace \
+            -- python3 -B -c 'from pathlib import Path; Path("probe.txt").write_text("ok", encoding="utf-8"); assert Path.cwd() == Path("/tmp/workspace")'
+          test -f "${sandbox_stage}/probe.txt"
       - name: Validate ownership and run shard warning-strict
         run: python -W error tools/run_test_shard.py ${{ matrix.shard }}
 
@@ -98,7 +115,20 @@ jobs:
           sudo apt-get install --yes bubblewrap patch
           # Ubuntu 24.04 otherwise denies bwrap capabilities inside its user namespace.
           sudo sysctl --write kernel.apparmor_restrict_unprivileged_userns=0
-          bwrap \
+          sandbox_stage="$(mktemp -d)"
+          mkdir -p \
+            "${sandbox_stage}/.conductor-verifier-home" \
+            "${sandbox_stage}/.conductor-verifier-tmp"
+          env -i \
+            HOME=/tmp/workspace/.conductor-verifier-home \
+            LANG=C.UTF-8 \
+            LC_ALL=C.UTF-8 \
+            NO_COLOR=1 \
+            PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+            PYTHONDONTWRITEBYTECODE=1 \
+            PYTHONNOUSERSITE=1 \
+            TMPDIR=/tmp/workspace/.conductor-verifier-tmp \
+            bwrap \
             --die-with-parent \
             --unshare-net \
             --ro-bind / / \
@@ -107,7 +137,11 @@ jobs:
             --tmpfs /root \
             --proc /proc \
             --dev /dev \
-            -- /bin/true
+            --dir /tmp/workspace \
+            --bind "${sandbox_stage}" /tmp/workspace \
+            --chdir /tmp/workspace \
+            -- python3 -B -c 'from pathlib import Path; Path("probe.txt").write_text("ok", encoding="utf-8"); assert Path.cwd() == Path("/tmp/workspace")'
+          test -f "${sandbox_stage}/probe.txt"
       - name: Install pinned development checks
         run: python -m pip install ruff==0.15.21 mypy==2.3.0 coverage==7.15.0 jsonschema==4.26.0
       - name: Run full canonical gate without release comparison
