@@ -34,6 +34,34 @@ from conductor_runtime.errors import ConductorError, ValidationError
 from conductor_runtime.redaction import contains_secret_like, redact_text
 
 
+def _process_is_running(pid: int) -> bool:
+    """Return whether a process is executing, treating a Linux zombie as terminated."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    if not sys.platform.startswith("linux"):
+        return True
+    try:
+        stat = Path("/proc/%d/stat" % pid).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    fields = stat.rsplit(") ", 1)
+    state = fields[1].split(maxsplit=1)[0] if len(fields) == 2 and fields[1] else ""
+    return state not in {"Z", "X"}
+
+
+def _wait_for_process_termination(pid: int, *, timeout_seconds: float = 1.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while _process_is_running(pid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.01)
+    return True
+
+
 FAKE_CODEX = r'''#!/usr/bin/env python3
 import json
 import os
@@ -295,15 +323,13 @@ class CoreAdversarialTests(unittest.TestCase):
             output_limit_bytes=1024,
         )
         pid = int(result.stdout.strip())
-        alive = True
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            alive = False
-        finally:
-            if alive:
+        terminated = _wait_for_process_termination(pid)
+        if not terminated:
+            try:
                 os.kill(pid, signal.SIGKILL)
-        self.assertFalse(alive)
+            except ProcessLookupError:
+                terminated = True
+        self.assertTrue(terminated)
         self.assertLess(time.monotonic() - started, 5)
 
     @unittest.skipUnless(os.name == "posix", "process-group verification requires POSIX")
@@ -326,15 +352,13 @@ class CoreAdversarialTests(unittest.TestCase):
             output_limit_bytes=1024,
         )
         pid = int(result.stdout.splitlines()[0])
-        alive = True
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            alive = False
-        finally:
-            if alive:
+        terminated = _wait_for_process_termination(pid)
+        if not terminated:
+            try:
                 os.kill(pid, signal.SIGKILL)
-        self.assertFalse(alive)
+            except ProcessLookupError:
+                terminated = True
+        self.assertTrue(terminated)
         self.assertLess(time.monotonic() - started, 5)
 
     def test_process_output_is_independently_bounded(self):
