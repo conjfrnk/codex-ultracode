@@ -298,6 +298,16 @@ class RunState:
                 record["attempt"] = int(record.get("attempt", 0)) + 1
                 record["started_at_utc"] = utc_now()
                 record.pop("finished_at_utc", None)
+                record.pop("metrics", None)
+                packets = record.get("packets")
+                if isinstance(packets, dict):
+                    cleaned_packets = {}
+                    for packet_id, packet in packets.items():
+                        if isinstance(packet, dict) and "result_metrics" in packet:
+                            packet = dict(packet)
+                            packet.pop("result_metrics", None)
+                        cleaned_packets[packet_id] = packet
+                    record["packets"] = cleaned_packets
             elif status in {"completed", "failed", "blocked", "skipped", "planned"}:
                 record["finished_at_utc"] = utc_now()
             record["status"] = status
@@ -369,6 +379,12 @@ class RunState:
             raise ValidationError("run artifact index is invalid")
         for relative in artifacts:
             self.read_artifact(relative)
+        # Result containers are optional so legacy runs remain valid. When
+        # present, they are part of the run's integrity surface and every
+        # state-held opaque id must resolve under the same descriptor.
+        from .results import RunResultStore
+
+        RunResultStore(self).verify()
 
     def _event(self, kind: str, step_id: str, status: str) -> None:
         events = list(self.state.get("events", []))
@@ -620,6 +636,8 @@ def _validate_packet_records(value) -> None:
             fields = {"status", "error_class"}
             if "resume_session_id" in packet:
                 fields.add("resume_session_id")
+            if "result_metrics" in packet:
+                fields.add("result_metrics")
             if set(packet) != fields:
                 raise ValidationError("run state failed map packet fields are invalid")
             error_class = packet.get("error_class")
@@ -637,6 +655,12 @@ def _validate_packet_records(value) -> None:
                 )
             ):
                 raise ValidationError("run state failed map packet is invalid")
+            result_metrics = packet.get("result_metrics")
+            if result_metrics is not None and (
+                not isinstance(result_metrics, dict)
+                or len(canonical_json_bytes(result_metrics)) > MAX_STATE_BYTES
+            ):
+                raise ValidationError("run state failed map packet result metrics are invalid")
             continue
         fields = {
             "status",

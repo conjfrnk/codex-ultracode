@@ -1,0 +1,20 @@
+{
+  "name": "codex-ultracode-local",
+  "interface": {
+    "displayName": "Codex Ultracode Local"
+  },
+  "plugins": [
+    {
+      "name": "agent-performance",
+      "source": {
+        "source": "local",
+        "path": "./plugins/agent-performance"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

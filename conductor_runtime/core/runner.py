@@ -17,7 +17,8 @@ from .policy import (
     prepare_shell_launch,
     require_approval,
 )
-from .process import run_process, sanitized_subprocess_environment
+from .process import capture_limit_for_parallelism, run_process, sanitized_subprocess_environment
+from .results import RunResultStore, result_diagnostic_suffix
 from .safe import (
     canonical_json_bytes,
     read_regular_text,
@@ -117,8 +118,8 @@ class WorkflowRunner:
     def execute(self) -> RunState:
         with self.run.lock():
             self.run.reload()
+            self.run.verify_recorded_artifacts()
             if self.run.state["status"] == "completed":
-                self.run.verify_recorded_artifacts()
                 return self.run
             self.run.set_status("running")
             try:
@@ -149,6 +150,7 @@ class WorkflowRunner:
                     return self.run
                 except (ConductorError, OSError, ValueError) as exc:
                     failure: Exception = exc
+                    failure_metrics = exc.metrics if isinstance(exc, StepExecutionError) else None
                     resumable = isinstance(exc, CodexInvocationError) and exc.resumable
                     if step.get("sandbox", "read-only") == "workspace-write":
                         failure, resumable = self._handle_failed_stage(step, failure, resumable)
@@ -160,7 +162,12 @@ class WorkflowRunner:
                             resume_session_id=failure.session_id,
                             resume_available=True,
                         )
-                    self.run.transition_step(step["id"], "failed", detail=str(failure))
+                    self.run.transition_step(
+                        step["id"],
+                        "failed",
+                        detail=str(failure),
+                        metrics=failure_metrics,
+                    )
                     self.run.set_status("failed", failure.__class__.__name__)
                     return self.run
             if self.dry_run:
@@ -248,6 +255,14 @@ class WorkflowRunner:
                 timeout_seconds=timeout,
                 output_limit_bytes=limit,
                 env=environment,
+                capture_directory=self.run.run_dir / ".result-spool",
+            )
+            result_ids = RunResultStore(self.run).preserve_process_overflow(
+                result,
+                source_id=step["id"],
+                step_id=step["id"],
+                attempt=attempt,
+                preview_limit_bytes=limit,
             )
             capture = step.get("capture")
             if capture:
@@ -265,22 +280,41 @@ class WorkflowRunner:
                 self.run.update_step(step["id"], outputs=[])
             after = snapshot_workspace(isolated["stage_dir"])
             mutated = after["fingerprint_sha256"] != isolated["before"]["fingerprint_sha256"]
+            metrics = {
+                "returncode": result.returncode,
+                "duration_ms": result.duration_ms,
+                "stdout_truncated": result.stdout_truncated,
+                "stderr_truncated": result.stderr_truncated,
+                "stdout_pipe_complete": result.stdout_pipe_complete,
+                "stderr_pipe_complete": result.stderr_pipe_complete,
+                "output_sha256": record["sha256"] if record else None,
+                "isolated_workspace_mutated": mutated,
+                **result_ids,
+            }
             if mutated and not assessment.writes:
-                raise StepExecutionError("shell step modified its isolated workspace without declaring writes")
+                raise StepExecutionError(
+                    "shell step modified its isolated workspace without declaring writes",
+                    metrics=metrics,
+                )
             if result.timed_out:
-                raise StepExecutionError("shell step timed out")
+                raise StepExecutionError(
+                    "shell step timed out" + result_diagnostic_suffix(result_ids),
+                    metrics=metrics,
+                )
+            if not result.stdout_pipe_complete or not result.stderr_pipe_complete:
+                raise StepExecutionError(
+                    "shell process output pipes did not close cleanly"
+                    + result_diagnostic_suffix(result_ids),
+                    metrics=metrics,
+                )
             if result.returncode != 0:
-                raise StepExecutionError("shell step returned %d" % result.returncode)
+                raise StepExecutionError(
+                    "shell step returned %d%s" % (result.returncode, result_diagnostic_suffix(result_ids)),
+                    metrics=metrics,
+                )
         finally:
             discard_stage(self.run.run_dir, isolated["stage_dir"])
-        return {
-            "returncode": result.returncode,
-            "duration_ms": result.duration_ms,
-            "stdout_truncated": result.stdout_truncated,
-            "stderr_truncated": result.stderr_truncated,
-            "output_sha256": record["sha256"] if record else None,
-            "isolated_workspace_mutated": mutated,
-        }
+        return metrics
 
     def _codex(self, step: Dict) -> Dict:
         enforce_agent(step, self.policy)
@@ -380,10 +414,19 @@ class WorkflowRunner:
             cap = min(per_call, remaining // len(wave))
             if cap < 100:
                 raise StepExecutionError("agent map aggregate token budget is exhausted")
+            capture_limit = capture_limit_for_parallelism(len(wave))
             futures = {}
             with ThreadPoolExecutor(max_workers=len(wave)) as executor:
                 for index, key, packet, cached in wave:
-                    future = executor.submit(self._run_map_packet, step, index, packet, cap, cached)
+                    future = executor.submit(
+                        self._run_map_packet,
+                        step,
+                        index,
+                        packet,
+                        cap,
+                        cached,
+                        capture_limit,
+                    )
                     futures[future] = (index, key)
                 failure = None
                 for future in as_completed(futures):
@@ -392,12 +435,14 @@ class WorkflowRunner:
                         packet_record = future.result()
                     except Exception as exc:
                         failure = failure or exc
-                        failed = {
+                        failed: Dict = {
                             "status": "failed",
                             "error_class": exc.__class__.__name__,
                         }
                         if isinstance(exc, CodexInvocationError) and exc.resumable:
                             failed["resume_session_id"] = exc.session_id
+                        if isinstance(exc, StepExecutionError) and exc.metrics:
+                            failed["result_metrics"] = exc.metrics
                         packet_records[key] = failed
                     else:
                         packet_records[key] = packet_record
@@ -417,7 +462,15 @@ class WorkflowRunner:
             "max_total_tokens": total_cap,
         }
 
-    def _run_map_packet(self, step: Dict, index: int, packet, cap: int, cached: Dict) -> Dict:
+    def _run_map_packet(
+        self,
+        step: Dict,
+        index: int,
+        packet,
+        cap: int,
+        cached: Dict,
+        capture_limit: int,
+    ) -> Dict:
         rendered = _render_item(packet)
         rendered = rendered.replace(MAP_ITEM_BEGIN, "[escaped-map-item-begin]").replace(
             MAP_ITEM_END, "[escaped-map-item-end]"
@@ -446,6 +499,7 @@ class WorkflowRunner:
                 "output_limit_bytes",
                 self.workflow.get("output_limit_bytes", DEFAULT_OUTPUT_LIMIT_BYTES),
             ),
+            capture_limit_bytes=capture_limit,
             resume_session_id=cached.get("resume_session_id"),
             invocation_id="%s-p%04d" % (step["id"], index),
             output_schema_relative=self._prepare_output_schema(step, suffix="p%04d" % index),

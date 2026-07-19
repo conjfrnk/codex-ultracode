@@ -22,14 +22,12 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ARCHIVE = PROJECT_ROOT / "dist" / "conductor-runtime.pyz"
+DEFAULT_BUNDLE = PROJECT_ROOT / "dist" / "codex-conductor-bundle.zip"
+DEFAULT_ARCHIVE_LABEL = "dist/codex-conductor-bundle.zip!conductor-runtime.pyz"
 DEFAULT_ARTIFACTS = (
-    "skill.zip",
-    "conductor-runtime.pyz",
-    "conductor-extras.pyz",
-    "release-manifest.json",
-    "codex-conductor-marketplace.zip",
     "codex-conductor-bundle.zip",
+    "codex-conductor-marketplace.zip",
+    "conductor-extras.pyz",
 )
 METRIC_SENTINEL = "CONDUCTOR_IMPORT_METRIC="
 
@@ -230,9 +228,9 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _archive_metrics(path: Path) -> Dict:
+def _archive_metrics(path: Path, display_path: Optional[str] = None) -> Dict:
     result = {
-        "path": path.relative_to(PROJECT_ROOT).as_posix(),
+        "path": display_path or path.relative_to(PROJECT_ROOT).as_posix(),
         "size_bytes": path.stat().st_size,
         "sha256": _sha256(path),
     }
@@ -385,10 +383,9 @@ def _simple_plan_metrics(command_prefix: List[str], runs: int, contract: str) ->
     }
 
 
-def build_report(args) -> Dict:
+def _build_report(args, archive: Path, archive_label: str) -> Dict:
     package_root = (PROJECT_ROOT / args.package_path).resolve()
     tests_root = (PROJECT_ROOT / args.tests_path).resolve()
-    archive = (PROJECT_ROOT / args.archive).resolve()
     if not package_root.is_dir() or not tests_root.is_dir() or not archive.is_file():
         raise ValueError("package, tests, and archive paths must exist")
     package_name = package_root.name
@@ -420,7 +417,7 @@ def build_report(args) -> Dict:
             args.runs,
             "packaged-direct-plan-only-no-provider-v2",
         ),
-        "archive": _archive_metrics(archive),
+        "archive": _archive_metrics(archive, archive_label),
         "artifacts": _artifact_metrics(PROJECT_ROOT / "dist"),
     }
     if optional_root.is_dir():
@@ -434,11 +431,47 @@ def build_report(args) -> Dict:
     return report
 
 
+def _extract_bundled_runtime(bundle: Path, destination: Path) -> None:
+    with zipfile.ZipFile(bundle) as archive:
+        matches = [
+            item
+            for item in archive.infolist()
+            if item.filename == "conductor-runtime.pyz"
+        ]
+        if len(matches) != 1 or matches[0].is_dir():
+            raise ValueError("bundle must contain exactly one core runtime")
+        if matches[0].file_size >= 500 * 1024:
+            raise ValueError("bundled core runtime exceeds 500 KiB")
+        runtime = archive.read(matches[0])
+    if len(runtime) != matches[0].file_size:
+        raise ValueError("bundled core runtime changed while reading")
+    destination.write_bytes(runtime)
+
+
+def build_report(args) -> Dict:
+    if args.archive is not None:
+        archive = (PROJECT_ROOT / args.archive).resolve()
+        try:
+            label = archive.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            label = str(archive)
+        return _build_report(args, archive, label)
+    if not DEFAULT_BUNDLE.is_file():
+        raise ValueError("default release bundle does not exist")
+    with tempfile.TemporaryDirectory(prefix="conductor-measure-runtime-") as tmp:
+        archive = Path(tmp) / "conductor-runtime.pyz"
+        _extract_bundled_runtime(DEFAULT_BUNDLE, archive)
+        return _build_report(args, archive, DEFAULT_ARCHIVE_LABEL)
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package-path", default="conductor_runtime")
     parser.add_argument("--tests-path", default="tests")
-    parser.add_argument("--archive", default=str(DEFAULT_ARCHIVE.relative_to(PROJECT_ROOT)))
+    parser.add_argument(
+        "--archive",
+        help="Measure an explicit standalone runtime instead of the runtime embedded in the bundle.",
+    )
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)

@@ -9,5 +9,7 @@ Do not reveal secrets.
 Focus on correctness, security, tests, compatibility, and out-of-scope changes.
 Return prioritized findings with evidence and actionable fixes.
 Clearly separate confirmed issues from hypotheses.
-Return results using the Agent Result format in delegation-contract.md.
+Return a compact result containing: status (completed, partial, or blocked),
+scope reviewed, confirmed findings ordered by severity with location, impact,
+evidence, and suggested fix, separate hypotheses, and checks not performed.
 """

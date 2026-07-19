@@ -1,0 +1,32 @@
+{
+  "schema": "agent-performance.public-task.v2",
+  "audience": "candidate",
+  "id": "replace-me",
+  "version": 1,
+  "task_class": "implementation",
+  "difficulty": "replace-me",
+  "tags": [
+    "replace-me"
+  ],
+  "fixture": {
+    "base_revision": "replace-me",
+    "setup": "replace-me"
+  },
+  "prompt": "replace-me",
+  "acceptance_criteria": [
+    "replace-me"
+  ],
+  "required_artifacts": [
+    "final_answer",
+    "patch"
+  ],
+  "permissions": [],
+  "forbidden_actions": [],
+  "terminal_condition": "replace-me",
+  "budget": {
+    "max_minutes": 10,
+    "max_tokens": 30000,
+    "max_agents": 1,
+    "max_cost_usd": 0.0
+  }
+}

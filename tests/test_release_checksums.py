@@ -37,6 +37,16 @@ class ReleaseChecksumTests(unittest.TestCase):
             with self.assertRaisesRegex(ChecksumError, "missing release artifacts"):
                 write_checksums(Path(tmp))
 
+    def test_unexpected_top_level_entry_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ARTIFACTS:
+                (root / name).write_bytes(b"artifact")
+            (root / "skill.zip").write_bytes(b"retired")
+
+            with self.assertRaisesRegex(ChecksumError, "unexpected release entries: skill.zip"):
+                write_checksums(root)
+
     def test_symlinked_artifact_and_checksum_manifest_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -52,6 +62,7 @@ class ReleaseChecksumTests(unittest.TestCase):
 
             artifact.unlink()
             artifact.write_bytes(target.read_bytes())
+            target.unlink()
             checksum_file = write_checksums(root)
             manifest_target = root / "manifest-target"
             checksum_file.replace(manifest_target)

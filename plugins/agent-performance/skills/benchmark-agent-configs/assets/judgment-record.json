@@ -1,0 +1,26 @@
+{
+  "schema": "agent-performance.judgment-record.v1",
+  "audience": "judge-output",
+  "comparison_id": "replace-me",
+  "task_id": "replace-me",
+  "task_version": 1,
+  "judgment_id": "replace-me",
+  "judge_id": "replace-me",
+  "rubric_version": "replace-me",
+  "packet_hash": "replace-me",
+  "independence_attestation": true,
+  "identity_visible": false,
+  "absolute_acceptability": {
+    "X": "unknown",
+    "Y": "unknown"
+  },
+  "outcome": "inconclusive",
+  "findings": [],
+  "vetoes": {
+    "X": [],
+    "Y": []
+  },
+  "process_findings": [],
+  "missing_evidence": [],
+  "confidence": "low"
+}

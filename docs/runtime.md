@@ -29,6 +29,7 @@ over state, budgets, and permissions.
 | `init` | Create a minimal read-only or staged-write workflow. |
 | `migrate` | Convert a core-shaped legacy workflow to the core schema. |
 | `status` | Verify and inspect an external run. |
+| `results` | Verify, list, search, outline, or read captured stream overflow. |
 | `list` | List valid core workflow files. |
 | `apply` | Apply independently verified staged changes. |
 | `doctor` | Check the local Codex CLI. |
@@ -95,6 +96,42 @@ iteration context:
 python3 -m conductor_runtime run review.json --workspace . --allow-agent \
   --resume RUN_DIR
 ```
+
+## Recover truncated process output
+
+Shell and Codex streams keep their existing bounded inline prefix. When a
+stream crosses that limit, the runtime also retains up to 32 MiB as a redacted,
+immutable result container under the external run directory. A 256 MiB
+per-run quota fails capture explicitly without eviction. Raw bytes remain in
+anonymous temporary files only until redaction; they never receive a durable
+pathname. Capture storage activates only after overflow. Fan-out divides the
+capture allowance by the active wave, and a 256 MiB process-wide reservation
+cap bounds raw in-flight capture. Capture allocation, finalization, or budget
+failure is recorded explicitly without changing an otherwise successful shell
+producer result. Operational result-store I/O loss is reported the same way;
+path, binding, or content-integrity violations still fail closed. Redaction and
+commit are serialized.
+
+Use opaque ids and cited line ranges instead of opening store files directly:
+
+```sh
+python3 -m conductor_runtime results list RUN_DIR
+python3 -m conductor_runtime results outline RUN_DIR RESULT_ID
+python3 -m conductor_runtime results search RUN_DIR --query "literal text"
+python3 -m conductor_runtime results get RUN_DIR RESULT_ID --start-line 120 --max-lines 40
+```
+
+`pipe_complete` says whether the container holds every byte observed through a
+cleanly drained pipe. It does not mean the producer succeeded; `producer_status`
+reports completion, failure, or timeout separately. `text_fidelity` discloses
+replacement decoding for non-UTF-8 streams. Codex control-stream truncation
+still fails the step and is never accepted as terminal evidence. Shell and Codex
+steps also fail if an escaped descendant keeps either process pipe from closing;
+collection remains deadline-bounded. Run inspection verifies container,
+descriptor, content, state-reference, packet, hardlink, and quota bindings
+before retrieval. Inspection uses shared, non-mutating locks and reads one
+container at a time; a following write safely removes a recognized
+interrupted-write temporary.
 
 ## Apply
 

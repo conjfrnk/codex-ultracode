@@ -31,6 +31,11 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install pinned development checks
         run: python -m pip install ruff==0.15.21 mypy==2.3.0 coverage==7.15.0 jsonschema==4.26.0
+      - name: Install pinned Codex CLI
+        run: |
+          codex_cli_version="$(python -c 'from tools.verify import CODEX_CLI_VERSION; print(CODEX_CLI_VERSION)')"
+          npm install --global "@openai/codex@${codex_cli_version}"
+          test "$(codex --version)" = "codex-cli ${codex_cli_version}"
       - name: Run fast canonical gate
         run: python tools/verify.py --quick --skip-artifacts
 
@@ -144,6 +149,11 @@ jobs:
           test -f "${sandbox_stage}/probe.txt"
       - name: Install pinned development checks
         run: python -m pip install ruff==0.15.21 mypy==2.3.0 coverage==7.15.0 jsonschema==4.26.0
+      - name: Install pinned Codex CLI
+        run: |
+          codex_cli_version="$(python -c 'from tools.verify import CODEX_CLI_VERSION; print(CODEX_CLI_VERSION)')"
+          npm install --global "@openai/codex@${codex_cli_version}"
+          test "$(codex --version)" = "codex-cli ${codex_cli_version}"
       - name: Run full canonical gate without release comparison
         run: python tools/verify.py --skip-artifacts
 
@@ -159,5 +169,10 @@ jobs:
           python-version: "3.14.6"
       - name: Install pinned development checks
         run: python -m pip install ruff==0.15.21 mypy==2.3.0 coverage==7.15.0 jsonschema==4.26.0
+      - name: Install pinned Codex CLI
+        run: |
+          codex_cli_version="$(python -c 'from tools.verify import CODEX_CLI_VERSION; print(CODEX_CLI_VERSION)')"
+          npm install --global "@openai/codex@${codex_cli_version}"
+          test "$(codex --version)" = "codex-cli ${codex_cli_version}"
       - name: Rebuild, reproduce, and compare tracked release artifacts
         run: python tools/verify.py --quick

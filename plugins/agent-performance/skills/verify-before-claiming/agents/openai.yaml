@@ -1,0 +1,6 @@
+interface:
+  display_name: "Verify Before Claiming"
+  short_description: "Match completion claims to fresh proof"
+  default_prompt: "Use $verify-before-claiming to verify each completion claim with fresh evidence."
+policy:
+  allow_implicit_invocation: true

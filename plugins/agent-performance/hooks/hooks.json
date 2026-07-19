@@ -1,0 +1,18 @@
+{
+  "description": "Show the Codex Ultracode identity when a new thread starts.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^startup$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/hooks/session_start.py\"",
+            "timeout": 5,
+            "statusMessage": "Starting Codex with Ultracode"
+          }
+        ]
+      }
+    ]
+  }
+}

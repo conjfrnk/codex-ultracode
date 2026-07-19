@@ -5,6 +5,7 @@ import os
 import signal
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from contextlib import redirect_stdout
@@ -25,6 +26,7 @@ from conductor_runtime.core.policy import (
     validate_approval_tokens,
 )
 from conductor_runtime.core.process import run_process
+from conductor_runtime.core.results import RunResultStore
 from conductor_runtime.core.runner import WorkflowRunner
 from conductor_runtime.core.safe import canonical_json_bytes, require_relative, sha256_bytes, strict_json_bytes
 from conductor_runtime.core.staged import apply_verified_stage
@@ -345,12 +347,19 @@ class CoreAdversarialTests(unittest.TestCase):
             "print(p.pid,flush=True); time.sleep(.2)"
         ) % child
         started = time.monotonic()
-        result = run_process(
-            [sys.executable, "-c", leader],
-            cwd=self.workspace,
-            timeout_seconds=10,
-            output_limit_bytes=1024,
-        )
+        thread_failures = []
+        original_excepthook = threading.excepthook
+        try:
+            threading.excepthook = thread_failures.append
+            result = run_process(
+                [sys.executable, "-c", leader],
+                cwd=self.workspace,
+                timeout_seconds=10,
+                output_limit_bytes=1024,
+            )
+        finally:
+            threading.excepthook = original_excepthook
+        self.assertEqual(thread_failures, [])
         pid = int(result.stdout.splitlines()[0])
         terminated = _wait_for_process_termination(pid)
         if not terminated:
@@ -360,6 +369,60 @@ class CoreAdversarialTests(unittest.TestCase):
                 terminated = True
         self.assertTrue(terminated)
         self.assertLess(time.monotonic() - started, 5)
+
+    @unittest.skipUnless(os.name == "posix", "detached-process verification requires POSIX")
+    def test_detached_descendant_cannot_hold_core_output_pipes_open(self):
+        child = "import time; time.sleep(8)"
+        leader = (
+            "import subprocess,sys; "
+            "p=subprocess.Popen([sys.executable,'-c',%r],start_new_session=True); "
+            "print(p.pid,flush=True)"
+        ) % child
+        command = [sys.executable, "-c", leader]
+        workflow = {
+            "schema": "conductor.core.workflow.v1",
+            "name": "detached-pipe-holder",
+            "steps": [
+                {
+                    "id": "shell",
+                    "kind": "shell",
+                    "command": command,
+                    "capture": "pid.txt",
+                    "capture_mode": "stdout",
+                    "timeout_seconds": 10,
+                    "writes": False,
+                    "destructive": False,
+                    "network": False,
+                }
+            ],
+        }
+        started = time.monotonic()
+        thread_failures = []
+        original_excepthook = threading.excepthook
+        try:
+            threading.excepthook = thread_failures.append
+            run = WorkflowRunner(
+                workflow,
+                self.workspace,
+                None,
+                RuntimePolicy(approvals={shell_approval(command)}),
+            ).execute()
+        finally:
+            threading.excepthook = original_excepthook
+        elapsed = time.monotonic() - started
+        pid = int(run.read_artifact("pid.txt").decode("utf-8").strip())
+        try:
+            self.assertEqual(thread_failures, [])
+            self.assertEqual(run.state["status"], "failed")
+            metrics = run.state["steps"]["shell"]["metrics"]
+            self.assertFalse(metrics["stdout_pipe_complete"])
+            self.assertFalse(metrics["stderr_pipe_complete"])
+            self.assertLess(elapsed, 5)
+        finally:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
     def test_process_output_is_independently_bounded(self):
         code = "import sys; print('o'*4096); print('e'*4096,file=sys.stderr)"
@@ -826,6 +889,13 @@ class CoreAdversarialTests(unittest.TestCase):
                 self.assertIn(expected, run.state["steps"]["work"]["detail"])
                 self.assertEqual(list((run.run_dir / ".provider-output").iterdir()), [])
                 RunState.inspect(run.run_dir)
+                if mode == "oversized-stream":
+                    records = RunResultStore(run).list_records(step_id="work")
+                    self.assertEqual(len(records), 1)
+                    self.assertEqual(records[0]["producer_status"], "completed")
+                    self.assertTrue(records[0]["pipe_complete"])
+                    self.assertIn(records[0]["result_id"], run.state["steps"]["work"]["detail"])
+                    self.assertEqual(run.state["steps"]["work"]["status"], "failed")
 
     def test_provider_output_is_redacted_before_it_is_recorded(self):
         secret = "ghp_" + "a" * 36

@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from conductor_runtime import MINIMUM_PYTHON, __version__, require_supported_python
@@ -64,9 +65,12 @@ class PythonSupportTests(unittest.TestCase):
                     timeout=30,
                 )
                 self.assertEqual(packaged.returncode, 0, packaged.stderr)
-            for artifact in ("conductor-runtime.pyz", "conductor-extras.pyz"):
+            runtime = Path(tmp).resolve() / "embedded-conductor-runtime.pyz"
+            with zipfile.ZipFile(dist / "codex-conductor-bundle.zip") as archive:
+                runtime.write_bytes(archive.read("conductor-runtime.pyz"))
+            for artifact in (runtime, dist / "conductor-extras.pyz"):
                 rejected = subprocess.run(
-                    [str(candidate), str(dist / artifact), "--version"],
+                    [str(candidate), str(artifact), "--version"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,

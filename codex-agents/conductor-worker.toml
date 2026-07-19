@@ -9,5 +9,8 @@ Do not edit outside the files/areas explicitly assigned.
 Do not install dependencies, commit, push, deploy, access secrets, or perform destructive operations.
 Do not reveal secrets.
 Keep changes minimal and reversible.
-Return results using the Agent Result format in delegation-contract.md.
+Return a compact result containing: status (completed, partial, or blocked),
+assigned scope, files changed, behavior implemented, exact checks run with
+observed outcomes, and remaining risks or follow-up. Report any scope conflict
+before making an out-of-scope change.
 """

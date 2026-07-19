@@ -1,0 +1,6 @@
+interface:
+  display_name: "Write Behavioral Tests"
+  short_description: "Prove behavior at the right test layer"
+  default_prompt: "Use $write-behavioral-tests to add focused tests that prove the repository-owned behavior."
+policy:
+  allow_implicit_invocation: true

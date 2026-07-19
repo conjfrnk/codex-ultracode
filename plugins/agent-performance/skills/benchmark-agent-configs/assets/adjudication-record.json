@@ -1,0 +1,23 @@
+{
+  "schema": "agent-performance.adjudication-record.v1",
+  "audience": "adjudicator-output",
+  "comparison_id": "replace-me",
+  "task_id": "replace-me",
+  "task_version": 1,
+  "adjudicator_id": "replace-me",
+  "input_judgment_ids": [],
+  "rubric_version": "replace-me",
+  "finding_dispositions": [],
+  "absolute_acceptability": {
+    "X": "unknown",
+    "Y": "unknown"
+  },
+  "final_outcome": "inconclusive",
+  "vetoes": {
+    "X": [],
+    "Y": []
+  },
+  "unresolved_disagreements": [],
+  "eligible_for_aggregation": false,
+  "confidence": "low"
+}

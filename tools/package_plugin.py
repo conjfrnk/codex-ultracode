@@ -12,9 +12,9 @@ import time
 import zipfile
 from pathlib import Path
 
-try:
+if __package__:
     from .install_bundle import build_skill_manifest, sha256_file
-except ImportError:  # Direct script execution.
+else:  # Direct script execution.
     from install_bundle import build_skill_manifest, sha256_file
 
 
@@ -219,12 +219,21 @@ def _normalize_tree_mtimes(root: Path) -> None:
 
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) > 1:
+        print("Plugin package failed: expected at most one output directory", file=sys.stderr)
+        return 2
     project_root = Path(__file__).resolve().parent.parent
     dist = Path(args[0]).resolve() if args else project_root / "dist"
-    runtime_path = dist / "conductor-runtime.pyz"
     output = dist / "codex-conductor-marketplace.zip"
     try:
-        build_plugin_marketplace(project_root, runtime_path, output)
+        if __package__:
+            from .package_runtime import build_runtime_archive
+        else:  # Direct script execution.
+            from package_runtime import build_runtime_archive
+        with tempfile.TemporaryDirectory(prefix="conductor-plugin-runtime-") as tmp:
+            runtime_path = Path(tmp) / "conductor-runtime.pyz"
+            build_runtime_archive(project_root, runtime_path)
+            build_plugin_marketplace(project_root, runtime_path, output)
     except (OSError, ValueError) as exc:
         print("Plugin package failed: %s" % exc, file=sys.stderr)
         return 1

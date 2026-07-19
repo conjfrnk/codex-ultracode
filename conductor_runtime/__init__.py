@@ -2,7 +2,7 @@
 
 import sys
 
-__version__ = "0.174.0"
+__version__ = "0.175.0"
 MINIMUM_PYTHON = (3, 12)
 
 

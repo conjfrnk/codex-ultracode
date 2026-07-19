@@ -1,0 +1,16 @@
+{
+  "schema": "agent-performance.label-assignments.v1",
+  "audience": "controller-only",
+  "comparison_id": "replace-me",
+  "assignment_seed": "replace-me",
+  "assignments": [
+    {
+      "task_id": "replace-me",
+      "task_version": 1,
+      "labels": {
+        "X": "baseline",
+        "Y": "treatment"
+      }
+    }
+  ]
+}

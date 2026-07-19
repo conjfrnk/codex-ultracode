@@ -1,0 +1,21 @@
+{
+  "schema": "agent-performance.curation-record.v1",
+  "audience": "controller-only",
+  "task_id": "replace-me",
+  "task_version": 1,
+  "reviewer_id": "replace-me",
+  "public_task_sha256": "replace-me",
+  "evaluator_brief_sha256": "replace-me",
+  "verdict": "revise",
+  "checks": {
+    "clear": false,
+    "solvable": false,
+    "stable": false,
+    "treatment_neutral": false,
+    "leak_free": false,
+    "safe_and_licensed": false,
+    "judgeable": false
+  },
+  "findings": [],
+  "accepted_at": null
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Simplify Without Drift"
+  short_description: "Remove complexity while preserving behavior"
+  default_prompt: "Use $simplify-without-drift to find and remove unjustified complexity without changing required behavior."
+policy:
+  allow_implicit_invocation: true

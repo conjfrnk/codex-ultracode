@@ -8,7 +8,13 @@ from typing import Dict, List, Optional
 
 from ..errors import StepExecutionError, ValidationError
 from ..redaction import ExactSecretRedactionScope, redact_text
-from .process import ProcessResult, run_process, sanitized_subprocess_environment
+from .process import (
+    MAX_CAPTURE_BYTES,
+    ProcessResult,
+    run_process,
+    sanitized_subprocess_environment,
+)
+from .results import RunResultStore, result_diagnostic_suffix
 from .safe import canonical_json_bytes, ensure_directory, read_regular_bytes, sha256_bytes
 from .state import RunState, utc_now
 
@@ -90,8 +96,15 @@ class CodexResult:
 
 
 class CodexInvocationError(StepExecutionError):
-    def __init__(self, message: str, *, session_id: str = "", resumable: bool = False):
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str,
+        *,
+        session_id: str = "",
+        resumable: bool = False,
+        metrics=None,
+    ):
+        super().__init__(message, metrics=metrics)
         self.session_id = session_id
         self.resumable = resumable
 
@@ -106,6 +119,7 @@ def invoke_codex(
     max_tokens: int,
     timeout_seconds: int,
     output_limit_bytes: int,
+    capture_limit_bytes: int = MAX_CAPTURE_BYTES,
     resume_session_id: Optional[str] = None,
     output_schema_relative: Optional[str] = None,
     invocation_id: Optional[str] = None,
@@ -174,6 +188,15 @@ def invoke_codex(
                 timeout_seconds=timeout_seconds,
                 output_limit_bytes=output_limit_bytes,
                 env=environment,
+                capture_directory=run.run_dir / ".result-spool",
+                capture_limit_bytes=capture_limit_bytes,
+            )
+            overflow_results = RunResultStore(run).preserve_process_overflow(
+                process,
+                source_id=receipt_id,
+                step_id=step["id"],
+                attempt=attempt,
+                preview_limit_bytes=output_limit_bytes,
             )
             analysis = analyze_stream(process.stdout)
             redacted_stream = redact_text(process.stdout)
@@ -185,15 +208,26 @@ def invoke_codex(
             terminal_missing = analysis.get("terminal_status") == "missing"
             if process.timed_out:
                 raise CodexInvocationError(
-                    "Codex step timed out",
+                    "Codex step timed out" + result_diagnostic_suffix(overflow_results),
                     session_id=session_id,
                     resumable=bool(session_id and terminal_missing),
+                    metrics=overflow_results,
+                )
+            if not process.stdout_pipe_complete or not process.stderr_pipe_complete:
+                raise CodexInvocationError(
+                    "Codex process output pipes did not close cleanly"
+                    + result_diagnostic_suffix(overflow_results),
+                    session_id=session_id,
+                    resumable=bool(session_id and terminal_missing),
+                    metrics=overflow_results,
                 )
             if process.stdout_truncated or process.stderr_truncated:
                 raise CodexInvocationError(
-                    "Codex process output exceeded its configured limit",
+                    "Codex process output exceeded its configured limit"
+                    + result_diagnostic_suffix(overflow_results),
                     session_id=session_id,
                     resumable=bool(session_id and terminal_missing),
+                    metrics=overflow_results,
                 )
             if analysis["parse_error"]:
                 raise CodexInvocationError(

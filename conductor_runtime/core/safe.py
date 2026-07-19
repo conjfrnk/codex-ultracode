@@ -1,16 +1,47 @@
 """No-follow filesystem operations and external-state paths."""
 
+import errno
 import hashlib
 import json
 import os
 import stat
 import tempfile
 from pathlib import Path
+
 from ..errors import ValidationError
 
 
 MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_RELATIVE_PATH_CHARS = 4096
+_OPTIONAL_STORAGE_ERRNOS = frozenset(
+    value
+    for value in (
+        errno.EACCES,
+        getattr(errno, "EDQUOT", None),
+        errno.EFBIG,
+        errno.EIO,
+        errno.EMFILE,
+        errno.ENFILE,
+        errno.ENOMEM,
+        errno.ENOSPC,
+        errno.EPERM,
+        errno.EROFS,
+    )
+    if value is not None
+)
+
+
+def is_optional_storage_error(error: BaseException) -> bool:
+    """Return whether an exception chain represents operational storage loss."""
+
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, OSError):
+            return current.errno is None or current.errno in _OPTIONAL_STORAGE_ERRNOS
+        current = current.__cause__
+    return False
 
 
 def sha256_bytes(payload: bytes) -> str:

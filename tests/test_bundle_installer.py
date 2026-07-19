@@ -16,11 +16,13 @@ from tools.install_bundle import (
     InstallError,
     _commit_replacements,
     _read_regular_bytes,
+    build_agent_manifest,
     build_skill_manifest,
 )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+AGENT_FILES = tuple(path.name for path in sorted((PROJECT_ROOT / "codex-agents").glob("*.toml")))
 FAKE_CODEX = r'''#!/usr/bin/env python3
 import json
 import pathlib
@@ -75,6 +77,7 @@ def package_and_extract(root: Path) -> Path:
             "conductor-workflows/README.md",
             "conductor-workflows/core/read-only-review.json",
             "conductor-workflows/core/staged-change.json",
+            *("codex-agents/%s" % name for name in AGENT_FILES),
         ):
             if expected not in names:
                 raise AssertionError("release bundle omits README target %s" % expected)
@@ -127,14 +130,21 @@ class BundleInstallerTests(unittest.TestCase):
             self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
             plan = json.loads(dry_run.stdout)
             self.assertEqual(plan["status"], "dry-run")
-            self.assertEqual(plan["changes"], ["release", "runtime", "skill"])
+            self.assertEqual(plan["changes"], ["release", "runtime", "skill", "agents"])
+            self.assertEqual(plan["agent_changes"], list(AGENT_FILES))
             self.assertFalse(codex_home.exists())
             self.assertFalse(conductor_home.exists())
+
+            active_agents = codex_home / "agents"
+            active_agents.mkdir(parents=True)
+            unrelated_agent = active_agents / "personal-agent.toml"
+            unrelated_agent.write_text("personal = true\n", encoding="utf-8")
 
             denied = run_installer(extracted, codex_home, conductor_home, "--json")
             self.assertEqual(denied.returncode, 2)
             self.assertIn("conductor-install", denied.stderr)
-            self.assertFalse(codex_home.exists())
+            self.assertTrue(codex_home.exists())
+            self.assertEqual(unrelated_agent.read_text(encoding="utf-8"), "personal = true\n")
             self.assertFalse(conductor_home.exists())
 
             installed = run_installer(
@@ -160,9 +170,17 @@ class BundleInstallerTests(unittest.TestCase):
                     if path.is_file()
                 ),
             )
+            for name in AGENT_FILES:
+                self.assertEqual(
+                    (active_agents / name).read_bytes(),
+                    (extracted / "codex-agents" / name).read_bytes(),
+                )
+            self.assertEqual(unrelated_agent.read_text(encoding="utf-8"), "personal = true\n")
             receipt = json.loads((conductor_home / "installations" / "current.json").read_text(encoding="utf-8"))
-            self.assertEqual(receipt["schema"], "conductor.bundle_install_receipt.v1")
+            self.assertEqual(receipt["schema"], "conductor.bundle_install_receipt.v2")
             self.assertEqual(receipt["status"], "installed")
+            self.assertEqual(receipt["agent_changes"], list(AGENT_FILES))
+            self.assertEqual(receipt["agents_tree_sha256"], build_agent_manifest(extracted / "codex-agents")["tree_sha256"])
 
             invoked = subprocess.run(
                 [str(active_runtime), "--version"],
@@ -192,6 +210,27 @@ class BundleInstallerTests(unittest.TestCase):
             repeated = run_installer(extracted, codex_home, conductor_home, "--json")
             self.assertEqual(repeated.returncode, 0, repeated.stderr)
             self.assertEqual(json.loads(repeated.stdout)["status"], "already-installed")
+
+            missing_name = AGENT_FILES[0]
+            (active_agents / missing_name).unlink()
+            repaired = run_installer(
+                extracted,
+                codex_home,
+                conductor_home,
+                "--allow-writes",
+                "--approve",
+                "conductor-install",
+                "--json",
+            )
+            self.assertEqual(repaired.returncode, 0, repaired.stderr)
+            repair_result = json.loads(repaired.stdout)
+            self.assertEqual(repair_result["changes"], ["agents"])
+            self.assertEqual(repair_result["agent_changes"], [missing_name])
+            self.assertEqual(
+                (active_agents / missing_name).read_bytes(),
+                (extracted / "codex-agents" / missing_name).read_bytes(),
+            )
+            self.assertEqual(unrelated_agent.read_text(encoding="utf-8"), "personal = true\n")
 
             displayed = run_installer(extracted, codex_home, conductor_home)
             self.assertEqual(displayed.returncode, 0, displayed.stderr)
@@ -305,16 +344,87 @@ class BundleInstallerTests(unittest.TestCase):
             self.assertEqual(tampered.returncode, 2)
             self.assertIn("does not match the release manifest", tampered.stderr)
 
+    def test_bundle_installer_gates_differing_managed_agent_and_preserves_others(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            extracted = package_and_extract(root)
+            codex_home = root / "codex-home"
+            conductor_home = root / "conductor-home"
+            installed = run_installer(
+                extracted,
+                codex_home,
+                conductor_home,
+                "--allow-writes",
+                "--approve",
+                "conductor-install",
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+
+            active_agents = codex_home / "agents"
+            changed_name = AGENT_FILES[0]
+            changed_agent = active_agents / changed_name
+            changed_agent.write_text("corrupt\n", encoding="utf-8")
+            unrelated = active_agents / "unrelated.toml"
+            unrelated.write_text("keep = true\n", encoding="utf-8")
+
+            denied = run_installer(
+                extracted,
+                codex_home,
+                conductor_home,
+                "--allow-writes",
+                "--approve",
+                "conductor-install",
+                "--json",
+            )
+            self.assertEqual(denied.returncode, 2)
+            self.assertIn("--replace", denied.stderr)
+            self.assertEqual(changed_agent.read_text(encoding="utf-8"), "corrupt\n")
+
+            missing_update_approval = run_installer(
+                extracted,
+                codex_home,
+                conductor_home,
+                "--replace",
+                "--allow-writes",
+                "--approve",
+                "conductor-install",
+            )
+            self.assertEqual(missing_update_approval.returncode, 2)
+            self.assertIn("conductor-update", missing_update_approval.stderr)
+
+            replaced = run_installer(
+                extracted,
+                codex_home,
+                conductor_home,
+                "--replace",
+                "--allow-writes",
+                "--approve",
+                "conductor-install",
+                "--approve",
+                "conductor-update",
+                "--json",
+            )
+            self.assertEqual(replaced.returncode, 0, replaced.stderr)
+            result = json.loads(replaced.stdout)
+            self.assertEqual(result["changes"], ["agents"])
+            self.assertEqual(result["agent_changes"], [changed_name])
+            self.assertEqual(changed_agent.read_bytes(), (extracted / "codex-agents" / changed_name).read_bytes())
+            self.assertEqual(unrelated.read_text(encoding="utf-8"), "keep = true\n")
+
     def test_bundle_validation_rejects_duplicate_json_and_non_text_skill_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             extracted = package_and_extract(root)
             manifest_path = extracted / "release-manifest.json"
             manifest = manifest_path.read_text(encoding="utf-8")
-            manifest_path.write_text(manifest.replace('{\n  "installer"', '{\n  "schema": "duplicate",\n  "installer"', 1), encoding="utf-8")
+            manifest_path.write_text(
+                manifest.replace("{\n", '{\n  "schema": "duplicate",\n', 1),
+                encoding="utf-8",
+            )
             duplicate = run_installer(extracted, root / "codex", root / "conductor", "--dry-run")
             self.assertEqual(duplicate.returncode, 2)
             self.assertIn("duplicate JSON key", duplicate.stderr)
+            manifest_path.write_text(manifest, encoding="utf-8")
 
             skill = root / "unsafe-skill"
             skill.mkdir()
@@ -322,6 +432,43 @@ class BundleInstallerTests(unittest.TestCase):
             (skill / "run.py").write_text("print('unsafe')\n", encoding="utf-8")
             with self.assertRaisesRegex(InstallError, "non-text or sensitive"):
                 build_skill_manifest(skill)
+
+            agents = root / "unsafe-agents"
+            agents.mkdir()
+            (agents / "wrong-name.toml").write_text(
+                'name = "different"\ndescription = "x"\nsandbox_mode = "read-only"\n'
+                'developer_instructions = "x"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(InstallError, "name must match"):
+                build_agent_manifest(agents)
+
+            (agents / "wrong-name.toml").unlink()
+            (agents / "Bad.toml").write_text(
+                'name = "Bad"\ndescription = "x"\nsandbox_mode = "read-only"\n'
+                'developer_instructions = "x"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(InstallError, "name is invalid"):
+                build_agent_manifest(agents)
+
+            (agents / "Bad.toml").unlink()
+            (agents / "unsafe.toml").write_text(
+                'name = "unsafe"\ndescription = "x"\nsandbox_mode = "danger-full-access"\n'
+                'developer_instructions = "x"\n',
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(InstallError, "sandbox_mode is unsupported"):
+                build_agent_manifest(agents)
+
+            (extracted / "codex-agents" / "unexpected.toml").write_text(
+                'name = "unexpected"\ndescription = "x"\nsandbox_mode = "read-only"\n'
+                'developer_instructions = "x"\n',
+                encoding="utf-8",
+            )
+            unexpected = run_installer(extracted, root / "third-codex", root / "third-conductor", "--dry-run")
+            self.assertEqual(unexpected.returncode, 2)
+            self.assertIn("does not match the release manifest", unexpected.stderr)
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlink checks require symlink support")
     def test_bundle_installer_rejects_symlinked_destination_components(self):
@@ -337,6 +484,18 @@ class BundleInstallerTests(unittest.TestCase):
             result = run_installer(extracted, codex_home, conductor_home, "--dry-run")
             self.assertEqual(result.returncode, 2)
             self.assertIn("contains a symlink", result.stderr)
+
+            agents_codex_home = root / "agents-codex-home"
+            agents_codex_home.mkdir()
+            (agents_codex_home / "agents").symlink_to(target, target_is_directory=True)
+            agents_result = run_installer(
+                extracted,
+                agents_codex_home,
+                root / "agents-conductor-home",
+                "--dry-run",
+            )
+            self.assertEqual(agents_result.returncode, 2)
+            self.assertIn("contains a symlink", agents_result.stderr)
 
     @unittest.skipUnless(hasattr(os, "symlink"), "symlink checks require symlink support")
     def test_bundle_installer_rejects_symlinked_roots_and_bundle_files(self):
@@ -383,6 +542,32 @@ class BundleInstallerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("destinations overlap", result.stderr)
 
+    @unittest.skipUnless(hasattr(os, "symlink"), "symlink checks require symlink support")
+    def test_bundle_installer_rejects_exact_release_behind_leaf_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            extracted = package_and_extract(root)
+            codex_home = root / "codex-home"
+            conductor_home = root / "conductor-home"
+            installed = run_installer(
+                extracted,
+                codex_home,
+                conductor_home,
+                "--allow-writes",
+                "--approve",
+                "conductor-install",
+                "--json",
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            release = Path(json.loads(installed.stdout)["destinations"]["release"])
+            relocated = root / "relocated-release"
+            release.rename(relocated)
+            release.symlink_to(relocated, target_is_directory=True)
+
+            result = run_installer(extracted, codex_home, conductor_home, "--dry-run")
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("release destination must not be a symlink", result.stderr)
+
     def test_atomic_replacement_restores_prior_targets_after_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -403,10 +588,34 @@ class BundleInstallerTests(unittest.TestCase):
 
             with patch("tools.install_bundle.os.replace", side_effect=fail_second):
                 with self.assertRaisesRegex(OSError, "injected commit failure"):
-                    _commit_replacements([(staged_first, first), (staged_second, second)])
+                    _commit_replacements([(staged_first, first, True), (staged_second, second, True)])
             self.assertEqual(first.read_text(encoding="utf-8"), "old-first")
             self.assertEqual(second.read_text(encoding="utf-8"), "old-second")
             self.assertFalse(list(root.glob(".*.backup-*")))
+
+            staged_first.write_text("new-first", encoding="utf-8")
+            staged_second.write_text("new-second", encoding="utf-8")
+
+            def interrupt_second(source, destination):
+                if Path(source) == staged_second:
+                    raise KeyboardInterrupt("injected interrupt")
+                return real_replace(source, destination)
+
+            with patch("tools.install_bundle.os.replace", side_effect=interrupt_second):
+                with self.assertRaisesRegex(KeyboardInterrupt, "injected interrupt"):
+                    _commit_replacements([(staged_first, first, True), (staged_second, second, True)])
+            self.assertEqual(first.read_text(encoding="utf-8"), "old-first")
+            self.assertEqual(second.read_text(encoding="utf-8"), "old-second")
+            self.assertFalse(list(root.glob(".*.backup-*")))
+
+            staged_missing = root / "staged-missing"
+            appeared = root / "appeared"
+            staged_missing.write_text("managed", encoding="utf-8")
+            appeared.write_text("concurrent", encoding="utf-8")
+            with self.assertRaisesRegex(InstallError, "changed after preflight"):
+                _commit_replacements([(staged_missing, appeared, False)])
+            self.assertEqual(appeared.read_text(encoding="utf-8"), "concurrent")
+            self.assertEqual(staged_missing.read_text(encoding="utf-8"), "managed")
 
 
 if __name__ == "__main__":

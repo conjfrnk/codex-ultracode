@@ -1,0 +1,6 @@
+interface:
+  display_name: "Change Contract"
+  short_description: "Lock behavior, ownership, and proof"
+  default_prompt: "Use $change-contract to define the behavior, owner, and proof surface before this change."
+policy:
+  allow_implicit_invocation: true

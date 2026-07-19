@@ -5,6 +5,7 @@ import argparse
 import filecmp
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,21 +21,28 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from conductor_runtime.errors import ConductorError  # noqa: E402
 from tools.release_provenance import release_report_template_sha256, repository_source_sha256  # noqa: E402
-from tools.write_checksums import ChecksumError, regular_file_record, regular_files_equal  # noqa: E402
+from tools.write_checksums import ChecksumError, regular_files_equal  # noqa: E402
 
 
 RUFF_VERSION = "0.15.21"
 MYPY_VERSION = "2.3.0"
 COVERAGE_VERSION = "7.15.0"
 JSONSCHEMA_VERSION = "4.26.0"
+CODEX_CLI_VERSION = "0.144.5"
+EVIDENCE_SCHEMA = "conductor.verification_evidence.v2"
+CODEX_VERSION = re.compile(r"^codex-cli %s$" % re.escape(CODEX_CLI_VERSION))
 COVERAGE_MINIMUM_PERCENT = 80
 CORE_TEST_MODULES = (
+    "tests.test_agent_performance_evals",
+    "tests.test_agent_performance_plugin",
     "tests.test_core_runtime",
     "tests.test_core_adversarial",
+    "tests.test_core_results",
     "tests.test_core_cli",
     "tests.test_core_policy_security",
     "tests.test_core_stage_lifecycle",
     "tests.test_bundle_installer",
+    "tests.test_custom_agents",
     "tests.test_plugin_package",
     "tests.test_python_support",
     "tests.test_release_checksums",
@@ -42,18 +50,14 @@ CORE_TEST_MODULES = (
 )
 HASH_SEEDS = ("0", "1", "42", "random")
 DIST_ARTIFACTS = (
-    "conductor-runtime.pyz",
-    "conductor-extras.pyz",
     "codex-conductor-bundle.zip",
     "codex-conductor-marketplace.zip",
-    "release-manifest.json",
-    "skill.zip",
+    "conductor-extras.pyz",
     "SHA256SUMS",
 )
 ARTIFACT_REFRESH_COMMANDS = (
     "python3 -B tools/package_runtime.py dist",
     "python3 -B tools/package_extras.py dist",
-    "python3 -B tools/package_skill.py codex-conductor dist",
     "python3 -B tools/write_checksums.py dist",
 )
 
@@ -133,6 +137,29 @@ def _jsonschema_python():
         "jsonschema==%s" % JSONSCHEMA_VERSION,
         "python",
     ]
+
+
+def _codex_cli():
+    executable = shutil.which("codex")
+    if executable is None:
+        raise VerificationError("Codex CLI is required for custom-agent discovery verification")
+    completed = subprocess.run(
+        [executable, "--version"],
+        cwd=PROJECT_ROOT,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    version = completed.stdout.strip()
+    if completed.returncode != 0 or CODEX_VERSION.fullmatch(version) is None:
+        raise VerificationError(
+            "Codex CLI version differs from required %s: %r"
+            % (CODEX_CLI_VERSION, version[:200])
+        )
+    return executable, version
 
 
 def _run_coverage_tests(coverage_prefix, *, hash_seed=None) -> None:
@@ -238,11 +265,25 @@ def _verify_documentation() -> None:
 def _build_artifacts(destination: Path) -> None:
     _run([sys.executable, "-B", "tools/package_runtime.py", destination])
     _run([sys.executable, "-B", "tools/package_extras.py", destination])
-    _run([sys.executable, "-B", "tools/package_skill.py", "codex-conductor", destination])
     _run([sys.executable, "-B", "tools/write_checksums.py", destination])
 
 
 def _compare_artifacts(left: Path, right: Path, label: str) -> None:
+    expected = set(DIST_ARTIFACTS)
+    for directory, side in ((left, "left"), (right, "right")):
+        try:
+            observed = {path.name for path in directory.iterdir()}
+        except OSError as exc:
+            raise VerificationError("%s %s artifact inventory is unreadable" % (label, side)) from exc
+        if observed != expected:
+            missing = sorted(expected - observed)
+            unexpected = sorted(observed - expected)
+            details = []
+            if missing:
+                details.append("missing %s" % ", ".join(missing))
+            if unexpected:
+                details.append("unexpected %s" % ", ".join(unexpected))
+            raise VerificationError("%s %s inventory differs: %s" % (label, side, "; ".join(details)))
     drift = []
     for name in DIST_ARTIFACTS:
         left_path = left / name
@@ -299,10 +340,16 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def _evidence_payload(args, *, source_sha256=None, report_template_digest=None):
+def _evidence_payload(
+    args,
+    *,
+    source_sha256=None,
+    report_template_digest=None,
+    codex_version="unavailable",
+):
     from conductor_runtime import __version__
     from tools.release_provenance import (
-        release_checksum_records,
+        release_artifact_binding,
         repository_source_sha256,
     )
 
@@ -311,17 +358,12 @@ def _evidence_payload(args, *, source_sha256=None, report_template_digest=None):
     checksums_sha256 = None
     core_archive_bytes = None
     if not args.skip_artifacts:
-        artifacts, checksums_sha256 = release_checksum_records(PROJECT_ROOT)
-        core_record = regular_file_record(PROJECT_ROOT / "dist" / "conductor-runtime.pyz")
-        expected_core_sha256 = next(
-            item["sha256"] for item in artifacts if item["name"] == "conductor-runtime.pyz"
-        )
-        if core_record["sha256"] != expected_core_sha256:
-            raise VerificationError("core archive changed while verification evidence was assembled")
+        artifacts, checksums_sha256, core_record = release_artifact_binding(PROJECT_ROOT)
         core_archive_bytes = core_record["size_bytes"]
     return {
-        "schema": "conductor.verification_evidence.v1",
+        "schema": EVIDENCE_SCHEMA,
         "runtime_version": __version__,
+        "codex_version": codex_version,
         "mode": "quick" if args.quick else "full",
         "artifacts_checked": not args.skip_artifacts,
         "source_sha256": source_sha256 or repository_source_sha256(PROJECT_ROOT),
@@ -354,6 +396,7 @@ def _expected_checks(*, quick: bool, skip_artifacts: bool):
         "ruff",
         "mypy-core",
         "local-skill-audit",
+        "codex-custom-agent-discovery",
         "test-shard-ownership",
         "documentation-sync",
         "workflow-contract-fixtures",
@@ -435,6 +478,7 @@ def main(argv=None) -> int:
             raise VerificationError("--evidence requires the full verification and artifact gate")
         source_sha256 = repository_source_sha256(PROJECT_ROOT)
         report_template_digest = release_report_template_sha256(PROJECT_ROOT)
+        codex_executable, codex_version = _codex_cli()
         ruff = _tool_prefix("ruff", RUFF_VERSION)
         mypy = _tool_prefix("mypy", MYPY_VERSION)
         coverage = _tool_prefix("coverage", COVERAGE_VERSION)
@@ -442,6 +486,15 @@ def main(argv=None) -> int:
         _run([*ruff, "check", "."])
         _run([*mypy, "conductor_runtime"])
         _run([sys.executable, "-B", "tools/run_local_audit.py"])
+        _run(
+            [
+                sys.executable,
+                "-B",
+                "tools/check_codex_agents.py",
+                "--codex",
+                codex_executable,
+            ]
+        )
         _run([sys.executable, "-B", "-W", "error", "tools/run_test_shard.py", "--validate"])
         _verify_documentation()
         _verify_workflow_examples()
@@ -458,6 +511,7 @@ def main(argv=None) -> int:
                 args,
                 source_sha256=source_sha256,
                 report_template_digest=report_template_digest,
+                codex_version=codex_version,
             )
             _require_unchanged_source(source_sha256)
             _require_unchanged_report_template(report_template_digest)

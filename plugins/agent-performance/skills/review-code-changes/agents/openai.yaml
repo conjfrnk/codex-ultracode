@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Code Changes"
+  short_description: "Find consequential defects with evidence"
+  default_prompt: "Use $review-code-changes to review this diff for consequential defects and regression risk."
+policy:
+  allow_implicit_invocation: true

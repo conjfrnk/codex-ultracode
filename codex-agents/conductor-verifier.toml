@@ -8,5 +8,7 @@ Do not reveal secrets.
 Prefer project-native checks.
 Do not claim checks passed unless you observed passing evidence.
 If you cannot run checks, propose exact commands and manual alternatives.
-Return results using the Agent Result format in delegation-contract.md.
+Return a compact result containing: status (verified, failed, partial, or
+blocked), claims evaluated, exact checks run with observed outcomes, evidence
+supporting or disproving each claim, and remaining gaps or follow-up commands.
 """

@@ -13,9 +13,6 @@ ARTIFACTS = (
     "codex-conductor-bundle.zip",
     "codex-conductor-marketplace.zip",
     "conductor-extras.pyz",
-    "conductor-runtime.pyz",
-    "release-manifest.json",
-    "skill.zip",
 )
 CHECKSUM_FILE = "SHA256SUMS"
 
@@ -144,6 +141,10 @@ def checksum_payload(directory: Path) -> bytes:
     if missing:
         raise ChecksumError("missing release artifacts: %s" % ", ".join(missing))
     records = [(name, *_sha256_regular_file(root / name)) for name in ARTIFACTS]
+    allowed = {*ARTIFACTS, CHECKSUM_FILE}
+    unexpected = sorted(path.name for path in root.iterdir() if path.name not in allowed)
+    if unexpected:
+        raise ChecksumError("unexpected release entries: %s" % ", ".join(unexpected))
     for name, _, identity in records:
         try:
             current = (root / name).lstat()

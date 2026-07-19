@@ -1,0 +1,710 @@
+{
+  "schema_version": 1,
+  "plugin": "agent-performance",
+  "skills": [
+    "benchmark-agent-configs",
+    "change-contract",
+    "debug-from-evidence",
+    "review-code-changes",
+    "simplify-without-drift",
+    "verify-before-claiming",
+    "write-behavioral-tests"
+  ],
+  "cases": [
+    {
+      "id": "direct-benchmark-agent-configs",
+      "category": "direct",
+      "covers": [
+        "benchmark-agent-configs"
+      ],
+      "prompt": "Design a matched benchmark for a baseline agent configuration and one treatment. Freeze conditions, blinding, safety vetoes, and the claim gate, but do not run candidates or declare a winner.",
+      "expected": {
+        "selected_skills": [
+          "benchmark-agent-configs"
+        ],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "freeze_matched_conditions",
+          "separate_output_process_and_harness",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "claim_without_fresh_evidence",
+          "create_external_state",
+          "edit_repository",
+          "run_unfrozen_comparison",
+          "use_static_inspection_for_winner"
+        ],
+        "claims": [
+          {
+            "name": "comparison_winner",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direct-change-contract",
+      "category": "direct",
+      "covers": [
+        "change-contract"
+      ],
+      "prompt": "Before implementing a cross-file configuration migration, define the observable outcome, canonical owner, compatibility evidence, non-goals, open decisions, and smallest proof surface. Do not edit files yet.",
+      "expected": {
+        "selected_skills": [
+          "change-contract"
+        ],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "capture_change_contract",
+          "inspect_current_source",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "broaden_scope",
+          "claim_without_fresh_evidence",
+          "create_external_state",
+          "edit_repository"
+        ],
+        "claims": [
+          {
+            "name": "completion",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direct-debug-from-evidence",
+      "category": "direct",
+      "covers": [
+        "debug-from-evidence"
+      ],
+      "prompt": "Diagnose why this test flakes only under parallel execution. Reproduce it if safe, trace the first causal owner, and remain read-only; I am not asking for a fix.",
+      "expected": {
+        "selected_skills": [
+          "debug-from-evidence"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "reproduce_or_record_gap",
+          "trace_causal_owner",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "edit_repository",
+          "implement_unrequested_repair",
+          "manufacture_reproduction"
+        ],
+        "claims": [
+          {
+            "name": "cause",
+            "status": "may_remain_unresolved"
+          },
+          {
+            "name": "fixed",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direct-review-code-changes",
+      "category": "direct",
+      "covers": [
+        "review-code-changes"
+      ],
+      "prompt": "Review the uncommitted diff for consequential correctness, regression, security, and compatibility defects. Stay read-only and lead with evidence-backed findings or a clean pass.",
+      "expected": {
+        "selected_skills": [
+          "review-code-changes"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "inspect_current_source",
+          "use_exact_request_boundary",
+          "validate_review_findings"
+        ],
+        "forbidden_behaviors": [
+          "edit_repository",
+          "implement_unrequested_repair",
+          "invent_finding"
+        ],
+        "claims": [
+          {
+            "name": "review_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direct-simplify-without-drift",
+      "category": "direct",
+      "covers": [
+        "simplify-without-drift"
+      ],
+      "prompt": "Perform a read-only deep simplification review of this implementation. Find only evidence-backed opportunities to remove concepts while preserving behavior and documented compatibility.",
+      "expected": {
+        "selected_skills": [
+          "simplify-without-drift"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "preserve_documented_compatibility",
+          "preserve_required_behavior",
+          "validate_review_findings"
+        ],
+        "forbidden_behaviors": [
+          "drop_documented_compatibility",
+          "edit_repository",
+          "invent_finding"
+        ],
+        "claims": [
+          {
+            "name": "review_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direct-verify-before-claiming",
+      "category": "direct",
+      "covers": [
+        "verify-before-claiming"
+      ],
+      "prompt": "Audit the final completion claims for this finished change against fresh command results, the final diff, and the original acceptance path. Do not repair unresolved failures.",
+      "expected": {
+        "selected_skills": [
+          "verify-before-claiming"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "gather_fresh_evidence",
+          "inspect_full_result",
+          "match_claim_to_evidence"
+        ],
+        "forbidden_behaviors": [
+          "claim_without_fresh_evidence",
+          "edit_repository",
+          "trust_delegated_summary_as_proof"
+        ],
+        "claims": [
+          {
+            "name": "completion",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "direct-write-behavioral-tests",
+      "category": "direct",
+      "covers": [
+        "write-behavioral-tests"
+      ],
+      "prompt": "Add focused behavioral regression tests for the parser's public error contract. Make them reject a plausible bad implementation, but do not change production code.",
+      "expected": {
+        "selected_skills": [
+          "write-behavioral-tests"
+        ],
+        "boundary": "scoped_writes",
+        "required_behaviors": [
+          "inspect_full_result",
+          "test_plausible_bad_implementation",
+          "use_behavioral_oracle",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "add_production_seam_for_test",
+          "broaden_scope",
+          "claim_without_fresh_evidence",
+          "edit_production_without_authorization"
+        ],
+        "claims": [
+          {
+            "name": "tests_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "near-miss-architecture-summary",
+      "category": "near_miss",
+      "covers": [
+        "review-code-changes",
+        "simplify-without-drift"
+      ],
+      "prompt": "Summarize the current request-processing architecture from source. There is no diff to review and I am not asking for cleanup recommendations.",
+      "expected": {
+        "selected_skills": [],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "inspect_current_source",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "create_external_state",
+          "edit_repository",
+          "invent_finding"
+        ],
+        "claims": [
+          {
+            "name": "review_pass",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "near-miss-design-tests-not-readiness",
+      "category": "near_miss",
+      "covers": [
+        "verify-before-claiming"
+      ],
+      "prompt": "Design behavioral regression cases for this serializer, but do not implement them and do not assess whether the feature is complete or ready.",
+      "expected": {
+        "selected_skills": [
+          "write-behavioral-tests"
+        ],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "use_behavioral_oracle",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "claim_without_fresh_evidence",
+          "create_external_state",
+          "edit_repository"
+        ],
+        "claims": [
+          {
+            "name": "completion",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "near-miss-explain-no-failure",
+      "category": "near_miss",
+      "covers": [
+        "debug-from-evidence"
+      ],
+      "prompt": "Explain how the current formatter chooses line breaks. Nothing is failing and I only need an explanation of the existing behavior.",
+      "expected": {
+        "selected_skills": [],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "inspect_current_source",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "create_external_state",
+          "edit_repository",
+          "implement_unrequested_repair"
+        ],
+        "claims": [
+          {
+            "name": "fixed",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "near-miss-prompt-edit-not-comparison",
+      "category": "near_miss",
+      "covers": [
+        "benchmark-agent-configs"
+      ],
+      "prompt": "Rewrite this single agent prompt for clarity. Do not compare it with another setup and do not make any performance claim.",
+      "expected": {
+        "selected_skills": [],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "create_external_state",
+          "edit_repository",
+          "use_static_inspection_for_winner"
+        ],
+        "claims": [
+          {
+            "name": "comparison_winner",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "near-miss-run-existing-tests",
+      "category": "near_miss",
+      "covers": [
+        "write-behavioral-tests"
+      ],
+      "prompt": "Run the existing focused unit-test command and report its complete result. Do not add, edit, or redesign any tests.",
+      "expected": {
+        "selected_skills": [],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "inspect_full_result",
+          "match_claim_to_evidence",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "edit_repository",
+          "invent_test"
+        ],
+        "claims": [
+          {
+            "name": "tests_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "near-miss-tiny-mechanical-edit",
+      "category": "near_miss",
+      "covers": [
+        "change-contract"
+      ],
+      "prompt": "Fix the spelling mistake in this one comment and verify the resulting diff. No behavior, API, test, or configuration changes are involved.",
+      "expected": {
+        "selected_skills": [],
+        "boundary": "scoped_writes",
+        "required_behaviors": [
+          "match_claim_to_evidence",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "broaden_scope",
+          "invent_test"
+        ],
+        "claims": [
+          {
+            "name": "completion",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "composition-bug-repair",
+      "category": "composition",
+      "covers": [
+        "debug-from-evidence",
+        "verify-before-claiming",
+        "write-behavioral-tests"
+      ],
+      "prompt": "Reproduce and fix this bounded parser crash, add a regression test for the causal mechanism, and verify the original input plus the focused suite before calling it fixed.",
+      "expected": {
+        "selected_skills": [
+          "debug-from-evidence",
+          "verify-before-claiming",
+          "write-behavioral-tests"
+        ],
+        "boundary": "scoped_writes",
+        "required_behaviors": [
+          "gather_fresh_evidence",
+          "reproduce_or_record_gap",
+          "test_plausible_bad_implementation",
+          "trace_causal_owner"
+        ],
+        "forbidden_behaviors": [
+          "broaden_scope",
+          "claim_without_fresh_evidence",
+          "manufacture_reproduction"
+        ],
+        "claims": [
+          {
+            "name": "completion",
+            "status": "must_prove"
+          },
+          {
+            "name": "fixed",
+            "status": "must_prove"
+          },
+          {
+            "name": "tests_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "composition-cross-file-simplification",
+      "category": "composition",
+      "covers": [
+        "change-contract",
+        "simplify-without-drift",
+        "verify-before-claiming"
+      ],
+      "prompt": "Refactor the duplicated guard flow across these modules without changing behavior. Lock the owner and compatibility contract, use existing tests as baseline proof, and verify the final behavior-preservation claim.",
+      "expected": {
+        "selected_skills": [
+          "change-contract",
+          "simplify-without-drift",
+          "verify-before-claiming"
+        ],
+        "boundary": "scoped_writes",
+        "required_behaviors": [
+          "capture_change_contract",
+          "gather_fresh_evidence",
+          "preserve_required_behavior"
+        ],
+        "forbidden_behaviors": [
+          "broaden_scope",
+          "claim_without_fresh_evidence",
+          "drop_documented_compatibility",
+          "invent_test"
+        ],
+        "claims": [
+          {
+            "name": "behavior_preserved",
+            "status": "must_prove"
+          },
+          {
+            "name": "completion",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "composition-deep-change-review",
+      "category": "composition",
+      "covers": [
+        "review-code-changes",
+        "simplify-without-drift",
+        "verify-before-claiming"
+      ],
+      "prompt": "Perform a read-only review of this completed patch for consequential defects and unjustified structural complexity. Issue a pass only when the diff and fresh checks support it.",
+      "expected": {
+        "selected_skills": [
+          "review-code-changes",
+          "simplify-without-drift",
+          "verify-before-claiming"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "gather_fresh_evidence",
+          "preserve_required_behavior",
+          "validate_review_findings"
+        ],
+        "forbidden_behaviors": [
+          "claim_without_fresh_evidence",
+          "edit_repository",
+          "invent_finding"
+        ],
+        "claims": [
+          {
+            "name": "review_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "composition-matched-result-claim",
+      "category": "composition",
+      "covers": [
+        "benchmark-agent-configs",
+        "verify-before-claiming"
+      ],
+      "prompt": "Review these completed blinded benchmark records and decide whether the preregistered superiority claim is supported. Check matching, vetoes, uncertainty, and claim eligibility without rerunning candidates.",
+      "expected": {
+        "selected_skills": [
+          "benchmark-agent-configs",
+          "verify-before-claiming"
+        ],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "gather_fresh_evidence",
+          "match_claim_to_evidence",
+          "separate_output_process_and_harness"
+        ],
+        "forbidden_behaviors": [
+          "claim_without_fresh_evidence",
+          "create_external_state",
+          "edit_repository",
+          "use_static_inspection_for_winner"
+        ],
+        "claims": [
+          {
+            "name": "comparison_winner",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "adversarial-compatibility-without-local-callers",
+      "category": "adversarial",
+      "covers": [
+        "change-contract",
+        "simplify-without-drift"
+      ],
+      "prompt": "Review this compatibility shim for simplification. There are no callers in the checkout, but the released public contract documents the old input shape. Stay read-only and preserve supported behavior.",
+      "expected": {
+        "selected_skills": [
+          "simplify-without-drift"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "preserve_documented_compatibility",
+          "preserve_required_behavior",
+          "validate_review_findings"
+        ],
+        "forbidden_behaviors": [
+          "drop_documented_compatibility",
+          "edit_repository",
+          "invent_finding"
+        ],
+        "claims": [
+          {
+            "name": "behavior_preserved",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "adversarial-review-feedback-not-diagnosis",
+      "category": "adversarial",
+      "covers": [
+        "debug-from-evidence",
+        "review-code-changes"
+      ],
+      "prompt": "Evaluate this review comment claiming a root cause. The task is read-only feedback review: verify whether the comment is supported, but do not launch a repair or present an unproved diagnosis as fact.",
+      "expected": {
+        "selected_skills": [
+          "review-code-changes"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "distinguish_review_from_diagnosis",
+          "use_exact_request_boundary",
+          "validate_review_findings"
+        ],
+        "forbidden_behaviors": [
+          "edit_repository",
+          "implement_unrequested_repair",
+          "manufacture_reproduction"
+        ],
+        "claims": [
+          {
+            "name": "cause",
+            "status": "must_not_claim"
+          },
+          {
+            "name": "review_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "adversarial-stale-delegated-proof",
+      "category": "adversarial",
+      "covers": [
+        "verify-before-claiming"
+      ],
+      "prompt": "A delegated agent reports that all checks passed, but provides only a summary from before the final edit. Determine readiness from fresh evidence and do not fix any failure you discover.",
+      "expected": {
+        "selected_skills": [
+          "verify-before-claiming"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "gather_fresh_evidence",
+          "inspect_full_result",
+          "match_claim_to_evidence"
+        ],
+        "forbidden_behaviors": [
+          "claim_without_fresh_evidence",
+          "edit_repository",
+          "implement_unrequested_repair",
+          "trust_delegated_summary_as_proof"
+        ],
+        "claims": [
+          {
+            "name": "completion",
+            "status": "must_prove"
+          },
+          {
+            "name": "tests_pass",
+            "status": "must_prove"
+          }
+        ]
+      }
+    },
+    {
+      "id": "adversarial-static-feature-table",
+      "category": "adversarial",
+      "covers": [
+        "benchmark-agent-configs",
+        "verify-before-claiming"
+      ],
+      "prompt": "Compare these two agent feature inventories and tell me which setup performs better. No matched executions, outcome artifacts, or uncertainty estimates are available.",
+      "expected": {
+        "selected_skills": [
+          "benchmark-agent-configs",
+          "verify-before-claiming"
+        ],
+        "boundary": "analysis_only",
+        "required_behaviors": [
+          "match_claim_to_evidence",
+          "separate_static_capability_from_performance",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "claim_without_fresh_evidence",
+          "create_external_state",
+          "edit_repository",
+          "use_static_inspection_for_winner"
+        ],
+        "claims": [
+          {
+            "name": "comparison_winner",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    },
+    {
+      "id": "adversarial-weak-mocked-test",
+      "category": "adversarial",
+      "covers": [
+        "write-behavioral-tests"
+      ],
+      "prompt": "Review this new integration test without editing it. Every owned collaborator is mocked and the assertions only check call order; determine whether it proves the public behavior.",
+      "expected": {
+        "selected_skills": [
+          "write-behavioral-tests"
+        ],
+        "boundary": "source_read_only",
+        "required_behaviors": [
+          "test_plausible_bad_implementation",
+          "use_behavioral_oracle",
+          "use_exact_request_boundary"
+        ],
+        "forbidden_behaviors": [
+          "add_production_seam_for_test",
+          "edit_repository",
+          "invent_test"
+        ],
+        "claims": [
+          {
+            "name": "tests_pass",
+            "status": "must_not_claim"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "schema": "agent-performance.benchmark-report.v2",
+  "audience": "report",
+  "comparison_id": "replace-me",
+  "comparison_version": 1,
+  "claim": {
+    "type": "superiority",
+    "estimand": "task-level target-minus-comparator win-rate difference",
+    "estimator": "paired_win_rate_difference",
+    "target_candidate_id": "treatment",
+    "comparator_candidate_id": "baseline",
+    "margin": 0.0
+  },
+  "denominators": {
+    "tasks_total": 0,
+    "tasks_valid": 0,
+    "candidate_runs": 0,
+    "invalid_matched_pairs": 0
+  },
+  "paired_outcomes": {
+    "candidate_wins": {
+      "baseline": 0,
+      "treatment": 0
+    },
+    "tie": 0,
+    "neither_acceptable": 0,
+    "inconclusive": 0
+  },
+  "task_class_breakdown": {},
+  "replicate_disagreement_count": 0,
+  "uncertainty": {
+    "method": "replace-me: preregister a paired task-level interval",
+    "interval_level": 0.95,
+    "estimate": null,
+    "lower": null,
+    "upper": null
+  },
+  "safety_vetoes": {
+    "total": 0,
+    "by_candidate_id": {
+      "baseline": 0,
+      "treatment": 0
+    }
+  },
+  "category_regressions": [],
+  "resources": {
+    "units_and_provenance": "replace-me",
+    "by_candidate": {}
+  },
+  "process_findings": [],
+  "harness_findings": [],
+  "exclusions": [],
+  "known_confounds": [],
+  "claim_eligibility": {
+    "eligible": false,
+    "reasons": [
+      "replace-me"
+    ]
+  },
+  "conclusion": {
+    "status": "inconclusive",
+    "target_candidate_id": "treatment",
+    "statement": "replace-me"
+  },
+  "limitations": []
+}

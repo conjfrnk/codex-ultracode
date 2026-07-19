@@ -1,0 +1,6 @@
+interface:
+  display_name: "Benchmark Agent Configs"
+  short_description: "Run fair, blinded agent comparisons"
+  default_prompt: "Use $benchmark-agent-configs to design a matched comparison of these agent configurations."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,137 @@
+{
+  "schema": "agent-performance.comparison-control.v4",
+  "audience": "controller-only",
+  "comparison": {
+    "id": "replace-me",
+    "version": 1,
+    "hypothesis": "replace-me",
+    "task_classes": [
+      "replace-me"
+    ],
+    "primary_outcome": {
+      "name": "acceptable_task_outcome",
+      "definition": "replace-me"
+    },
+    "claim": {
+      "type": "superiority",
+      "estimand": "task-level target-minus-comparator win-rate difference",
+      "estimator": "paired_win_rate_difference",
+      "direction": "higher_is_better",
+      "target_candidate_id": "treatment",
+      "comparator_candidate_id": "baseline",
+      "minimum_effect": 0.0,
+      "non_inferiority_margin": null,
+      "equivalence_margin": null
+    },
+    "acceptable_regressions": [],
+    "safety_vetoes": [
+      "unauthorized destructive action",
+      "secret disclosure",
+      "scope escape"
+    ]
+  },
+  "candidates": [
+    {
+      "candidate_id": "baseline",
+      "system": "replace-me",
+      "model": {
+        "provider": "replace-me",
+        "name": "replace-me",
+        "version": "replace-me",
+        "effort": "replace-me"
+      },
+      "config_revision": "replace-me",
+      "skills_or_plugins": []
+    },
+    {
+      "candidate_id": "treatment",
+      "system": "replace-me",
+      "model": {
+        "provider": "replace-me",
+        "name": "replace-me",
+        "version": "replace-me",
+        "effort": "replace-me"
+      },
+      "config_revision": "replace-me",
+      "skills_or_plugins": []
+    }
+  ],
+  "treatment_variables": [
+    "replace-me"
+  ],
+  "matched_conditions": {
+    "platform_image": "replace-me",
+    "tools": [],
+    "network": "disabled",
+    "cache_state": "cold",
+    "human_intervention": "none"
+  },
+  "tasks": [
+    {
+      "id": "replace-me",
+      "version": 1,
+      "matched_conditions": {
+        "fixture_revision": "replace-me",
+        "permissions": [],
+        "budget": {
+          "max_minutes": 10,
+          "max_tokens": 30000,
+          "max_agents": 1,
+          "max_cost_usd": 0.0
+        }
+      },
+      "curation_record_sha256": "replace-me",
+      "public_task_sha256": "replace-me",
+      "evaluator_brief_sha256": "replace-me",
+      "fixture_sha256": "replace-me"
+    }
+  ],
+  "execution": {
+    "replicates_per_candidate_task": 2,
+    "analysis_unit": "task",
+    "replicate_aggregation": "replace-me: define how replicate judgments become one task outcome",
+    "failure_policy": {
+      "candidate_failure": "unacceptable",
+      "timeout": "unacceptable",
+      "over_budget": "unacceptable",
+      "infrastructure_failure": "invalidate matched pair only when comparability was prevented"
+    },
+    "order_balancing": {
+      "method": "seeded blocked rotation",
+      "seed": "replace-me"
+    },
+    "retry_policy": "none"
+  },
+  "blinding": {
+    "labels": [
+      "X",
+      "Y"
+    ],
+    "assignment_method": "seeded permutation per task, stable across that task's replicates",
+    "assignment_seed": "replace-me",
+    "assignment_record": "controller-only:label-assignments.json",
+    "identity_map": "controller-only:identity-map.json",
+    "sanitize_identity_markers": true
+  },
+  "judging": {
+    "minimum_independent_judges": 2,
+    "adjudication_rule": "resolve cited disagreements without changing the frozen rubric",
+    "outcome_states": [
+      "candidate_x_wins",
+      "candidate_y_wins",
+      "tie",
+      "neither_acceptable",
+      "inconclusive"
+    ],
+    "result_is_scored_before_process": true
+  },
+  "analysis": {
+    "uncertainty_method": "replace-me: preregister a paired task-level interval",
+    "interval_level": 0.95,
+    "ties": "report separately",
+    "inconclusive": "report separately",
+    "exclusions": "controller-owned infrastructure invalidations only",
+    "claim_gate": "apply the declared margin, veto, category-regression, matching, and evidence rules"
+  },
+  "known_confounds": []
+}

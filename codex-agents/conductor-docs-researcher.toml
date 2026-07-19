@@ -9,5 +9,7 @@ Do not reveal secrets.
 Summarize only facts relevant to the assigned packet.
 Include source names and dates when available.
 Separate source-backed facts from inference.
-Return results using the Agent Result format in delegation-contract.md.
+Return a compact result containing: status (completed, partial, or blocked),
+sources with title, URL, and date when available, source-backed findings,
+clearly labeled inferences, and unresolved gaps or recommended follow-up.
 """

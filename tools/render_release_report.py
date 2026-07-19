@@ -19,26 +19,26 @@ from tools.release_provenance import (  # noqa: E402
     REPORT_BEGIN,
     REPORT_END,
     read_regular_provenance_bytes,
-    release_checksum_records,
+    release_artifact_binding,
     release_report_template_sha256,
     report_template_sha256,
     repository_source_sha256,
 )
 from tools.verify import (  # noqa: E402
+    CODEX_VERSION,
     COVERAGE_VERSION,
     COVERAGE_MINIMUM_PERCENT,
     JSONSCHEMA_VERSION,
     MYPY_VERSION,
+    EVIDENCE_SCHEMA,
     RUFF_VERSION,
     _current_test_counts,
     _expected_checks,
 )
-from tools.write_checksums import ChecksumError, regular_file_record  # noqa: E402
 
 
 BEGIN = REPORT_BEGIN
 END = REPORT_END
-EVIDENCE_SCHEMA = "conductor.verification_evidence.v1"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -48,16 +48,9 @@ class ReportError(RuntimeError):
 
 def _release_binding():
     try:
-        records, checksum_digest = release_checksum_records(PROJECT_ROOT)
-        core_record = regular_file_record(PROJECT_ROOT / "dist" / "conductor-runtime.pyz")
-    except (ChecksumError, ProvenanceError) as exc:
+        return release_artifact_binding(PROJECT_ROOT)
+    except ProvenanceError as exc:
         raise ReportError("verification evidence artifact binding is unreadable") from exc
-    expected_core_sha256 = next(
-        item["sha256"] for item in records if item["name"] == "conductor-runtime.pyz"
-    )
-    if core_record["sha256"] != expected_core_sha256:
-        raise ReportError("verification evidence artifact binding changed while it was read")
-    return records, checksum_digest, core_record
 
 
 def load_evidence(path: Path):
@@ -73,6 +66,7 @@ def load_evidence(path: Path):
     required = {
         "schema",
         "runtime_version",
+        "codex_version",
         "mode",
         "artifacts_checked",
         "source_sha256",
@@ -100,6 +94,10 @@ def load_evidence(path: Path):
         or SHA256.fullmatch(value["source_sha256"]) is None
     ):
         raise ReportError("verification evidence mode or checks are invalid")
+    if not _safe_display_text(value["codex_version"]) or (
+        value["mode"] == "full" and CODEX_VERSION.fullmatch(value["codex_version"]) is None
+    ):
+        raise ReportError("verification evidence Codex version is invalid")
     if any(
         not isinstance(item, dict)
         or set(item) != {"id", "status"}
@@ -198,6 +196,7 @@ def generated_section(evidence) -> str:
         "| --- | --- |",
         "| Evidence schema | `%s` |" % evidence["schema"],
         "| Runtime | `%s` |" % evidence["runtime_version"],
+        "| Codex CLI | `%s` |" % evidence["codex_version"],
         "| Mode | `%s` |" % evidence["mode"],
         "| Python | `%s` (`%s`, `%s`, `%s`) |"
         % (

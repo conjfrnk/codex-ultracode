@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ CANONICAL_COMMANDS = (
     "init",
     "migrate",
     "status",
+    "results",
     "list",
     "apply",
     "doctor",
@@ -50,6 +52,36 @@ def build_parser() -> argparse.ArgumentParser:
 
     status = commands.add_parser("status", help="Verify and inspect one external run record.")
     status.add_argument("run_dir", type=Path)
+
+    results = commands.add_parser(
+        "results",
+        help="Inspect hash-bound overflow captured outside model context.",
+    )
+    result_commands = results.add_subparsers(dest="results_command", metavar="ACTION", required=True)
+    result_list = result_commands.add_parser("list", help="Verify and list captured results.")
+    result_list.add_argument("run_dir", type=Path)
+    result_list.add_argument("--step")
+    result_list.add_argument("--json", action="store_true")
+    result_get = result_commands.add_parser("get", help="Read a bounded cited line range.")
+    result_get.add_argument("run_dir", type=Path)
+    result_get.add_argument("result_id")
+    result_get.add_argument("--start-line", type=int, default=1)
+    result_get.add_argument("--max-lines", type=int, default=200)
+    result_get.add_argument("--max-bytes", type=int, default=64 * 1024)
+    result_get.add_argument("--json", action="store_true")
+    result_search = result_commands.add_parser("search", help="Search captured text literally.")
+    result_search.add_argument("run_dir", type=Path)
+    result_search.add_argument("--query", required=True)
+    result_search.add_argument("--result-id", action="append")
+    result_search.add_argument("--step")
+    result_search.add_argument("--max-matches", type=int, default=20)
+    result_search.add_argument("--json", action="store_true")
+    result_outline = result_commands.add_parser("outline", help="List bounded line chunks for one result.")
+    result_outline.add_argument("run_dir", type=Path)
+    result_outline.add_argument("result_id")
+    result_outline.add_argument("--chunk-lines", type=int, default=200)
+    result_outline.add_argument("--max-chunks", type=int, default=50)
+    result_outline.add_argument("--json", action="store_true")
 
     listing = commands.add_parser("list", help="List valid core workflow files.")
     listing.add_argument("paths", nargs="+", type=Path)
@@ -179,6 +211,7 @@ def main(argv=None) -> int:
             "init": _init,
             "migrate": _migrate,
             "status": _status,
+            "results": _results,
             "list": _list,
             "apply": _apply,
             "doctor": _doctor,
@@ -417,6 +450,64 @@ def _status(args) -> int:
     return 0
 
 
+def _results(args) -> int:
+    from .core.results import RunResultStore
+    from .redaction import redact_json_value, redact_terminal_text
+
+    store = RunResultStore.inspect(args.run_dir)
+    if args.results_command == "list":
+        payload = store.list_records(step_id=args.step)
+    elif args.results_command == "get":
+        payload = store.get(
+            args.result_id,
+            start_line=args.start_line,
+            max_lines=args.max_lines,
+            max_bytes=args.max_bytes,
+        )
+    elif args.results_command == "search":
+        payload = store.search(
+            args.query,
+            result_ids=args.result_id,
+            step_id=args.step,
+            max_matches=args.max_matches,
+        )
+    elif args.results_command == "outline":
+        payload = store.outline(
+            args.result_id,
+            chunk_lines=args.chunk_lines,
+            max_chunks=args.max_chunks,
+        )
+    else:
+        raise AssertionError("unknown result action")
+    if args.json:
+        print(json.dumps(redact_json_value(payload), indent=2, sort_keys=True))
+        return 0
+    if args.results_command == "list":
+        for record in payload:
+            source = record["source"]
+            print(
+                "%s\t%s\t%s\t%d bytes\tcomplete=%s"
+                % (
+                    record["result_id"],
+                    source["step_id"],
+                    source["stream"],
+                    record["size_bytes"],
+                    "yes" if record["pipe_complete"] else "no",
+                )
+            )
+    elif args.results_command == "get":
+        print("Citation: %s" % payload["citation"])
+        print("Pipe complete: %s" % ("yes" if payload["pipe_complete"] else "no"))
+        print("Producer status: %s" % payload["producer_status"])
+        if payload["text"]:
+            print(redact_terminal_text(payload["text"]))
+    else:
+        for item in payload:
+            label = item.get("text", item.get("label", ""))
+            print("%s\t%s" % (item["citation"], redact_terminal_text(label)))
+    return 0
+
+
 def _list(args) -> int:
     from .core.workflow import iter_workflow_files, load_workflow, workflow_summary
     from .errors import ConductorError
@@ -477,6 +568,7 @@ def _doctor(args) -> int:
 
 
 def _print_run_detail(run_or_path) -> None:
+    from .core.results import RunResultStore
     from .core.state import RunState
     from .redaction import redact_terminal_text as redact_text
 
@@ -490,6 +582,16 @@ def _print_run_detail(run_or_path) -> None:
             details.append("%s: %s" % (step_id, detail))
     for detail in details:
         print("Detail: %s" % redact_text(detail))
+    for record in RunResultStore(run).list_records():
+        source = record["source"]
+        print(
+            "Recoverable result: %s (%s/%s)"
+            % (record["result_id"], source["step_id"], source["stream"])
+        )
+        command = shlex.join(
+            ["conductor-runtime", "results", "get", str(run.run_dir), record["result_id"]]
+        )
+        print("Inspect: %s" % redact_text(command))
 
 
 def _runtime_policy(args):

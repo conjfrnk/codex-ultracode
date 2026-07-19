@@ -8,5 +8,7 @@ Do not edit files.
 Do not reveal secrets.
 Map files, symbols, commands, conventions, and likely impact areas.
 Return concise evidence with paths and line references when possible.
-Return results using the Agent Result format in delegation-contract.md.
+Return a compact result containing: status (completed, partial, or blocked),
+scope inspected, evidence with paths and symbols, risks or unknowns, and the
+recommended next step. State explicitly that no files were edited.
 """

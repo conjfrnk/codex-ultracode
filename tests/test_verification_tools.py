@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -12,10 +13,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from conductor_runtime.errors import ValidationError
-from tools.release_provenance import ProvenanceError, report_template_sha256, repository_source_sha256
+from tools.release_provenance import (
+    ProvenanceError,
+    release_artifact_binding,
+    report_template_sha256,
+    repository_source_sha256,
+)
 from tools.render_release_report import BEGIN, END, ReportError, generated_section, load_evidence, render_report
 from tools.verify import (
     ARTIFACT_REFRESH_COMMANDS,
+    CODEX_CLI_VERSION,
     COVERAGE_MINIMUM_PERCENT,
     DIST_ARTIFACTS,
     VerificationError,
@@ -23,14 +30,56 @@ from tools.verify import (
     _expected_checks,
     _require_unchanged_source,
     _run_coverage_tests,
+    _compare_artifacts,
+    _codex_cli,
     _validate_written_evidence,
     _verify_artifacts,
     _write_evidence,
     main as verify_main,
 )
+from tools.write_checksums import ARTIFACTS
 
 
 class VerificationToolTests(unittest.TestCase):
+    def test_release_binding_measures_the_runtime_inside_the_checksummed_bundle(self):
+        project_root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            release_root = Path(tmp)
+            dist = release_root / "dist"
+            for script in ("package_runtime.py", "package_extras.py"):
+                completed = subprocess.run(
+                    [sys.executable, "-B", str(project_root / "tools" / script), str(dist)],
+                    cwd=project_root,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+            completed = subprocess.run(
+                [sys.executable, "-B", str(project_root / "tools" / "write_checksums.py"), str(dist)],
+                cwd=project_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+            records, checksum_digest, core_record = release_artifact_binding(release_root)
+
+            self.assertEqual([item["name"] for item in records], list(ARTIFACTS))
+            self.assertRegex(checksum_digest, r"^[0-9a-f]{64}$")
+            with zipfile.ZipFile(dist / "codex-conductor-bundle.zip") as archive:
+                runtime = archive.read("conductor-runtime.pyz")
+            self.assertEqual(
+                core_record,
+                {
+                    "sha256": hashlib.sha256(runtime).hexdigest(),
+                    "size_bytes": len(runtime),
+                },
+            )
+
     @unittest.skipUnless(os.name == "posix", "timezone packaging coverage requires POSIX TZ")
     def test_release_archives_are_timezone_independent(self):
         project_root = Path(__file__).resolve().parents[1]
@@ -41,16 +90,10 @@ class VerificationToolTests(unittest.TestCase):
                 dist = root / ("dist-%d" % index)
                 environment = dict(os.environ)
                 environment["TZ"] = timezone
+                environment["PYTHONWARNINGS"] = "error"
                 commands = (
                     [sys.executable, "-B", "tools/package_runtime.py", str(dist)],
                     [sys.executable, "-B", "tools/package_extras.py", str(dist)],
-                    [
-                        sys.executable,
-                        "-B",
-                        "tools/package_skill.py",
-                        "codex-conductor",
-                        str(dist),
-                    ],
                     [sys.executable, "-B", "tools/write_checksums.py", str(dist)],
                 )
                 for command in commands:
@@ -72,10 +115,14 @@ class VerificationToolTests(unittest.TestCase):
                     (builds[1] / name).read_bytes(),
                     name,
                 )
+            self.assertEqual(
+                {path.name for path in builds[0].iterdir()},
+                set(DIST_ARTIFACTS),
+            )
             for name in (
-                "conductor-runtime.pyz",
                 "conductor-extras.pyz",
                 "codex-conductor-marketplace.zip",
+                "codex-conductor-bundle.zip",
             ):
                 with zipfile.ZipFile(builds[0] / name) as archive:
                     self.assertEqual(
@@ -98,7 +145,7 @@ class VerificationToolTests(unittest.TestCase):
 
     def test_quick_evidence_is_machine_readable_and_no_clobber(self):
         evidence = _evidence_payload(SimpleNamespace(quick=True, skip_artifacts=True))
-        self.assertEqual(evidence["schema"], "conductor.verification_evidence.v1")
+        self.assertEqual(evidence["schema"], "conductor.verification_evidence.v2")
         self.assertEqual(evidence["mode"], "quick")
         self.assertFalse(evidence["artifacts_checked"])
         self.assertTrue(all(item["status"] == "passed" for item in evidence["checks"]))
@@ -122,6 +169,7 @@ class VerificationToolTests(unittest.TestCase):
         self.assertEqual(evidence["source_sha256"], source_sha256)
         self.assertEqual(evidence["report_template_sha256"], "c" * 64)
         self.assertIn("test-shard-ownership", _expected_checks(quick=True, skip_artifacts=True))
+        self.assertIn("codex-custom-agent-discovery", _expected_checks(quick=True, skip_artifacts=True))
         self.assertEqual(evidence["coverage_minimum_percent"], COVERAGE_MINIMUM_PERCENT)
 
         with patch("tools.verify._run") as run:
@@ -148,6 +196,10 @@ class VerificationToolTests(unittest.TestCase):
             patch("tools.verify.repository_source_sha256", side_effect=[before, after]),
             patch("tools.verify._tool_prefix", return_value=["tool"]),
             patch("tools.verify._jsonschema_python", return_value=["python"]),
+            patch(
+                "tools.verify._codex_cli",
+                return_value=("codex", "codex-cli %s" % CODEX_CLI_VERSION),
+            ),
             patch("tools.verify._run"),
             patch("tools.verify._verify_documentation"),
             patch("tools.verify._verify_workflow_examples"),
@@ -169,6 +221,39 @@ class VerificationToolTests(unittest.TestCase):
                 _verify_artifacts()
         for command in ARTIFACT_REFRESH_COMMANDS:
             self.assertIn(command, str(caught.exception))
+
+    def test_codex_cli_version_is_exactly_pinned(self):
+        mismatched_version = "0.0.0"
+        with (
+            patch("tools.verify.shutil.which", return_value="/tmp/codex"),
+            patch(
+                "tools.verify.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    ["/tmp/codex", "--version"],
+                    0,
+                    stdout="codex-cli %s\n" % mismatched_version,
+                    stderr="",
+                ),
+            ),
+        ):
+            with self.assertRaises(VerificationError) as caught:
+                _codex_cli()
+        self.assertIn("required %s" % CODEX_CLI_VERSION, str(caught.exception))
+
+    def test_artifact_comparison_rejects_unexpected_top_level_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            left = root / "left"
+            right = root / "right"
+            left.mkdir()
+            right.mkdir()
+            for name in DIST_ARTIFACTS:
+                (left / name).write_bytes(b"same")
+                (right / name).write_bytes(b"same")
+            (right / "skill.zip").write_bytes(b"retired")
+
+            with self.assertRaisesRegex(VerificationError, "unexpected skill.zip"):
+                _compare_artifacts(left, right, "release artifacts")
 
     def test_release_report_section_is_generated_and_idempotent(self):
         evidence = _evidence_payload(SimpleNamespace(quick=True, skip_artifacts=True))

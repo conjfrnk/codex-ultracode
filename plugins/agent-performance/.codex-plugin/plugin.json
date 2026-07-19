@@ -1,0 +1,34 @@
+{
+  "name": "agent-performance",
+  "version": "0.1.0+codex.20260719004702",
+  "description": "Specialist workflows for higher-quality Codex coding and agent evaluation",
+  "author": {
+    "name": "Codex Ultracode Project"
+  },
+  "license": "MIT",
+  "keywords": [
+    "coding",
+    "review",
+    "verification",
+    "benchmarking"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent Performance",
+    "shortDescription": "Evidence-led coding and agent evaluation.",
+    "longDescription": "Focused skills for change contracts, causal debugging, behavioral tests, evidence-backed review, safe simplification, completion proof, and decision-grade agent benchmarks.",
+    "developerName": "Codex Ultracode Project",
+    "category": "Productivity",
+    "capabilities": [
+      "Reasoning",
+      "Review",
+      "Write",
+      "Validation"
+    ],
+    "defaultPrompt": [
+      "Review this change for consequential defects with evidence.",
+      "Verify every completion claim with fresh proof.",
+      "Run a matched, blinded comparison of these configurations."
+    ]
+  }
+}

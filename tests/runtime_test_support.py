@@ -1446,6 +1446,14 @@ class RuntimeWorkflowTests(unittest.TestCase):
         project_root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
             dist = Path(tmp) / "dist"
+            dist.mkdir()
+            for retired in (
+                ".gitkeep",
+                "conductor-runtime.pyz",
+                "release-manifest.json",
+                "skill.zip",
+            ):
+                (dist / retired).write_bytes(b"retired")
             packaged = subprocess.run(
                 [sys.executable, "-B", str(project_root / "tools" / "package_runtime.py"), str(dist)],
                 cwd=str(project_root),
@@ -1455,7 +1463,21 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 timeout=30,
             )
             self.assertEqual(packaged.returncode, 0, packaged.stderr)
-            runtime = dist / "conductor-runtime.pyz"
+            self.assertEqual(
+                {path.name for path in dist.iterdir()},
+                {
+                    "codex-conductor-bundle.zip",
+                    "codex-conductor-marketplace.zip",
+                },
+            )
+            runtime = Path(tmp) / "embedded-conductor-runtime.pyz"
+            bundle = dist / "codex-conductor-bundle.zip"
+            with zipfile.ZipFile(bundle) as archive:
+                runtime.write_bytes(archive.read("conductor-runtime.pyz"))
+                runtime_mode = archive.getinfo("conductor-runtime.pyz").external_attr >> 16
+                first_manifest = archive.read("release-manifest.json")
+                manifest_document = json.loads(first_manifest)
+            runtime.chmod(0o755)
             packaged_extras = subprocess.run(
                 [sys.executable, "-B", str(project_root / "tools" / "package_extras.py"), str(dist)],
                 cwd=str(project_root),
@@ -1466,23 +1488,8 @@ class RuntimeWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(packaged_extras.returncode, 0, packaged_extras.stderr)
             extras = dist / "conductor-extras.pyz"
-            packaged_skill = subprocess.run(
-                [
-                    sys.executable,
-                    "-B",
-                    str(project_root / "tools" / "package_skill.py"),
-                    str(project_root / "codex-conductor"),
-                    str(dist),
-                ],
-                cwd=str(project_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=30,
-            )
-            self.assertEqual(packaged_skill.returncode, 0, packaged_skill.stderr)
-            skill_archive = dist / "skill.zip"
             self.assertTrue(os.access(runtime, os.X_OK))
+            self.assertEqual(runtime_mode & 0o777, 0o755)
             self.assertTrue(runtime.read_bytes().startswith(b"#!/usr/bin/env python3\n"))
             with zipfile.ZipFile(runtime) as archive:
                 self.assertIsNone(archive.testzip())
@@ -1493,7 +1500,7 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 self.assertFalse(
                     any("__pycache__" in name or name.endswith(".pyc") for name in archive.namelist())
                 )
-            with zipfile.ZipFile(dist / "codex-conductor-bundle.zip") as archive:
+            with zipfile.ZipFile(bundle) as archive:
                 self.assertIsNone(archive.testzip())
                 self.assertEqual({item.date_time for item in archive.infolist()}, {(1980, 1, 2, 0, 0, 0)})
                 self.assertFalse(
@@ -1505,13 +1512,25 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 self.assertFalse(any(name.startswith(".claude/") for name in archive.namelist()))
                 self.assertFalse(any(name.startswith("benchmark-suites/") for name in archive.namelist()))
                 self.assertNotIn(".claude/settings.local.json", archive.namelist())
+                self.assertIn("codex-conductor/SKILL.md", archive.namelist())
+                self.assertEqual(manifest_document["schema"], "conductor.release_bundle.v2")
+                agent_paths = [item["path"] for item in manifest_document["agents"]["files"]]
+                self.assertEqual(
+                    agent_paths,
+                    sorted(path.name for path in (project_root / "codex-agents").glob("*.toml")),
+                )
+                for name in agent_paths:
+                    self.assertIn("codex-agents/%s" % name, archive.namelist())
+            with zipfile.ZipFile(dist / "codex-conductor-marketplace.zip") as archive:
+                marketplace_runtime = archive.read(
+                    "codex-conductor-marketplace/plugins/codex-conductor/scripts/"
+                    "conductor-runtime.pyz"
+                )
+                self.assertEqual(runtime.read_bytes(), marketplace_runtime)
             with zipfile.ZipFile(extras) as archive:
                 self.assertIsNone(archive.testzip())
                 self.assertIn("conductor_extras/runtime/routine_service.py", archive.namelist())
                 self.assertIn("tools/evaluate_implementation_canary.py", archive.namelist())
-            with zipfile.ZipFile(skill_archive) as archive:
-                self.assertIsNone(archive.testzip())
-                self.assertEqual({item.date_time for item in archive.infolist()}, {(1980, 1, 2, 0, 0, 0)})
             second_dist = Path(tmp) / "dist-second"
             packaged_again = subprocess.run(
                 [sys.executable, "-B", str(project_root / "tools" / "package_runtime.py"), str(second_dist)],
@@ -1522,19 +1541,17 @@ class RuntimeWorkflowTests(unittest.TestCase):
                 timeout=30,
             )
             self.assertEqual(packaged_again.returncode, 0, packaged_again.stderr)
-            self.assertEqual(runtime.read_bytes(), (second_dist / "conductor-runtime.pyz").read_bytes())
             self.assertEqual(
-                (dist / "codex-conductor-bundle.zip").read_bytes(),
+                bundle.read_bytes(),
                 (second_dist / "codex-conductor-bundle.zip").read_bytes(),
-            )
-            self.assertEqual(
-                (dist / "release-manifest.json").read_bytes(),
-                (second_dist / "release-manifest.json").read_bytes(),
             )
             self.assertEqual(
                 (dist / "codex-conductor-marketplace.zip").read_bytes(),
                 (second_dist / "codex-conductor-marketplace.zip").read_bytes(),
             )
+            with zipfile.ZipFile(second_dist / "codex-conductor-bundle.zip") as archive:
+                self.assertEqual(runtime.read_bytes(), archive.read("conductor-runtime.pyz"))
+                self.assertEqual(first_manifest, archive.read("release-manifest.json"))
             packaged_extras_again = subprocess.run(
                 [sys.executable, "-B", str(project_root / "tools" / "package_extras.py"), str(second_dist)],
                 cwd=str(project_root),
@@ -1545,22 +1562,6 @@ class RuntimeWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(packaged_extras_again.returncode, 0, packaged_extras_again.stderr)
             self.assertEqual(extras.read_bytes(), (second_dist / "conductor-extras.pyz").read_bytes())
-            packaged_skill_again = subprocess.run(
-                [
-                    sys.executable,
-                    "-B",
-                    str(project_root / "tools" / "package_skill.py"),
-                    str(project_root / "codex-conductor"),
-                    str(second_dist),
-                ],
-                cwd=str(project_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=30,
-            )
-            self.assertEqual(packaged_skill_again.returncode, 0, packaged_skill_again.stderr)
-            self.assertEqual(skill_archive.read_bytes(), (second_dist / "skill.zip").read_bytes())
             invoked = subprocess.run(
                 [str(runtime), "--version"],
                 cwd=str(project_root),

@@ -1,0 +1,41 @@
+{
+  "schema": "agent-performance.run-record.v1",
+  "audience": "controller-only",
+  "comparison_id": "replace-me",
+  "task_id": "replace-me",
+  "task_version": 1,
+  "candidate_id": "replace-me",
+  "blind_label": "X",
+  "replicate": 1,
+  "analysis_unit": "candidate_task_replicate",
+  "status": "not_run",
+  "matched_conditions_observed": {
+    "shared": {},
+    "task": {}
+  },
+  "condition_deviations": [],
+  "artifacts": {
+    "final_answer": null,
+    "patch": null,
+    "declared_outputs": [],
+    "verification_logs": [],
+    "bounded_process_evidence": null
+  },
+  "verification": {
+    "commands": [],
+    "exit_statuses": [],
+    "warnings_or_skips": []
+  },
+  "failure": null,
+  "incidents": [],
+  "resources": {
+    "elapsed_ms": null,
+    "tokens_in": null,
+    "tokens_out": null,
+    "estimated_cost_usd": null,
+    "tool_calls": null,
+    "agent_count": null
+  },
+  "retry_of": null,
+  "invalidates": null
+}

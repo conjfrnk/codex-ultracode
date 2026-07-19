@@ -1,10 +1,13 @@
 """Deterministic source and release-manifest provenance helpers."""
 
 import hashlib
+import io
+import json
 import os
 import re
 import stat
 import subprocess
+import zipfile
 from pathlib import Path, PurePosixPath
 
 from tools.write_checksums import ARTIFACTS, ChecksumError, verify_checksums
@@ -14,6 +17,9 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_EXCLUSIONS = {"RELEASE_REPORT.md", "VERIFICATION_EVIDENCE.json"}
 REPORT_BEGIN = "<!-- BEGIN GENERATED VERIFICATION EVIDENCE -->"
 REPORT_END = "<!-- END GENERATED VERIFICATION EVIDENCE -->"
+MAX_RELEASE_ARCHIVE_BYTES = 25 * 1024 * 1024
+MAX_CORE_ARCHIVE_BYTES = 500 * 1024
+MAX_RELEASE_MANIFEST_BYTES = 1024 * 1024
 
 
 class ProvenanceError(RuntimeError):
@@ -149,6 +155,87 @@ def release_checksum_records(project_root: Path):
     if [item["name"] for item in records] != list(ARTIFACTS):
         raise ProvenanceError("release checksum manifest artifact order is invalid")
     return records, hashlib.sha256(payload).hexdigest()
+
+
+def _reject_duplicate_object_keys(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _release_bundle_members(payload: bytes):
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            names = [item.filename for item in archive.infolist()]
+            if len(names) != len(set(names)):
+                raise ProvenanceError("release bundle contains duplicate members")
+            members = {}
+            for name, limit in (
+                ("conductor-runtime.pyz", MAX_CORE_ARCHIVE_BYTES),
+                ("release-manifest.json", MAX_RELEASE_MANIFEST_BYTES),
+            ):
+                matches = [item for item in archive.infolist() if item.filename == name]
+                if len(matches) != 1:
+                    raise ProvenanceError("release bundle member is missing: %s" % name)
+                info = matches[0]
+                mode = info.external_attr >> 16
+                if info.is_dir() or stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
+                    raise ProvenanceError("release bundle member is not a regular file: %s" % name)
+                if info.file_size > limit:
+                    raise ProvenanceError("release bundle member is too large: %s" % name)
+                with archive.open(info) as source:
+                    data = source.read(limit + 1)
+                if len(data) != info.file_size or len(data) > limit:
+                    raise ProvenanceError("release bundle member changed while reading: %s" % name)
+                members[name] = data
+            return members
+    except ProvenanceError:
+        raise
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        raise ProvenanceError("release bundle is not a valid ZIP archive") from exc
+
+
+def release_artifact_binding(project_root: Path):
+    """Bind checksummed public artifacts to the core runtime inside the bundle."""
+
+    root = Path(project_root).resolve()
+    records, checksum_digest = release_checksum_records(root)
+    expected_bundle_sha256 = next(
+        item["sha256"] for item in records if item["name"] == "codex-conductor-bundle.zip"
+    )
+    bundle_payload, _ = _read_regular_bytes(
+        root / "dist" / "codex-conductor-bundle.zip",
+        "release bundle",
+        root=root,
+        max_bytes=MAX_RELEASE_ARCHIVE_BYTES,
+    )
+    if hashlib.sha256(bundle_payload).hexdigest() != expected_bundle_sha256:
+        raise ProvenanceError("release bundle does not match the checksum manifest")
+    members = _release_bundle_members(bundle_payload)
+    runtime_payload = members["conductor-runtime.pyz"]
+    runtime_record = {
+        "sha256": hashlib.sha256(runtime_payload).hexdigest(),
+        "size_bytes": len(runtime_payload),
+    }
+    try:
+        manifest = json.loads(
+            members["release-manifest.json"].decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_object_keys,
+        )
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise ProvenanceError("release manifest is not valid UTF-8 JSON") from exc
+    expected_runtime = {
+        "path": "conductor-runtime.pyz",
+        **runtime_record,
+    }
+    if not isinstance(manifest, dict) or manifest.get("runtime") != expected_runtime:
+        raise ProvenanceError("release manifest does not bind the bundled runtime")
+    if release_checksum_records(root) != (records, checksum_digest):
+        raise ProvenanceError("release artifacts changed while provenance was assembled")
+    return records, checksum_digest, runtime_record
 
 
 def release_report_template_sha256(project_root: Path) -> str:

@@ -13,6 +13,12 @@ class PolicyError(ConductorError):
 class StepExecutionError(ConductorError):
     """Raised when an executable step fails."""
 
+    def __init__(self, message: str, *, metrics=None):
+        super().__init__(message)
+        if metrics is not None and not isinstance(metrics, dict):
+            raise TypeError("step failure metrics must be a dictionary")
+        self.metrics = dict(metrics) if metrics is not None else None
+
 
 class ModelPlannerError(StepExecutionError):
     """Base class for model-workflow planner failures."""

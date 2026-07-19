@@ -22,9 +22,20 @@ python3 install.py --dry-run
 python3 install.py --allow-writes --approve conductor-install
 ```
 
+The release directory contains only the install bundle, local marketplace,
+optional extras archive, and `SHA256SUMS`. The core runtime and its release
+manifest are private build intermediates retained inside the install bundle.
+
 The installer verifies every installed byte and writes only under `~/.codex`.
 Replacing different bytes also requires
 `--replace --approve conductor-update`.
+
+The bundle installs five manifest-bound custom agent profiles under
+`~/.codex/agents/` without replacing unrelated personal profiles. Start a new
+Codex session after installation so `conductor-explorer`, `conductor-worker`,
+`conductor-reviewer`, `conductor-verifier`, and `conductor-docs-researcher` are
+discovered. See [`docs/custom-agents.md`](docs/custom-agents.md) for global
+routing defaults and an offline discovery check that uses no model inference.
 
 The installer prints the exact runtime path and a copy-pasteable `doctor`
 command. With the default state directory it is:
@@ -39,6 +50,38 @@ For normal repository work, ask Codex to “use codex-conductor” and describe 
 bounded outcome. The Skill selects the smallest useful execution shape and
 keeps permissions explicit. Use the low-level CLI when you need a reusable JSON
 workflow or direct control over state, budgets, and approvals.
+
+## Companion Performance Skills
+
+This repository keeps reusable coding and evaluation methods separate from the
+Conductor runtime. Conductor remains the execution and safety envelope under
+[`codex-conductor/`](codex-conductor/); the independently installable
+[`agent-performance`](plugins/agent-performance/) plugin supplies change contracts,
+evidence-led debugging, behavioral testing, correctness review, safe simplification,
+completion proof, and matched-comparison skills with validated controller-side reduction.
+
+Install the companion plugin from a source checkout:
+
+```sh
+codex plugin marketplace add .
+codex plugin add agent-performance@codex-ultracode-local
+```
+
+The repo-local catalog is [`.agents/plugins/marketplace.json`](.agents/plugins/marketplace.json).
+Start a new Codex thread after installing so the new skills are discovered.
+For a launch-time identity above the Codex welcome panel, source the zsh launcher
+from this checkout in `~/.zshrc`:
+
+```zsh
+[[ -r /path/to/codex-ultracode/plugins/agent-performance/scripts/codex-ultracode.zsh ]] && \
+  source /path/to/codex-ultracode/plugins/agent-performance/scripts/codex-ultracode.zsh
+```
+
+Bare `codex` launches then announce “Codex with Ultracode” before the TUI starts.
+Argument-bearing commands keep their normal output. The plugin's trusted
+`SessionStart` hook remains a fallback for launches without the zsh integration;
+Codex runs that hook when the first prompt begins, not while rendering the idle
+welcome panel. Use `/hooks` to review and trust the fallback command hook.
 
 ## Use
 
@@ -74,6 +117,16 @@ benefits from map-to-synthesis. See [`docs/runtime.md`](docs/runtime.md) for the
 compact command reference and [`docs/README.md`](docs/README.md) for the docs
 index.
 
+When a shell or Codex stream exceeds its inline limit, Conductor keeps the
+prefix bounded and stores a redacted, hash-bound overflow result outside the
+workspace. `conductor-runtime results list|get|search|outline` retrieves cited
+line ranges without exposing a host path or treating a truncated Codex control
+stream as successful evidence. Lazy capture, bounded fan-out reservations,
+serialized redaction, and non-mutating inspection keep diagnostics recoverable
+without letting optional capture or result-store I/O faults overturn successful
+shell work. Integrity violations still fail closed, and a core step fails when
+an escaped descendant prevents either output pipe from closing cleanly.
+
 ## Safety
 
 Agent, write, destructive, network, parallel, risk, and shell capabilities are
@@ -103,10 +156,11 @@ python3 tools/verify.py --quick  # check tracked artifacts, evidence, and report
 ```
 
 The full gate runs warning-strict tests, a four-hash-seed core matrix, the local
-Skill audit, pinned Ruff and mypy checks, an 80% branch-aware core coverage
-ratchet, two clean reproducible builds, and a byte comparison against tracked
-`dist`. The evidence form writes only after every requested check passes; the
-renderer updates the marked machine-generated section of `RELEASE_REPORT.md`.
+Skill audit, real-Codex custom-agent discovery through a loopback provider,
+pinned Ruff and mypy checks, an 80% branch-aware core coverage ratchet, two clean
+reproducible builds, and a byte comparison against tracked `dist`. The evidence
+form writes only after every requested check passes; the renderer updates the
+marked machine-generated section of `RELEASE_REPORT.md`.
 
 The dependency-free default runtime is under 500 KiB. Historical and specialist
 commands remain in the separate `conductor_extras` archive, which is maintained
