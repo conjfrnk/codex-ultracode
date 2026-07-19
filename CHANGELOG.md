@@ -4,24 +4,14 @@ Git history is the archive for releases before `0.173.0`.
 
 ## 0.175.0
 
-- Added the independently installable `agent-performance` plugin with focused change-contract,
-  debugging, behavioral-testing, correctness-review, simplification, completion-proof, and
-  matched-comparison skills.
-- Added audience-separated comparison records, per-task blinding, candidate-ID reduction and claim
-  rules, standard-library validation, standalone licensing, and repository-owned ingestion tests.
-- Added anonymous process-stream capture with redacted immutable overflow containers, opaque cited
-  retrieval, literal search, producer/completeness semantics, hard quotas, failure handoffs,
-  bounded fan-out reservations, fail-soft optional storage, packet-bound retry-safe references,
-  detached-pipe containment, and read-only verification.
-- Added a strict 22-case skill-routing evaluation suite covering direct triggers, restraint,
-  composition, adversarial prompts, boundaries, and claim discipline.
-- Added a zsh launch-time identity for “Codex with Ultracode” plus a duplicate-safe first-turn
-  fallback that distinguishes Conductor + specialist agent workflows from a specialist-only
-  installation.
-- Added manifest-bound installation of five global Codex custom-agent profiles, self-contained
-  role contracts, offline real-CLI discovery proof, and bounded nested-delegation guidance.
-- Reduced the top-level release surface to the install bundle, local marketplace, optional extras,
-  and their checksum manifest; the core runtime and release manifest remain verified bundle members.
+- Added the installable `agent-performance` plugin, its validation suite, and
+  matched-comparison records and reducers.
+- Added bounded, redacted process-output capture with opaque retrieval and
+  integrity-checked failure handoffs.
+- Added five manifest-bound Codex agent profiles, offline discovery proof, and
+  optional launch-time identity support.
+- Reduced the release surface to the install bundle, local marketplace,
+  optional extras, and checksum manifest.
 
 ## 0.174.0
 

@@ -43,8 +43,5 @@ subcommand, prefix it with `./` when using the legacy form.
 ## Maintenance boundary
 
 Extras is maintained for security, correctness, and compatibility, not new
-feature growth. The exhaustive grouped registry therefore delegates to the
-existing parser and handler for each command instead of duplicating or broadly
-rewriting the legacy implementation. Registry tests fail closed if a flat
-command is unassigned or assigned more than once. Domain modules should be
-split only when a future product decision resumes feature development.
+feature growth. Grouped commands delegate to the existing parsers and handlers;
+registry tests reject missing or duplicate command assignments.

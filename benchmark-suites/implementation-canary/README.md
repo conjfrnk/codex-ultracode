@@ -24,7 +24,7 @@ python3 -B tools/evaluate_implementation_canary.py \
   <retained-provider.patch> \
   <new-evaluation-directory>
 
-python3 -B -m conductor_runtime score-benchmark-report \
+python3 -B -m conductor_extras benchmark score-report \
   <unscored-provider-report.json> \
   benchmark-suites/implementation-canary-tasks.json \
   <new-evaluation-directory>/score-input.json \

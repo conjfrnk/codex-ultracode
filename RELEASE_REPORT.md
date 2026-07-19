@@ -26,9 +26,9 @@ The table below is rendered from `VERIFICATION_EVIDENCE.json` rather than mainta
 | Core coverage floor | `80%` |
 | Hash seeds | `0, 1, 42, random` |
 | Release artifacts checked | `true` |
-| Source SHA-256 | `1f4b2befa57ab95f6d995f0be840e20389e3f57eaf9db26597d096ac30c4592d` |
+| Source SHA-256 | `fdca8720cbcdbf3ec5eb8b4f48e80560f7d661ea53b7542a0641cdd6b3933b02` |
 | Report-template SHA-256 | `4db9d2a4c51cf304a451ec12cb77c31acc3f0de11d48fcfa5e561009384e820e` |
-| Checksum-manifest SHA-256 | `97fa28d22971b344911ccc4643241ef3a1cfe56723ec8d52c32ed46dde2c723c` |
+| Checksum-manifest SHA-256 | `f1b2956ebb29d4ecb3e65adaf6a8c7e3a250c5be92a5a0b74f9b46f373e92389` |
 | Repository tests | `1264` |
 | Core-gate tests | `204` |
 | Core archive bytes | `77215` |
@@ -55,8 +55,8 @@ The table below is rendered from `VERIFICATION_EVIDENCE.json` rather than mainta
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `codex-conductor-bundle.zip` | `b53a3002c1828bdfb207e67cc3fc977705ffd0eb0720a09973846c8b347e9e26` |
-| `codex-conductor-marketplace.zip` | `5541b1dec495be406736b5309685c1d564470c1344d6f4e3058ff37fd9b3fcd9` |
+| `codex-conductor-bundle.zip` | `c614a4d2e61ee779e593809bd70bb41ce71405305252efa2061a42901b640340` |
+| `codex-conductor-marketplace.zip` | `26486756615d4d079d08aac98aeb9f4195f63252bd25f904c9aac8059aa22d55` |
 | `conductor-extras.pyz` | `318871db23f812a132ee856c217f2c8dcfcdb9f22110a84947f789cc842dcaf5` |
 <!-- END GENERATED VERIFICATION EVIDENCE -->
 

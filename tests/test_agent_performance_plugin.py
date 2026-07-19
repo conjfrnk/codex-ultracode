@@ -286,6 +286,7 @@ class AgentPerformancePluginTests(unittest.TestCase):
             self.assertEqual(malformed.returncode, 0, malformed.stderr)
             self.assertEqual(malformed.stdout, "")
 
+    @unittest.skipUnless(shutil.which("zsh"), "zsh is required for launcher coverage")
     def test_zsh_launcher_announces_only_bare_interactive_codex(self):
         launcher = self.plugin_root / "scripts" / "codex-ultracode.zsh"
         with tempfile.TemporaryDirectory() as tmp:
