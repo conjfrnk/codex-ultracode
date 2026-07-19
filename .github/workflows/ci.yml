@@ -176,3 +176,106 @@ jobs:
           test "$(codex --version)" = "codex-cli ${codex_cli_version}"
       - name: Rebuild, reproduce, and compare tracked release artifacts
         run: python tools/verify.py --quick
+
+  publish-release:
+    name: publish GitHub release
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+    needs: release-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14.6"
+      - name: Validate release tag and tracked artifacts
+        shell: bash
+        run: |
+          release_version="$(python -c 'from conductor_runtime import __version__; print(__version__)')"
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must match vX.Y.Z: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          if [[ "${RELEASE_TAG}" != "v${release_version}" ]]; then
+            echo "Release tag ${RELEASE_TAG} does not match runtime version ${release_version}" >&2
+            exit 1
+          fi
+          if [[ "$(git rev-parse HEAD)" != "${GITHUB_SHA}" ]]; then
+            echo "Checked-out commit does not match the tag event commit" >&2
+            exit 1
+          fi
+          python -B tools/write_checksums.py dist --check
+          python -B tools/render_release_report.py --check
+          printf 'RELEASE_VERSION=%s\n' "${release_version}" >> "${GITHUB_ENV}"
+      - name: Publish and verify GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          remote_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+            --jq '.object | [.type, .sha] | @tsv')"
+          read -r remote_type remote_sha <<< "${remote_object}"
+          for _ in 1 2 3; do
+            if [[ "${remote_type}" != "tag" ]]; then
+              break
+            fi
+            tag_endpoint="repos/${GITHUB_REPOSITORY}/git/tags/${remote_sha}"
+            remote_object="$(gh api "${tag_endpoint}" --jq '.object | [.type, .sha] | @tsv')"
+            read -r remote_type remote_sha <<< "${remote_object}"
+          done
+          if [[ "${remote_type}" != "commit" || "${remote_sha}" != "${GITHUB_SHA}" ]]; then
+            echo "Remote tag no longer resolves to the verified event commit" >&2
+            exit 1
+          fi
+
+          assets=(
+            dist/codex-conductor-bundle.zip
+            dist/codex-conductor-marketplace.zip
+            dist/conductor-extras.pyz
+            dist/SHA256SUMS
+          )
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists; inspecting its state"
+          else
+            gh release create "${RELEASE_TAG}" \
+              --draft \
+              --verify-tag \
+              --target "${GITHUB_SHA}" \
+              --title "Codex Conductor ${RELEASE_VERSION}" \
+              --generate-notes
+          fi
+
+          is_draft="$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')"
+          is_prerelease="$(gh release view "${RELEASE_TAG}" --json isPrerelease --jq '.isPrerelease')"
+          if [[ "${is_prerelease}" != "false" ]]; then
+            echo "Release ${RELEASE_TAG} is unexpectedly marked as a prerelease" >&2
+            exit 1
+          fi
+          if [[ "${is_draft}" == "true" ]]; then
+            gh release upload "${RELEASE_TAG}" "${assets[@]}" --clobber
+          elif [[ "${is_draft}" != "false" ]]; then
+            echo "Release ${RELEASE_TAG} has an unknown draft state" >&2
+            exit 1
+          fi
+
+          release_dir="$(mktemp -d)"
+          trap 'rm -rf -- "${release_dir:?}"' EXIT
+          gh release download "${RELEASE_TAG}" --dir "${release_dir}"
+          if ! cmp --silent dist/SHA256SUMS "${release_dir}/SHA256SUMS"; then
+            echo "Published checksum manifest differs from the verified commit" >&2
+            exit 1
+          fi
+          python -B tools/write_checksums.py "${release_dir}" --check
+          if [[ "${is_draft}" == "true" ]]; then
+            gh release edit "${RELEASE_TAG}" --draft=false --latest
+          fi
+          if [[ "$(gh release view "${RELEASE_TAG}" --json isDraft --jq '.isDraft')" != "false" ]]; then
+            echo "Release ${RELEASE_TAG} was not published" >&2
+            exit 1
+          fi
