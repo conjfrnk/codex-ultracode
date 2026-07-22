@@ -38,9 +38,14 @@ For non-trivial repository work:
 - Never claim an agent ran unless a child thread was actually created.
 ```
 
-Set the capacity ceiling in the corresponding `config.toml`:
+For the quality-first profile, set the model and capacity ceiling in the
+corresponding `config.toml`:
 
 ```toml
+model = "gpt-5.6-sol"
+model_reasoning_effort = "ultra"
+service_tier = "priority"
+
 [agents]
 max_threads = 16
 max_depth = 2

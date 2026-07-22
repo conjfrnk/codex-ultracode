@@ -26,6 +26,7 @@ from conductor_extras.runtime.readonly_parity_campaign import (
     load_readonly_parity_result,
     readonly_parity_campaign_status,
     validate_readonly_parity_campaign,
+    validate_readonly_parity_result,
     write_readonly_parity_campaign,
 )
 from conductor_extras.runtime.readonly_parity_run import (
@@ -38,9 +39,12 @@ from conductor_extras.runtime.runner import ProcessResult
 from conductor_extras.runtime.staged_workspace import snapshot_workspace
 from tools.evaluate_readonly_diagnostic import (
     EVALUATOR_IDENTITY_V1,
+    EVALUATOR_IDENTITY_V2,
     READONLY_DIAGNOSTIC_EVALUATION_SCHEMA,
     READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V1,
+    READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V2,
     TASK_SPECS_V1,
+    TASK_SPECS_V2,
     evaluate_readonly_diagnostic,
     validate_readonly_diagnostic_evaluation,
 )
@@ -65,14 +69,14 @@ def retry_answer():
                 },
                 {
                     "file": "service.py",
-                    "line": 7,
+                    "line": 12,
                     "severity": "high",
                     "summary": "Retry boundary reads retries instead of canonical max_attempts",
                     "evidence": "completed_attempts must be compared with max_attempts, but retries is absent",
                 },
                 {
                     "file": "service.py",
-                    "line": 4,
+                    "line": 12,
                     "severity": "medium",
                     "summary": "completed_attempts receives no input validation",
                     "evidence": "The function must reject boolean, non-integer, and negative completed attempts",
@@ -126,6 +130,77 @@ def event_routing_answer():
 
 
 class ReadonlyParityTests(unittest.TestCase):
+    def test_result_contract_allows_evaluator_version_to_own_high_score_pass_threshold(self):
+        digest = "0" * 64
+        result = {
+            "schema": "conductor.readonly_parity_arm_result.v1",
+            "campaign_sha256": digest,
+            "cohort_id": "cohort-1",
+            "task_id": "diagnose-retry-policy",
+            "repetition": 1,
+            "system": "serial-codex",
+            "runtime_version": "1.0.0",
+            "runtime_build_sha256": digest,
+            "generated_at_utc": "2026-07-20T00:00:00Z",
+            "status": "completed",
+            "outcome": {
+                "provider_status": "success",
+                "provider_success": True,
+                "source_preserved": True,
+                "answer_valid": True,
+                "score": 8,
+                "max_score": 10,
+                "passed": False,
+                "final_success": False,
+            },
+            "resources": {
+                "duration_ms": 1,
+                "provider_invocations": 1,
+                "provider_turns": 1,
+                "token_accounting": "local-rollout-aggregate-v1",
+                "token_observed": False,
+                "input_tokens": None,
+                "cached_input_tokens": None,
+                "output_tokens": None,
+                "gross_tokens": None,
+                "weighted_tokens": None,
+                "cost_observed": False,
+                "cost_usd": None,
+                "cap_enforcement": "runtime-weighted-threshold-fail-closed",
+                "token_cap": 18000,
+                "cost_cap_usd": None,
+                "cap_compliant": None,
+                "cap_overshoot": None,
+            },
+            "topology": {
+                "kind": "serial",
+                "requested_child_threads": 0,
+                "observed_child_threads": 0,
+                "topology_executed": True,
+                "helper_models": [],
+            },
+            "artifacts": {
+                "source_fixture_sha256": digest,
+                "workspace_before_sha256": digest,
+                "workspace_after_sha256": digest,
+                "answer_sha256": digest,
+                "evaluation_sha256": digest,
+                "workflow_sha256": None,
+                "planning_receipt_sha256": None,
+                "run_receipt_sha256": digest,
+                "provider_report_sha256": None,
+                "run_state_sha256": None,
+                "codex_progress_sha256": None,
+                "codex_stream_sha256": None,
+            },
+        }
+
+        validate_readonly_parity_result(result)
+        legacy_threshold_result = copy.deepcopy(result)
+        legacy_threshold_result["outcome"]["passed"] = True
+        legacy_threshold_result["outcome"]["final_success"] = True
+        validate_readonly_parity_result(legacy_threshold_result)
+
     def _campaign(
         self,
         *,
@@ -288,6 +363,20 @@ class ReadonlyParityTests(unittest.TestCase):
         self.assertTrue(evaluation["passed"])
         self.assertEqual(evaluation["schema"], READONLY_DIAGNOSTIC_EVALUATION_SCHEMA)
         self.assertNotIn("dict(raw)", json.dumps(evaluation))
+
+        docstring_lines = json.loads(answer)
+        docstring_lines["findings"][1]["line"] = 7
+        docstring_lines["findings"][2]["line"] = 4
+        stale = evaluate_readonly_diagnostic(
+            "diagnose-retry-policy",
+            json.dumps(docstring_lines, sort_keys=True),
+            source,
+            expected_source_sha256=source_sha256,
+            provider_success=True,
+        )
+        self.assertEqual(stale["score"], 5)
+        self.assertEqual(stale["matched_finding_ids"], ["policy-normalization-stub"])
+
         invalid = evaluate_readonly_diagnostic(
             "diagnose-retry-policy",
             "not json",
@@ -298,34 +387,56 @@ class ReadonlyParityTests(unittest.TestCase):
         self.assertEqual(invalid["score"], 0)
         self.assertEqual(invalid["parse_status"], "invalid")
 
-        legacy = copy.deepcopy(evaluation)
-        legacy["schema"] = READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V1
-        legacy["evaluator"] = {"identity": EVALUATOR_IDENTITY_V1, "independent": True}
-        legacy["answer_key_sha256"] = hashlib.sha256(
-            json.dumps(
-                {
-                    "evaluator": EVALUATOR_IDENTITY_V1,
-                    "task_id": "diagnose-retry-policy",
-                    "findings": TASK_SPECS_V1["diagnose-retry-policy"]["findings"],
-                },
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=True,
-            ).encode("utf-8")
-        ).hexdigest()
-        unsigned = dict(legacy)
-        unsigned.pop("evaluation_sha256")
-        legacy["evaluation_sha256"] = hashlib.sha256(
-            json.dumps(
-                unsigned,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=True,
-            ).encode("utf-8")
-        ).hexdigest()
-        validate_readonly_diagnostic_evaluation(legacy)
+        for schema, identity, task_specs in [
+            (READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V1, EVALUATOR_IDENTITY_V1, TASK_SPECS_V1),
+            (READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V2, EVALUATOR_IDENTITY_V2, TASK_SPECS_V2),
+        ]:
+            with self.subTest(schema=schema):
+                legacy = copy.deepcopy(evaluation)
+                legacy["schema"] = schema
+                legacy["evaluator"] = {"identity": identity, "independent": True}
+                legacy["answer_key_sha256"] = hashlib.sha256(
+                    json.dumps(
+                        {
+                            "evaluator": identity,
+                            "task_id": "diagnose-retry-policy",
+                            "findings": task_specs["diagnose-retry-policy"]["findings"],
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=True,
+                    ).encode("utf-8")
+                ).hexdigest()
+                unsigned = dict(legacy)
+                unsigned.pop("evaluation_sha256")
+                legacy["evaluation_sha256"] = hashlib.sha256(
+                    json.dumps(
+                        unsigned,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=True,
+                    ).encode("utf-8")
+                ).hexdigest()
+                validate_readonly_diagnostic_evaluation(legacy)
 
-    def test_hidden_evaluator_v2_separates_subscription_container_validation(self):
+    def test_hidden_evaluator_requires_complete_root_cause_coverage_to_pass(self):
+        source = FIXTURE_ROOT / "retry-policy" / "source"
+        source_sha256 = snapshot_workspace(source).tracked_fingerprint_sha256
+        incomplete = json.loads(retry_answer())
+        incomplete["findings"].pop()
+
+        evaluation = evaluate_readonly_diagnostic(
+            "diagnose-retry-policy",
+            json.dumps(incomplete, sort_keys=True),
+            source,
+            expected_source_sha256=source_sha256,
+            provider_success=True,
+        )
+
+        self.assertEqual(evaluation["score"], 8)
+        self.assertFalse(evaluation["passed"])
+
+    def test_hidden_evaluator_v3_separates_subscription_container_validation(self):
         source = FIXTURE_ROOT / "event-routing" / "source"
         source_sha256 = snapshot_workspace(source).tracked_fingerprint_sha256
         answer = event_routing_answer()
@@ -366,6 +477,7 @@ class ReadonlyParityTests(unittest.TestCase):
             provider_success=True,
         )
         self.assertEqual(incomplete["score"], 9)
+        self.assertFalse(incomplete["passed"])
         self.assertNotIn("subscription-container-validation", incomplete["matched_finding_ids"])
 
     def test_direct_planner_accepts_matched_override_and_rejects_native_mismatch(self):

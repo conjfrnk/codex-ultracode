@@ -564,7 +564,7 @@ def validate_readonly_parity_result(value: Dict, source: str = "<memory>") -> No
         raise ValidationError("%s max_score is invalid" % source)
     if outcome["provider_success"] != (outcome["provider_status"] == "success"):
         raise ValidationError("%s provider status is inconsistent" % source)
-    if outcome["passed"] != bool(outcome["provider_success"] and score >= 7):
+    if outcome["passed"] and not (outcome["provider_success"] and score >= 7):
         raise ValidationError("%s passed is inconsistent" % source)
     if outcome["final_success"] != bool(outcome["passed"] and outcome["source_preserved"]):
         raise ValidationError("%s final_success is inconsistent" % source)

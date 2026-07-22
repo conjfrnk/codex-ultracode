@@ -26,10 +26,10 @@ The table below is rendered from `VERIFICATION_EVIDENCE.json` rather than mainta
 | Core coverage floor | `80%` |
 | Hash seeds | `0, 1, 42, random` |
 | Release artifacts checked | `true` |
-| Source SHA-256 | `00c718f943c52aa1e54a70cf234a384020de4bebc2fc66d73f7374345bf57fce` |
+| Source SHA-256 | `35227d712a4c2753c356f8b56201380fc0751ae7ec8b909b479d11d30d096f49` |
 | Report-template SHA-256 | `4db9d2a4c51cf304a451ec12cb77c31acc3f0de11d48fcfa5e561009384e820e` |
-| Checksum-manifest SHA-256 | `f1b2956ebb29d4ecb3e65adaf6a8c7e3a250c5be92a5a0b74f9b46f373e92389` |
-| Repository tests | `1264` |
+| Checksum-manifest SHA-256 | `f2e17b7c219a1176613ce61091e66538f72554252a71d7fec9d2982bed483b87` |
+| Repository tests | `1267` |
 | Core-gate tests | `204` |
 | Core archive bytes | `77215` |
 
@@ -55,9 +55,9 @@ The table below is rendered from `VERIFICATION_EVIDENCE.json` rather than mainta
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `codex-conductor-bundle.zip` | `c614a4d2e61ee779e593809bd70bb41ce71405305252efa2061a42901b640340` |
-| `codex-conductor-marketplace.zip` | `26486756615d4d079d08aac98aeb9f4195f63252bd25f904c9aac8059aa22d55` |
-| `conductor-extras.pyz` | `318871db23f812a132ee856c217f2c8dcfcdb9f22110a84947f789cc842dcaf5` |
+| `codex-conductor-bundle.zip` | `1ebba11789369cae429e7acc90abb9e1a51d52308cb352112864339f017327b6` |
+| `codex-conductor-marketplace.zip` | `fbb9f3a45d60f5486696772d839f4d3c20d40c18291b11cfd8ba80906f375779` |
+| `conductor-extras.pyz` | `82e716ac2b274d572994ae9545f96af1d36fe30978ed64110cd37baa7c98ed6d` |
 <!-- END GENERATED VERIFICATION EVIDENCE -->
 
 The verification gate does not make a live Codex or Claude provider call.

@@ -24,13 +24,16 @@ from conductor_extras.runtime.staged_workspace import snapshot_workspace
 
 READONLY_DIAGNOSTIC_SUITE = "conductor-readonly-diagnostic-canary"
 READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V1 = "conductor.readonly_diagnostic_evaluation.v1"
-READONLY_DIAGNOSTIC_EVALUATION_SCHEMA = "conductor.readonly_diagnostic_evaluation.v2"
+READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V2 = "conductor.readonly_diagnostic_evaluation.v2"
+READONLY_DIAGNOSTIC_EVALUATION_SCHEMA = "conductor.readonly_diagnostic_evaluation.v3"
 READONLY_DIAGNOSTIC_EVALUATION_SCHEMAS = frozenset({
     READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V1,
+    READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V2,
     READONLY_DIAGNOSTIC_EVALUATION_SCHEMA,
 })
 EVALUATOR_IDENTITY_V1 = "readonly-diagnostic-hidden-root-cause-evaluator-v1"
-EVALUATOR_IDENTITY = "readonly-diagnostic-hidden-root-cause-evaluator-v2"
+EVALUATOR_IDENTITY_V2 = "readonly-diagnostic-hidden-root-cause-evaluator-v2"
+EVALUATOR_IDENTITY = "readonly-diagnostic-hidden-root-cause-evaluator-v3"
 MAX_ANSWER_BYTES = 1024 * 1024
 MAX_EVALUATION_BYTES = 512 * 1024
 MAX_FINDINGS = 8
@@ -196,8 +199,8 @@ TASK_SPECS_V1 = {
 }
 
 
-TASK_SPECS = copy.deepcopy(TASK_SPECS_V1)
-TASK_SPECS["diagnose-event-routing"]["findings"][2] = {
+TASK_SPECS_V2 = copy.deepcopy(TASK_SPECS_V1)
+TASK_SPECS_V2["diagnose-event-routing"]["findings"][2] = {
     "id": "subscription-bypasses-contract",
     "file": "events/subscriptions.py",
     "line_min": 7,
@@ -208,7 +211,7 @@ TASK_SPECS["diagnose-event-routing"]["findings"][2] = {
         ("dedupe", "subscription", "key"),
     ],
 }
-TASK_SPECS["diagnose-event-routing"]["findings"].append(
+TASK_SPECS_V2["diagnose-event-routing"]["findings"].append(
     {
         "id": "subscription-container-validation",
         "file": "events/subscriptions.py",
@@ -221,15 +224,27 @@ TASK_SPECS["diagnose-event-routing"]["findings"].append(
         ],
     }
 )
+TASK_SPECS = copy.deepcopy(TASK_SPECS_V2)
+for finding in TASK_SPECS["diagnose-retry-policy"]["findings"]:
+    if finding["id"].startswith("service-"):
+        finding["line_min"] = 12
+        finding["line_max"] = 12
 
 EVALUATION_CONTRACTS = {
     READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V1: {
         "identity": EVALUATOR_IDENTITY_V1,
         "task_specs": TASK_SPECS_V1,
+        "require_complete_root_coverage": False,
+    },
+    READONLY_DIAGNOSTIC_EVALUATION_SCHEMA_V2: {
+        "identity": EVALUATOR_IDENTITY_V2,
+        "task_specs": TASK_SPECS_V2,
+        "require_complete_root_coverage": False,
     },
     READONLY_DIAGNOSTIC_EVALUATION_SCHEMA: {
         "identity": EVALUATOR_IDENTITY,
         "task_specs": TASK_SPECS,
+        "require_complete_root_coverage": True,
     },
 }
 
@@ -300,7 +315,11 @@ def evaluate_readonly_diagnostic(
         "criteria": criteria,
         "score": score,
         "max_score": 10,
-        "passed": bool(provider_success and score >= 7),
+        "passed": bool(
+            provider_success
+            and score >= 7
+            and set(matched_ids) == {item["id"] for item in spec["findings"]}
+        ),
     }
     evaluation["evaluation_sha256"] = _sha256_json(evaluation)
     validate_readonly_diagnostic_evaluation(evaluation)
@@ -358,7 +377,13 @@ def validate_readonly_diagnostic_evaluation(value, source="<memory>"):
         raise ValidationError("%s evaluation score is inconsistent" % source)
     if not isinstance(value.get("passed"), bool):
         raise ValidationError("%s passed must be boolean" % source)
-    if value["passed"] != bool(value["provider_success"] and score >= 7):
+    complete_root_coverage = set(matched) == expected_ids
+    expected_pass = bool(
+        value["provider_success"]
+        and score >= 7
+        and (complete_root_coverage or not contract["require_complete_root_coverage"])
+    )
+    if value["passed"] != expected_pass:
         raise ValidationError("%s passed is inconsistent" % source)
     unsigned = dict(value)
     observed_hash = unsigned.pop("evaluation_sha256")

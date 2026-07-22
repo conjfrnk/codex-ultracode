@@ -47,6 +47,7 @@ PARITY_TASK_PROMPT_SCHEMA = "conductor.parity_task_prompt.v1"
 IMPLEMENTATION_CANARY_TERMINAL_ZERO_EVALUATORS = {
     "implementation-canary-evaluator-v3",
     "implementation-canary-evaluator-v4",
+    "implementation-canary-evaluator-v5",
 }
 PARITY_PROMPT_ENVIRONMENT_FIELDS = {
     "conductor_runtime_version",

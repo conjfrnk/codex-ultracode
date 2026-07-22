@@ -35,6 +35,10 @@ AUTO_TOPOLOGY_RESULT_SCHEMA_V2 = "conductor.auto_topology_arm_result.v2"
 AUTO_TOPOLOGY_RESULT_SCHEMA = "conductor.auto_topology_arm_result.v3"
 AUTO_TOPOLOGY_LAUNCH_SCHEMA = "conductor.auto_topology_arm_launch.v1"
 AUTO_TOPOLOGY_EVALUATION_SCHEMA = "conductor.implementation_canary_workspace_evaluation.v1"
+AUTO_TOPOLOGY_EVALUATOR_IDENTITIES = {
+    "implementation-canary-workspace-evaluator-v1",
+    "implementation-canary-workspace-evaluator-v2",
+}
 AUTO_TOPOLOGY_EVIDENCE_STATUS = "planned-not-evidence"
 AUTO_TOPOLOGY_RANDOMIZATION = "sha256-rank-rotating-v1"
 AUTO_TOPOLOGIES = ("direct", "progressive", "plan-first")
@@ -600,7 +604,12 @@ def validate_auto_topology_evaluation(evaluation: Dict, source: str = "<memory>"
         raise ValidationError("%s evaluation schema is invalid" % source)
     _safe_id(root.get("task_id"), "%s task_id" % source)
     evaluator = root.get("evaluator")
-    if evaluator != {"identity": "implementation-canary-workspace-evaluator-v1", "independent": True}:
+    if (
+        not isinstance(evaluator, dict)
+        or evaluator.get("identity") not in AUTO_TOPOLOGY_EVALUATOR_IDENTITIES
+        or evaluator.get("independent") is not True
+        or set(evaluator) != {"identity", "independent"}
+    ):
         raise ValidationError("%s evaluator identity is invalid" % source)
     for field in ["source_fixture_sha256", "workspace_sha256", "held_out_fixture_sha256"]:
         _sha256(root.get(field), "%s %s" % (source, field))

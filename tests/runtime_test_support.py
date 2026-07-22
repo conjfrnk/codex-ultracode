@@ -486,7 +486,11 @@ from conductor_extras.runtime.workflow import (
     validate_workflow,
     workflow_fingerprint,
 )
-from tools.evaluate_implementation_canary import main as evaluate_implementation_canary
+from tools.evaluate_implementation_canary import (
+    _run_test_process,
+    evaluate_implementation_canary_workspace,
+    main as evaluate_implementation_canary,
+)
 
 
 FAKE_CODEX_SESSION_ID = "019f0000-0000-7000-8000-000000000001"
@@ -23283,6 +23287,10 @@ class RetryDelayContractTests(unittest.TestCase):
                 )
             evaluation = json.loads((evaluation_dir / "evaluation.json").read_text(encoding="utf-8"))
             self.assertTrue(evaluation["visible"]["passed"])
+            self.assertTrue(evaluation["held_out"]["test_suite_gate"]["baseline"]["passed"])
+            self.assertTrue(
+                evaluation["held_out"]["test_suite_gate"]["conforming_implementation"]["passed"]
+            )
             self.assertEqual(evaluation["held_out"]["killed_mutants"], 5)
             expected_authored_tests = len(evaluation["structure"]["test_methods"])
             self.assertEqual(
@@ -23301,6 +23309,183 @@ class RetryDelayContractTests(unittest.TestCase):
             criteria = score_input["tasks"][0]["criteria"]
             self.assertEqual(criteria[0]["id"], "hidden-mutant-detection")
             self.assertEqual(sum(item["score"] for item in criteria), 10)
+
+        def evaluate_adversarial_tests(test_source):
+            with tempfile.TemporaryDirectory() as tmp:
+                workspace = Path(tmp) / "workspace"
+                shutil.copytree(source, workspace)
+                (workspace / "tests" / "test_backoff_contract.py").write_text(
+                    test_source,
+                    encoding="utf-8",
+                )
+                return evaluate_implementation_canary_workspace(
+                    "backoff-test-authoring",
+                    workspace,
+                    orchestration_completed=True,
+                )
+
+        def adversarial_test_source(class_name, assertion):
+            methods = "\n\n".join(
+                "    def test_case_%d(self):\n        %s" % (number, assertion)
+                for number in range(5)
+            )
+            return (
+                "import unittest\n\nfrom backoff import retry_delay\n\n\n"
+                "class %s(unittest.TestCase):\n%s\n" % (class_name, methods)
+            )
+
+        module_code = compile(
+            (source / "backoff.py").read_text(encoding="utf-8"),
+            "backoff.py",
+            "exec",
+        )
+        retry_code = next(
+            value
+            for value in module_code.co_consts
+            if isinstance(value, type(module_code)) and value.co_name == "retry_delay"
+        )
+        alternate_module_code = compile(
+            Path(
+                "benchmark-suites/implementation-canary/backoff-tests/held-out/"
+                "conforming-alternate.py"
+            ).read_text(encoding="utf-8"),
+            "conforming-alternate.py",
+            "exec",
+        )
+        alternate_retry_code = next(
+            value
+            for value in alternate_module_code.co_consts
+            if isinstance(value, type(alternate_module_code)) and value.co_name == "retry_delay"
+        )
+        fingerprint_tests = adversarial_test_source(
+            "RetryDelayFingerprintTests",
+            "self.assertEqual(retry_delay.__code__.co_code, %r)" % retry_code.co_code,
+        )
+        fingerprint_evaluation = evaluate_adversarial_tests(fingerprint_tests)
+        self.assertFalse(fingerprint_evaluation["held_out"]["passed"])
+        self.assertTrue(fingerprint_evaluation["held_out"]["test_suite_gate"]["baseline"]["passed"])
+        self.assertFalse(
+            fingerprint_evaluation["held_out"]["test_suite_gate"]["conforming_implementation"]["passed"]
+        )
+        self.assertEqual(fingerprint_evaluation["held_out"]["killed_mutants"], 0)
+        self.assertLess(fingerprint_evaluation["score"], 10)
+
+        docstring_tests = adversarial_test_source(
+            "RetryDelayDocstringFingerprintTests",
+            "self.assertIsNotNone(retry_delay.__doc__)",
+        )
+        docstring_evaluation = evaluate_adversarial_tests(docstring_tests)
+        self.assertFalse(docstring_evaluation["held_out"]["passed"])
+        self.assertFalse(
+            docstring_evaluation["held_out"]["test_suite_gate"]["conforming_implementation"]["passed"]
+        )
+        self.assertEqual(docstring_evaluation["held_out"]["killed_mutants"], 0)
+        self.assertLess(docstring_evaluation["score"], 10)
+
+        layout_assertion = (
+            "self.assertTrue("
+            "retry_delay.__code__.co_filename.rsplit('/', 2)[-2] == 'workspace' "
+            "or len(retry_delay.__code__.co_filename.rsplit('/', 2)[-2]) == 64)"
+        )
+        layout_tests = adversarial_test_source(
+            "RetryDelayLayoutFingerprintTests",
+            layout_assertion,
+        )
+        layout_evaluation = evaluate_adversarial_tests(layout_tests)
+        self.assertFalse(layout_evaluation["held_out"]["passed"])
+        self.assertEqual(layout_evaluation["held_out"]["killed_mutants"], 0)
+        self.assertLess(layout_evaluation["score"], 10)
+
+        self_rewriting_tests = (
+            "from pathlib import Path\n\n"
+            "replacement = %r\n"
+            "Path(__file__).write_text(replacement, encoding='utf-8')\n"
+            "exec(compile(replacement, __file__, 'exec'))\n" % authored_tests
+        )
+        self_rewriting_evaluation = evaluate_adversarial_tests(self_rewriting_tests)
+        self.assertFalse(self_rewriting_evaluation["passed"])
+        self.assertFalse(self_rewriting_evaluation["visible"]["passed"])
+        self.assertFalse(self_rewriting_evaluation["structure"]["maintainable"])
+        self.assertEqual(
+            self_rewriting_evaluation["structure"]["forbidden_calls"],
+            ["compile", "exec"],
+        )
+
+        true_methods = "\n\n".join(
+            "    def test_case_%d(self):\n        self.assertTrue(True)" % number
+            for number in range(5)
+        )
+        variant_mutation_tests = (
+            "import unittest\n\nfrom backoff import retry_delay\n\n\n"
+            "CONFORMING_CODE = {%r, %r}\n"
+            "if retry_delay.__code__.co_code not in CONFORMING_CODE:\n"
+            "    with open(retry_delay.__code__.co_filename, 'a', encoding='utf-8') as handle:\n"
+            "        handle.write('\\n')\n\n\n"
+            "class RetryDelayVariantMutationTests(unittest.TestCase):\n%s\n"
+            % (retry_code.co_code, alternate_retry_code.co_code, true_methods)
+        )
+        variant_mutation_evaluation = evaluate_adversarial_tests(variant_mutation_tests)
+        self.assertFalse(variant_mutation_evaluation["held_out"]["passed"])
+        self.assertEqual(variant_mutation_evaluation["held_out"]["killed_mutants"], 0)
+        self.assertTrue(variant_mutation_evaluation["structure"]["maintainable"])
+        self.assertLess(variant_mutation_evaluation["score"], 10)
+
+        always_fail_tests = adversarial_test_source(
+            "RetryDelayAlwaysFailTests",
+            "self.assertTrue(False)",
+        )
+        always_fail_evaluation = evaluate_adversarial_tests(always_fail_tests)
+        self.assertFalse(always_fail_evaluation["held_out"]["passed"])
+        self.assertFalse(always_fail_evaluation["held_out"]["test_suite_gate"]["baseline"]["passed"])
+        self.assertFalse(
+            always_fail_evaluation["held_out"]["test_suite_gate"]["conforming_implementation"]["passed"]
+        )
+        self.assertEqual(always_fail_evaluation["held_out"]["killed_mutants"], 0)
+        self.assertLess(always_fail_evaluation["score"], 10)
+
+    def test_implementation_canary_verifier_contains_detached_descendants(self):
+        test_source = '''import os
+import time
+import unittest
+
+
+try:
+    child = os.fork()
+except OSError:
+    child = -1
+
+if child == 0:
+    os.setsid()
+    for descriptor in (0, 1, 2):
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+    time.sleep(0.25)
+    with open("late-marker.txt", "w", encoding="utf-8") as handle:
+        handle.write("late")
+    os._exit(0)
+
+
+class ContainmentTests(unittest.TestCase):
+    def test_parent_finishes(self):
+        self.assertTrue(True)
+'''
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "workspace"
+            tests_dir = workspace / "tests"
+            tests_dir.mkdir(parents=True)
+            (tests_dir / "test_containment.py").write_text(test_source, encoding="utf-8")
+
+            record, observed_tests = _run_test_process(workspace, "test_containment.py")
+            time.sleep(0.5)
+
+            self.assertEqual(observed_tests, 1)
+            self.assertIn(
+                record["sandbox"],
+                {"macos-seatbelt-no-fork", "linux-bwrap-pid-namespace"},
+            )
+            self.assertFalse((workspace / "late-marker.txt").exists())
 
     def test_implementation_canary_evaluator_scores_repository_contract_repair(self):
         fixtures = load_parity_tasks(Path("benchmark-suites/implementation-canary-tasks.json"))
@@ -27929,7 +28114,7 @@ def dedupe_subscriptions(names: list) -> list:
                 evaluation = json.loads((paths["evaluation"] / "evaluation.json").read_text(encoding="utf-8"))
                 self.assertFalse(evaluation["visible"]["passed"])
                 score_input = load_benchmark_score_input(paths["evaluation"] / "score-input.json")
-                self.assertEqual(score_input["reviewer"]["identity"], "implementation-canary-evaluator-v4")
+                self.assertEqual(score_input["reviewer"]["identity"], "implementation-canary-evaluator-v5")
                 self.assertEqual(sum(item["score"] for item in score_input["tasks"][0]["criteria"]), 0)
             codex_paths = {key: Path(value) for key, value in trial["artifacts"]["codex"].items()}
             raw_codex = load_benchmark_report(codex_paths["report"])

@@ -82,10 +82,13 @@ def discovery_request(roles: dict[str, str]):
 
 
 class CustomAgentProfileTests(unittest.TestCase):
-    def test_repository_agent_capacity_defaults_are_aggressive_but_bounded(self):
+    def test_repository_quality_defaults_are_aggressive_but_bounded(self):
         config = tomllib.loads(
             (PROJECT_ROOT / ".codex" / "config.toml").read_text(encoding="utf-8")
         )
+        self.assertEqual(config["model"], "gpt-5.6-sol")
+        self.assertEqual(config["model_reasoning_effort"], "ultra")
+        self.assertEqual(config["service_tier"], "priority")
         self.assertEqual(config["agents"], {"max_threads": 16, "max_depth": 2})
 
     def test_repository_profiles_are_valid_and_complete(self):

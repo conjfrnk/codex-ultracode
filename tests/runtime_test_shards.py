@@ -533,6 +533,7 @@ RUNTIME_TEST_SHARDS = {
         "test_implementation_canary_evaluator_scores_repository_contract_repair",
         "test_implementation_canary_evaluator_scores_retained_failed_patch",
         "test_implementation_canary_evaluator_scores_shared_helper_refactor",
+        "test_implementation_canary_verifier_contains_detached_descendants",
         "test_inline_verified_apply_deletion_failure_retains_zero_replay_recovery",
         "test_inline_verified_apply_never_mutates_when_report_write_fails",
         "test_inline_verified_apply_preflights_before_codex_provider_launch",

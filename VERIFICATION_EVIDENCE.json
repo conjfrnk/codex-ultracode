@@ -2,15 +2,15 @@
   "artifacts": [
     {
       "name": "codex-conductor-bundle.zip",
-      "sha256": "c614a4d2e61ee779e593809bd70bb41ce71405305252efa2061a42901b640340"
+      "sha256": "1ebba11789369cae429e7acc90abb9e1a51d52308cb352112864339f017327b6"
     },
     {
       "name": "codex-conductor-marketplace.zip",
-      "sha256": "26486756615d4d079d08aac98aeb9f4195f63252bd25f904c9aac8059aa22d55"
+      "sha256": "fbb9f3a45d60f5486696772d839f4d3c20d40c18291b11cfd8ba80906f375779"
     },
     {
       "name": "conductor-extras.pyz",
-      "sha256": "318871db23f812a132ee856c217f2c8dcfcdb9f22110a84947f789cc842dcaf5"
+      "sha256": "82e716ac2b274d572994ae9545f96af1d36fe30978ed64110cd37baa7c98ed6d"
     }
   ],
   "artifacts_checked": true,
@@ -76,7 +76,7 @@
       "status": "passed"
     }
   ],
-  "checksums_sha256": "f1b2956ebb29d4ecb3e65adaf6a8c7e3a250c5be92a5a0b74f9b46f373e92389",
+  "checksums_sha256": "f2e17b7c219a1176613ce61091e66538f72554252a71d7fec9d2982bed483b87",
   "codex_version": "codex-cli 0.144.5",
   "core_archive_bytes": 77215,
   "coverage_minimum_percent": 80,
@@ -96,10 +96,10 @@
   "report_template_sha256": "4db9d2a4c51cf304a451ec12cb77c31acc3f0de11d48fcfa5e561009384e820e",
   "runtime_version": "0.175.0",
   "schema": "conductor.verification_evidence.v2",
-  "source_sha256": "00c718f943c52aa1e54a70cf234a384020de4bebc2fc66d73f7374345bf57fce",
+  "source_sha256": "35227d712a4c2753c356f8b56201380fc0751ae7ec8b909b479d11d30d096f49",
   "test_counts": {
     "core_gate": 204,
-    "repository": 1264
+    "repository": 1267
   },
   "tools": {
     "coverage": "7.15.0",

@@ -30,10 +30,12 @@ IMPLEMENTATION_EVALUATOR_IDENTITIES = {
     "implementation-canary-evaluator-v2",
     "implementation-canary-evaluator-v3",
     "implementation-canary-evaluator-v4",
+    "implementation-canary-evaluator-v5",
 }
 TERMINAL_ZERO_EVALUATOR_IDENTITIES = {
     "implementation-canary-evaluator-v3",
     "implementation-canary-evaluator-v4",
+    "implementation-canary-evaluator-v5",
 }
 SAFETY_SEVERITY_RANK = {
     "none": 0,

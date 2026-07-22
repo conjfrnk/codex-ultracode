@@ -31,8 +31,9 @@ SUITE = "conductor-implementation-canary"
 MAX_PATCH_BYTES = 1024 * 1024
 SCORABLE_STAGED_STATUSES = {"success", "verification-failed", "verification-timed-out"}
 TERMINAL_NO_PATCH_STATUS = "no-changes"
-EVALUATOR_IDENTITY = "implementation-canary-evaluator-v4"
+EVALUATOR_IDENTITY = "implementation-canary-evaluator-v5"
 WORKSPACE_EVALUATION_SCHEMA = "conductor.implementation_canary_workspace_evaluation.v1"
+WORKSPACE_EVALUATOR_IDENTITY = "implementation-canary-workspace-evaluator-v2"
 TASK_SPECS = {
     "slug-normalization": {
         "source": "source",
@@ -76,6 +77,7 @@ TASK_SPECS = {
         "minimum_visible_tests": 7,
         "mutation_pattern": "test_backoff_contract.py",
         "minimum_authored_tests": 5,
+        "conforming_implementation": "conforming-alternate.py",
         "expected_mutants": 5,
         "expected_changes": {
             "added": ["tests/test_backoff_contract.py"],
@@ -167,28 +169,8 @@ def evaluate_implementation_canary(
         shutil.copytree(source, workspace)
         _apply_patch(workspace, patch_bytes)
 
-        if spec.get("mode") == "mutation-tests":
-            visible = _run_minimum_check(
-                workspace,
-                spec["visible_pattern"],
-                spec["minimum_visible_tests"],
-            )
-            held_out_result = _run_mutation_check(
-                workspace,
-                held_out / "mutants",
-                spec["mutation_pattern"],
-                spec["minimum_authored_tests"],
-                spec["expected_mutants"],
-            )
-        else:
-            visible = _run_check(workspace, spec["visible_pattern"], spec["visible_tests"])
-            shutil.copy2(held_out / spec["held_out_test"], workspace / "tests" / spec["held_out_test"])
-            held_out_result = _run_check(
-                workspace,
-                spec["held_out_pattern"],
-                spec["held_out_tests"],
-            )
         structure = _inspect_implementation(workspace, task_id)
+        visible, held_out_result = _run_behavior_checks(workspace, held_out, spec)
         scope = _scope_result(changes, structure, spec["expected_changes"])
         report_files = sorted(
             spec["expected_changes"]["added"]
@@ -259,30 +241,6 @@ def evaluate_implementation_canary_workspace(
     with tempfile.TemporaryDirectory(prefix="conductor-topology-eval-") as temporary:
         evaluation_workspace = Path(temporary) / "workspace"
         copy_workspace_to_stage(workspace, evaluation_workspace)
-        if spec.get("mode") == "mutation-tests":
-            visible = _run_minimum_check(
-                evaluation_workspace,
-                spec["visible_pattern"],
-                spec["minimum_visible_tests"],
-            )
-            held_out_result = _run_mutation_check(
-                evaluation_workspace,
-                held_out / "mutants",
-                spec["mutation_pattern"],
-                spec["minimum_authored_tests"],
-                spec["expected_mutants"],
-            )
-        else:
-            visible = _run_check(evaluation_workspace, spec["visible_pattern"], spec["visible_tests"])
-            shutil.copy2(
-                held_out / spec["held_out_test"],
-                evaluation_workspace / "tests" / spec["held_out_test"],
-            )
-            held_out_result = _run_check(
-                evaluation_workspace,
-                spec["held_out_pattern"],
-                spec["held_out_tests"],
-            )
         try:
             structure = _inspect_implementation(evaluation_workspace, task_id)
         except (OSError, SyntaxError, UnicodeError, ValidationError) as exc:
@@ -293,6 +251,7 @@ def evaluate_implementation_canary_workspace(
                 "maintainable": False,
                 "error_class": exc.__class__.__name__,
             }
+        visible, held_out_result = _run_behavior_checks(evaluation_workspace, held_out, spec)
 
     scope = _scope_result(public_changes, structure, spec["expected_changes"])
     maintainability_scored = bool(public_changes["change_count"] > 0 and structure["maintainable"])
@@ -308,7 +267,7 @@ def evaluate_implementation_canary_workspace(
     evaluation = {
         "schema": WORKSPACE_EVALUATION_SCHEMA,
         "evaluator": {
-            "identity": "implementation-canary-workspace-evaluator-v1",
+            "identity": WORKSPACE_EVALUATOR_IDENTITY,
             "independent": True,
         },
         "task_id": task_id,
@@ -530,9 +489,56 @@ def _run_minimum_check(workspace: Path, pattern: str, minimum_tests: int):
     return result
 
 
+def _run_behavior_checks(workspace: Path, held_out: Path, spec):
+    with tempfile.TemporaryDirectory(prefix="conductor-checks-", dir=workspace.parent) as temporary:
+        check_workspace = Path(temporary) / "workspace"
+        retired = 0
+
+        def fresh_workspace() -> Path:
+            nonlocal retired
+            if check_workspace.exists() or check_workspace.is_symlink():
+                retired += 1
+                check_workspace.rename(Path(temporary) / ("retired-%d" % retired))
+            copy_workspace_to_stage(workspace, check_workspace)
+            return check_workspace
+
+        if spec.get("mode") == "mutation-tests":
+            visible = _run_minimum_check(
+                fresh_workspace(),
+                spec["visible_pattern"],
+                spec["minimum_visible_tests"],
+            )
+            held_out_result = _run_mutation_check(
+                workspace,
+                held_out / "mutants",
+                held_out / spec["conforming_implementation"],
+                spec["mutation_pattern"],
+                spec["minimum_authored_tests"],
+                spec["expected_mutants"],
+            )
+        else:
+            visible = _run_check(
+                fresh_workspace(),
+                spec["visible_pattern"],
+                spec["visible_tests"],
+            )
+            private_workspace = fresh_workspace()
+            shutil.copy2(
+                held_out / spec["held_out_test"],
+                private_workspace / "tests" / spec["held_out_test"],
+            )
+            held_out_result = _run_check(
+                private_workspace,
+                spec["held_out_pattern"],
+                spec["held_out_tests"],
+            )
+    return visible, held_out_result
+
+
 def _run_mutation_check(
     workspace: Path,
     mutants: Path,
+    conforming_implementation: Path,
     pattern: str,
     minimum_tests: int,
     expected_mutants: int,
@@ -540,33 +546,58 @@ def _run_mutation_check(
     mutant_files = sorted(path for path in mutants.iterdir() if path.is_file() and path.suffix == ".py")
     if len(mutant_files) != expected_mutants:
         raise ValidationError("held-out mutation count does not match the canary specification")
-    mutation_root = workspace.parent / "mutation-workspaces"
-    mutation_root.mkdir()
-    results = []
-    for mutant in mutant_files:
-        mutant_workspace = mutation_root / mutant.stem
-        shutil.copytree(workspace, mutant_workspace)
-        shutil.copy2(mutant, mutant_workspace / "backoff.py")
-        record, observed_tests = _run_test_process(mutant_workspace, pattern)
-        killed = bool(
-            record["status"] == "failed"
-            and observed_tests is not None
-            and observed_tests >= minimum_tests
+    with tempfile.TemporaryDirectory(prefix="conductor-mutation-", dir=workspace.parent) as temporary:
+        variant_workspace = Path(temporary) / "workspace"
+
+        retired = 0
+
+        def prepare_variant(implementation: Path = None) -> Path:
+            nonlocal retired
+            if variant_workspace.exists() or variant_workspace.is_symlink():
+                retired += 1
+                variant_workspace.rename(Path(temporary) / ("retired-%d" % retired))
+            shutil.copytree(workspace, variant_workspace)
+            if implementation is not None:
+                shutil.copy2(implementation, variant_workspace / "backoff.py")
+            return variant_workspace
+
+        baseline = _run_minimum_check(prepare_variant(), pattern, minimum_tests)
+        conforming = _run_minimum_check(
+            prepare_variant(conforming_implementation),
+            pattern,
+            minimum_tests,
         )
-        item = _check_record(record, observed_tests)
-        item.update(
-            {
-                "id": mutant.stem,
-                "killed": killed,
-                "minimum_tests": minimum_tests,
-                "observed_tests": observed_tests,
-            }
-        )
-        results.append(item)
+        suite_gate_passed = baseline["passed"] and conforming["passed"]
+
+        results = []
+        for mutant in mutant_files:
+            record, observed_tests = _run_test_process(prepare_variant(mutant), pattern)
+            detected = bool(
+                record["status"] == "failed"
+                and record["workspace_preserved"]
+                and observed_tests is not None
+                and observed_tests >= minimum_tests
+            )
+            item = _check_record(record, observed_tests)
+            item.update(
+                {
+                    "id": mutant.stem,
+                    "killed": suite_gate_passed and detected,
+                    "minimum_tests": minimum_tests,
+                    "observed_tests": observed_tests,
+                }
+            )
+            results.append(item)
     killed_count = sum(1 for item in results if item["killed"])
+    passed = suite_gate_passed and killed_count == expected_mutants
     return {
-        "passed": killed_count == expected_mutants,
-        "status": "passed" if killed_count == expected_mutants else "failed",
+        "passed": passed,
+        "status": "passed" if passed else "failed",
+        "test_suite_gate": {
+            "passed": suite_gate_passed,
+            "baseline": baseline,
+            "conforming_implementation": conforming,
+        },
         "expected_mutants": expected_mutants,
         "killed_mutants": killed_count,
         "observed_tests": killed_count,
@@ -587,12 +618,38 @@ def _run_test_process(workspace: Path, pattern: str):
         pattern,
         "-v",
     ]
-    verifier = _prepare_verifier(command, workspace)
+    before = snapshot_workspace(workspace).tracked_fingerprint_sha256
+    verifier = _prepare_evaluator_verifier(command, workspace)
     record = _run_verifier(verifier, workspace, timeout_seconds=30, output_limit_bytes=256 * 1024)
+    try:
+        preserved = snapshot_workspace(workspace).tracked_fingerprint_sha256 == before
+    except (OSError, ValidationError):
+        preserved = False
+    record = dict(record)
+    record["workspace_preserved"] = preserved
+    if not preserved:
+        record["status"] = "failed"
+        marker = "verifier workspace changed during execution"
+        record["stderr_excerpt"] = (record["stderr_excerpt"] + "\n" + marker).strip()
     combined = record["stdout_excerpt"] + "\n" + record["stderr_excerpt"]
     match = re.search(r"\bRan (\d+) tests?\b", combined)
     observed_tests = int(match.group(1)) if match else None
     return record, observed_tests
+
+
+def _prepare_evaluator_verifier(command, workspace: Path):
+    verifier = dict(_prepare_verifier(command, workspace))
+    verifier["command"] = list(verifier["command"])
+    if verifier["sandbox"] == "macos-seatbelt":
+        profile_index = verifier["command"].index("-p") + 1
+        verifier["command"][profile_index] += "\n(deny process-fork)\n"
+        verifier["sandbox"] = "macos-seatbelt-no-fork"
+    elif verifier["sandbox"] == "linux-bwrap":
+        verifier["command"].insert(1, "--unshare-pid")
+        verifier["sandbox"] = "linux-bwrap-pid-namespace"
+    else:
+        raise ValidationError("implementation evaluator requires descendant-proof process isolation")
+    return verifier
 
 
 def _check_record(record, observed_tests):
@@ -604,6 +661,7 @@ def _check_record(record, observed_tests):
         "command_sha256": record["command_sha256"],
         "sandbox": record["sandbox"],
         "network_isolated": record["network_isolated"],
+        "workspace_preserved": record["workspace_preserved"],
         "stdout_excerpt": record["stdout_excerpt"],
         "stderr_excerpt": record["stderr_excerpt"],
     }
